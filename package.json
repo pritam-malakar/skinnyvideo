@@ -1,0 +1,42 @@
+{
+  "name": "squeeze",
+  "productName": "Squeeze",
+  "version": "1.0.0",
+  "description": "Video archive compressor for macOS",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --mac --arm64"
+  },
+  "author": "Squeeze",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "net.squeeze.app",
+    "productName": "Squeeze",
+    "asar": true,
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/bin",
+        "to": "bin",
+        "filter": ["ffmpeg", "ffprobe"]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.video",
+      "target": [
+        { "target": "dir", "arch": ["arm64"] }
+      ],
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "identity": null
+    }
+  }
+}
