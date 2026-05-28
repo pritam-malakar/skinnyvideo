@@ -24,6 +24,9 @@ const summaryBody = document.getElementById('summary-body');
 const showLogBtn = document.getElementById('show-log');
 const revealOutputBtn = document.getElementById('reveal-output');
 const dismissSummaryBtn = document.getElementById('dismiss-summary');
+const topProgress = document.getElementById('top-progress');
+
+const DEST_PLACEHOLDER = 'Choose a folder — a run subfolder is created automatically';
 
 let current = {
   src: null,
@@ -84,7 +87,7 @@ function updateAddState() {
 
 function clearDrop() {
   current = { src: null, srcName: null, videoCount: 0, ignoredCount: 0, scanned: false, dest: null, destAutoFromSrc: true };
-  destPathEl.textContent = 'No destination chosen';
+  destPathEl.textContent = DEST_PLACEHOLDER;
   destPathEl.classList.add('placeholder');
   clearDropStatus();
   updateAddState();
@@ -267,6 +270,7 @@ startBtn.addEventListener('click', async () => {
   progressCard.classList.remove('hidden');
   startBtn.classList.add('hidden');
   stopBtn.classList.remove('hidden');
+  if (topProgress) topProgress.classList.add('active');
   resetProgressUI();
   await window.api.startQueue(toRun.map((b) => ({
     id: b.id,
@@ -357,6 +361,7 @@ window.api.onQueueFinished(({ totals, stopped }) => {
   stopBtn.disabled = false;
   stopBtn.textContent = 'Stop after current file';
   startBtn.classList.remove('hidden');
+  if (topProgress) topProgress.classList.remove('active');
 
   const lines = [];
   if (stopped) lines.push(`<div class="muted">Stopped by user.</div>`);

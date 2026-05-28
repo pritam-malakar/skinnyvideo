@@ -8,111 +8,179 @@
 </head>
 <body>
   <div class="titlebar"></div>
+  <div id="top-progress" class="top-progress"></div>
+
   <main class="app">
-    <header class="app-header">
-      <h1>Squeeze</h1>
-      <p class="tagline">Drag a folder. Pick a destination. Compress.</p>
+    <header class="hero">
+      <div class="hero-mark">
+        <span class="hero-dot dot-cyan"></span>
+        <span class="hero-dot dot-violet"></span>
+        <span class="hero-dot dot-amber"></span>
+      </div>
+      <div class="hero-text">
+        <h1 class="logo">Squeeze</h1>
+        <p class="tagline">Re-encode video archives. Originals never touched.</p>
+      </div>
     </header>
 
-    <section class="card">
-      <div id="dropzone" class="dropzone">
-        <div class="dropzone-inner">
-          <div class="drop-glyph"></div>
-          <div class="drop-title">Drop folders or files here</div>
-          <div class="drop-sub">Mixed media is fine — non-videos are ignored automatically</div>
-          <div id="drop-status" class="drop-status hidden"></div>
+    <section id="dropzone" class="dropzone">
+      <div class="dropzone-glow"></div>
+      <div class="dropzone-content">
+        <div class="drop-icon" aria-hidden="true">
+          <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 22 L8 50 Q8 54 12 54 L52 54 Q56 54 56 50 L56 22 Q56 18 52 18 L34 18 L30 12 L12 12 Q8 12 8 16 Z" opacity="0.35"/>
+            <path d="M32 28 L32 44 M24 36 L32 44 L40 36" stroke-width="2"/>
+          </svg>
         </div>
+        <h2 class="drop-title">Drop a folder to begin</h2>
+        <p class="drop-sub">Mixed media is fine. Squeeze finds the videos and leaves everything else alone.</p>
+        <div id="drop-status" class="drop-status hidden"></div>
       </div>
     </section>
 
-    <section class="card" id="config-card">
-      <div class="row dest-row">
-        <label class="row-label">Destination</label>
+    <section class="config-grid">
+      <div class="config-col config-col-dest">
+        <div class="micro-label">Destination</div>
         <div class="dest-control">
-          <div id="dest-path" class="dest-path placeholder">No destination chosen</div>
-          <button id="choose-dest" class="btn btn-secondary" disabled>Choose…</button>
+          <div id="dest-path" class="dest-path placeholder">Choose a folder — a run subfolder is created automatically</div>
+          <button id="choose-dest" class="btn btn-ghost" disabled>Choose…</button>
         </div>
       </div>
 
-      <div class="row tier-row">
-        <label class="row-label">Quality tier</label>
-        <div class="tiers">
-          <label class="tier tier-regular selected">
-            <input type="radio" name="tier" value="regular" checked />
-            <div class="tier-body">
-              <div class="tier-title"><span class="dot dot-cyan"></span>Regular <span class="hint">(recommended)</span></div>
-              <div class="tier-desc">Keeps quality and resolution. Fast. Best choice for almost everything.</div>
-            </div>
-          </label>
-          <label class="tier tier-preserve">
-            <input type="radio" name="tier" value="preserve" />
-            <div class="tier-body">
-              <div class="tier-title"><span class="dot dot-violet"></span>Might need it later</div>
-              <div class="tier-desc">Highest quality retention. Much slower. Use only for footage you may re-edit at full quality.</div>
-            </div>
-          </label>
-          <label class="tier tier-aggressive">
-            <input type="radio" name="tier" value="aggressive" />
-            <div class="tier-body">
-              <div class="tier-title"><span class="dot dot-amber"></span>Compress AF</div>
-              <div class="tier-desc">Smallest files. Visible quality loss. Also drops video to 1080p. Use only when you’re sure you won’t need the original quality.</div>
-            </div>
-          </label>
-        </div>
-      </div>
-
-      <div class="row dry-row">
-        <label class="checkbox">
+      <div class="config-col config-col-action">
+        <label class="dry-check">
           <input type="checkbox" id="dry-run" />
-          <span>Preview only — show what would happen, don’t encode.</span>
+          <span class="dry-box" aria-hidden="true">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 8 L7 12 L13 4"/>
+            </svg>
+          </span>
+          <span class="dry-text">
+            <span class="dry-title">Preview only</span>
+            <span class="dry-hint">show what would happen, don’t encode</span>
+          </span>
+        </label>
+        <button id="add-to-queue" class="btn btn-primary btn-add" disabled>
+          <span>Add to queue</span>
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 8 L13 8 M9 4 L13 8 L9 12"/>
+          </svg>
+        </button>
+      </div>
+    </section>
+
+    <section class="tier-section">
+      <div class="micro-label tier-label">Quality tier</div>
+      <div class="tier-grid">
+        <label class="tier tier-regular selected" data-tier="regular">
+          <input type="radio" name="tier" value="regular" checked />
+          <div class="tier-top">
+            <span class="tier-dot dot-cyan"></span>
+            <span class="tier-pill pill-cyan">Recommended</span>
+          </div>
+          <h3 class="tier-name">Regular</h3>
+          <p class="tier-desc">Keeps quality and resolution. Fast. Best choice for almost everything.</p>
+          <div class="tier-meta">
+            <span>HEVC hardware</span><span class="meta-sep">·</span><span>Source resolution</span>
+          </div>
+        </label>
+
+        <label class="tier tier-preserve" data-tier="preserve">
+          <input type="radio" name="tier" value="preserve" />
+          <div class="tier-top">
+            <span class="tier-dot dot-violet"></span>
+            <span class="tier-pill pill-violet">Archival</span>
+          </div>
+          <h3 class="tier-name">Might need it later</h3>
+          <p class="tier-desc">Highest quality retention. Much slower. Use only for footage you may re-edit at full quality.</p>
+          <div class="tier-meta">
+            <span>x265 software</span><span class="meta-sep">·</span><span>Source resolution</span>
+          </div>
+        </label>
+
+        <label class="tier tier-aggressive" data-tier="aggressive">
+          <input type="radio" name="tier" value="aggressive" />
+          <div class="tier-top">
+            <span class="tier-dot dot-amber"></span>
+            <span class="tier-pill pill-amber">
+              <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M6 2 L11 10 L1 10 Z" />
+                <path d="M6 5.5 L6 7.5 M6 8.8 L6 9"/>
+              </svg>
+              Lossy · 1080p
+            </span>
+          </div>
+          <h3 class="tier-name tier-name-warn">Compress AF</h3>
+          <p class="tier-desc">Smallest files. Visible quality loss. Also drops video to 1080p. Use only when you’re sure you won’t need the original quality.</p>
+          <div class="tier-meta">
+            <span>HEVC hardware</span><span class="meta-sep">·</span><span>Short-edge → 1080</span>
+          </div>
+          <div class="tier-stripes" aria-hidden="true"></div>
         </label>
       </div>
-
-      <div class="row add-row">
-        <button id="add-to-queue" class="btn btn-primary" disabled>Add to queue</button>
-      </div>
     </section>
 
-    <section class="card queue-card">
-      <div class="card-header">
-        <h2>Queue</h2>
-        <div id="queue-count" class="muted">empty</div>
+    <section class="queue-section">
+      <div class="section-header">
+        <h2 class="section-title">Queue</h2>
+        <div id="queue-count" class="muted-sm">empty</div>
       </div>
       <ul id="queue" class="queue"></ul>
     </section>
 
-    <section class="card control-card">
-      <button id="start" class="btn btn-primary btn-large" disabled>Start queue</button>
-      <button id="stop" class="btn btn-danger btn-large hidden">Stop after current file</button>
+    <section class="action-bar">
+      <button id="start" class="btn btn-primary btn-action" disabled>
+        <span class="btn-label">Start queue</span>
+      </button>
+      <button id="stop" class="btn btn-ghost btn-action hidden">Stop after current file</button>
     </section>
 
-    <section id="progress-card" class="card progress-card hidden">
+    <section id="progress-card" class="progress-card hidden">
       <div class="progress-header">
-        <div id="progress-batch" class="muted"></div>
-        <div id="progress-counts" class="muted"></div>
+        <div class="progress-meta">
+          <div id="progress-batch" class="progress-batch"></div>
+          <div id="progress-counts" class="progress-counts"></div>
+        </div>
+        <div id="current-eta" class="current-eta"></div>
       </div>
       <div class="progress-bar">
         <div id="progress-fill" class="progress-fill"></div>
       </div>
-      <div class="progress-current">
-        <div id="current-file" class="current-file"></div>
-        <div id="current-eta" class="muted"></div>
-      </div>
+      <div id="current-file" class="current-file"></div>
       <div class="progress-stats">
-        <div class="stat"><span class="stat-label">Reclaimed</span> <span id="reclaimed" class="stat-value reclaimed-val">0 B</span></div>
-        <div class="stat"><span class="stat-label">Completed</span> <span id="stat-completed" class="stat-value">0</span></div>
-        <div class="stat"><span class="stat-label">Ignored non-video</span> <span id="stat-ignored" class="stat-value">0</span></div>
-        <div class="stat"><span class="stat-label">Failed</span> <span id="stat-failed" class="stat-value">0</span></div>
+        <div class="stat">
+          <span class="stat-label">Reclaimed</span>
+          <span id="reclaimed" class="stat-value reclaimed-val">0 B</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Completed</span>
+          <span id="stat-completed" class="stat-value">0</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Ignored non-video</span>
+          <span id="stat-ignored" class="stat-value">0</span>
+        </div>
+        <div class="stat stat-failures">
+          <span class="stat-label">Failed</span>
+          <span id="stat-failed" class="stat-value">0</span>
+        </div>
       </div>
     </section>
 
-    <section id="summary-card" class="card summary-card hidden">
-      <h2>Run complete</h2>
+    <section id="summary-card" class="summary-card hidden">
+      <div class="summary-head">
+        <div class="summary-badge">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 8 L7 12 L13 4"/>
+          </svg>
+        </div>
+        <h2>Run complete</h2>
+      </div>
       <div id="summary-body" class="summary-body"></div>
       <div class="summary-actions">
-        <button id="show-log" class="btn btn-secondary">Show log</button>
-        <button id="reveal-output" class="btn btn-secondary">Reveal output</button>
-        <button id="dismiss-summary" class="btn btn-secondary">Dismiss</button>
+        <button id="show-log" class="btn btn-ghost">Show log</button>
+        <button id="reveal-output" class="btn btn-ghost">Reveal output</button>
+        <button id="dismiss-summary" class="btn btn-ghost">Dismiss</button>
       </div>
     </section>
   </main>

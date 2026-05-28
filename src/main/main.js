@@ -9,11 +9,11 @@ let queueRunning = false;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1100,
-    height: 820,
-    minWidth: 900,
-    minHeight: 700,
-    backgroundColor: '#0d1117',
+    width: 1280,
+    height: 900,
+    minWidth: 1080,
+    minHeight: 760,
+    backgroundColor: '#06080d',
     titleBarStyle: 'hiddenInset',
     show: false,
     webPreferences: {
