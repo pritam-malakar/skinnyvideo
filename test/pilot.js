@@ -149,21 +149,9 @@ async function freshDest(name) {
     console.log('  skipping strict assertion (runs landed in distinct minute-folders)');
   }
 
-  header('Test 5: Compress AF tier (1080p downscale + aggressive HEVC)');
-  const dest5 = await freshDest('test5_aggressive');
-  const r5 = await runBatch({ src: SMALL_CLIP, dest: dest5, tier: 'aggressive' }, () => false, () => {});
-  check(r5.processed === 1 && r5.failed === 0, 'aggressive tier processed clip');
-  const out5files = fs.readdirSync(r5.runDir).filter(f => f.endsWith('.mp4'));
-  const out5 = path.join(r5.runDir, out5files[0]);
-  const p5 = JSON.parse(spawnSync(bins.ffprobe, ['-v','quiet','-print_format','json','-show_streams', out5]).stdout.toString());
-  const v5 = p5.streams.find(s => s.codec_type === 'video');
-  console.log('  aggressive output:', v5.codec_name, v5.width + 'x' + v5.height);
-  check(v5.codec_name === 'hevc', 'aggressive output is HEVC');
-  // Source short edge = 2160, landscape 4K → short edge becomes 1080.
-  check(v5.height === 1080 && v5.width === 1920, 'landscape 4K downscaled to 1920x1080');
-  check(r5.reclaimed > 0, 'aggressive tier reclaims space');
+  // Test 5 ("Compress AF") removed — that tier no longer exists in the app.
 
-  header('Test 6: "Might need it later" tier (libx265, keep resolution)');
+  header('Test 6: "Probably Need It Later" tier (libx265, keep resolution)');
   const dest6 = await freshDest('test6_preserve');
   const r6 = await runBatch({ src: SMALL_CLIP, dest: dest6, tier: 'preserve' }, () => false, () => {});
   check(r6.processed === 1 && r6.failed === 0, 'preserve tier processed clip');

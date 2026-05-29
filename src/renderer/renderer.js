@@ -37,9 +37,9 @@ const dismissSummaryBtn = document.getElementById('dismiss-summary');
 const topProgress = document.getElementById('top-progress');
 
 const DEST_PLACEHOLDER = 'Choose a folder — a run subfolder is created automatically';
-// Maps pipeline tier id → reference CSS class + display label
-const TIER_CSS = { regular: 'regular', preserve: 'archival', aggressive: 'lossy' };
-const TIER_LABEL = { regular: 'Regular', preserve: 'Archival', aggressive: 'Compress AF' };
+// Maps pipeline tier id → CSS class + display label
+const TIER_CSS = { regular: 'regular', preserve: 'archival' };
+const TIER_LABEL = { regular: 'Who Cares…', preserve: 'Probably Need It Later' };
 
 let current = {
   src: null,
@@ -66,6 +66,77 @@ function humanBytes(n) {
   while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
   return sign + n.toFixed(n >= 10 || i === 0 ? 0 : 1) + ' ' + units[i];
 }
+
+// ----- Row action popover ---------------------------------------
+let activeRowMenu = null;
+function closeRowMenu() {
+  if (activeRowMenu) { activeRowMenu.remove(); activeRowMenu = null; }
+}
+function openRowMenu(anchorEl, item) {
+  closeRowMenu();
+  const menu = document.createElement('div');
+  menu.className = 'row-menu';
+  menu.setAttribute('role', 'menu');
+
+  function addAction(label, iconSvg, onClick, danger) {
+    const btn = document.createElement('button');
+    if (danger) btn.classList.add('danger');
+    btn.setAttribute('role', 'menuitem');
+    btn.innerHTML = `${iconSvg}<span>${label}</span>`;
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeRowMenu();
+      onClick();
+    });
+    menu.appendChild(btn);
+  }
+
+  if (item.status === 'running') {
+    addAction(
+      'Pause',
+      '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>',
+      () => window.api.pauseBatch(item.id)
+    );
+  } else if (item.status === 'paused') {
+    addAction(
+      'Resume',
+      '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8L7 4Z"/></svg>',
+      () => window.api.resumeBatch(item.id)
+    );
+  }
+  const sep = document.createElement('div');
+  sep.className = 'sep';
+  menu.appendChild(sep);
+  addAction(
+    'Stop',
+    '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>',
+    () => window.api.cancelBatch(item.id),
+    true
+  );
+
+  document.body.appendChild(menu);
+  // Position below the anchor, right-aligned to it
+  const rect = anchorEl.getBoundingClientRect();
+  const menuW = menu.offsetWidth;
+  let left = rect.right - menuW;
+  if (left < 8) left = 8;
+  let top = rect.bottom + 6;
+  // Flip up if it would overflow window
+  const menuH = menu.offsetHeight;
+  if (top + menuH > window.innerHeight - 8) {
+    top = rect.top - menuH - 6;
+  }
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+
+  activeRowMenu = menu;
+}
+document.addEventListener('click', (e) => {
+  if (activeRowMenu && !activeRowMenu.contains(e.target)) closeRowMenu();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeRowMenu();
+});
 
 function fmtDuration(ms) {
   if (!Number.isFinite(ms) || ms <= 0) return '—';
@@ -291,50 +362,76 @@ function buildQrow(item, idx) {
   // Status column
   const statusCol = document.createElement('div');
   statusCol.className = `status ${item.status}`;
-  const pillLabel = { queued: 'Queued', running: 'Running', done: 'Done', failed: 'Failed' }[item.status] || item.status;
+  const pillLabelMap = {
+    queued: 'Queued', running: 'Running', paused: 'Paused',
+    done: 'Done', failed: 'Failed', cancelled: 'Cancelled', cancelling: 'Cancelling…'
+  };
+  const pillLabel = pillLabelMap[item.status] || item.status;
   const pill = document.createElement('span');
   pill.className = 'pill';
   pill.innerHTML = `<span class="dot"></span>${pillLabel}`;
   const pbar = document.createElement('div');
   pbar.className = 'progressbar';
   const pbi = document.createElement('i');
-  const pct = item.status === 'done' ? 100 : (item.status === 'failed' ? Math.max(8, item.progress) : item.progress);
+  let pct;
+  if (item.status === 'done') pct = 100;
+  else if (item.status === 'failed' || item.status === 'cancelled') pct = Math.max(8, item.progress);
+  else pct = item.progress;
   pbi.style.width = `${pct}%`;
   pbar.appendChild(pbi);
   statusCol.appendChild(pill);
   statusCol.appendChild(pbar);
   li.appendChild(statusCol);
 
-  // Output column
+  // Output column — final output file size when done
   const outCol = document.createElement('div');
   outCol.className = 'mono';
   outCol.style.textAlign = 'right';
-  if (item.status === 'done' && item.reclaimed > 0) {
-    outCol.textContent = '↓ ' + humanBytes(item.reclaimed);
-    outCol.classList.add('green');
-  } else if (item.status === 'failed') {
+  if (item.status === 'done') {
+    const outBytes = Math.max(0, (item.totalSize || 0) - (item.reclaimed || 0));
+    if (outBytes > 0) {
+      outCol.textContent = humanBytes(outBytes);
+      outCol.classList.add('green');
+    } else {
+      outCol.textContent = '—';
+      outCol.classList.add('muted');
+    }
+  } else if (item.status === 'failed' || item.status === 'cancelled') {
     outCol.textContent = '—';
-    outCol.classList.add('red');
+    outCol.classList.add(item.status === 'failed' ? 'red' : 'muted');
   } else {
     outCol.textContent = '—';
     outCol.classList.add('muted');
   }
   li.appendChild(outCol);
 
-  // More button — used here as "remove" for queued items
+  // Actions cell:
+  //   queued        → × remove
+  //   running/paused → ⋯ menu (Pause/Resume + Stop)
+  //   done/failed/cancelled → empty
   const more = document.createElement('button');
   more.className = 'more';
-  more.title = item.status === 'queued' ? 'Remove from queue' : 'More';
-  more.setAttribute('aria-label', more.title);
   if (item.status === 'queued') {
+    more.title = 'Remove from queue';
+    more.setAttribute('aria-label', more.title);
     more.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><path d="M6 6l12 12M18 6L6 18"/></svg>';
     more.addEventListener('click', (e) => {
       e.stopPropagation();
       queue = queue.filter((x) => x.id !== item.id);
       renderQueue();
     });
-  } else {
+  } else if (item.status === 'running' || item.status === 'paused') {
+    more.title = 'Actions';
+    more.setAttribute('aria-label', more.title);
     more.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" style="width:14px;height:14px;"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';
+    more.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openRowMenu(more, item);
+    });
+  } else {
+    // Done / failed / cancelled / cancelling — no actions apply.
+    more.style.visibility = 'hidden';
+    more.disabled = true;
   }
   li.appendChild(more);
 
@@ -435,13 +532,32 @@ window.api.onBatchStatus(({ id, status, result }) => {
   const item = queue.find((q) => q.id === id);
   if (!item) return;
 
-  // Map main-process status strings → our queue row status
+  // Map main-process status strings → queue row status
   if (status === 'Running') {
+    // From either initial start or post-resume — treat as running.
+    const wasPaused = item.status === 'paused';
     item.status = 'running';
-    item.progress = 0;
-    currentBatchId = id;
-    perFileTimes = [];
-    progressBatch.textContent = `Running: ${item.srcName}`;
+    if (!wasPaused) {
+      item.progress = 0;
+      currentBatchId = id;
+      perFileTimes = [];
+      progressBatch.textContent = `Running: ${item.srcName}`;
+    } else {
+      if (tlTag) tlTag.textContent = 'Squeeze · running';
+    }
+  } else if (status === 'Paused') {
+    item.status = 'paused';
+    if (tlTag) tlTag.textContent = 'Squeeze · paused';
+  } else if (status === 'Cancelling') {
+    item.status = 'cancelling';
+  } else if (status === 'Cancelled') {
+    item.status = 'cancelled';
+    if (result) {
+      item.lastResult = result;
+      item.processed = result.processed || 0;
+      item.failed = result.failed || 0;
+      item.reclaimed = result.reclaimed || 0;
+    }
   } else if (status === 'Done') {
     item.status = 'done';
     item.progress = 100;

@@ -12,9 +12,8 @@ const VIDEO_EXTS = new Set([
 ]);
 
 const TIER_CONSTANTS = {
-  regular:    { qv: 62 },
-  preserve:   { crf: 20, preset: 'medium' },
-  aggressive: { qv: 42 }
+  regular:  { qv: 62 },
+  preserve: { crf: 20, preset: 'medium' }
 };
 
 function getBinaries() {
@@ -30,9 +29,10 @@ function getBinaries() {
   };
 }
 
-function runCmd(cmd, args, { onStderr, onStdout, signal } = {}) {
+function runCmd(cmd, args, { onStderr, onStdout, signal, onSpawn } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    if (onSpawn) { try { onSpawn(child); } catch {} }
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (d) => {
@@ -196,13 +196,6 @@ function buildArgs({ input, tmpOut, tier, videoStream, audioStream }) {
     args.push('-c:v', 'libx265', '-crf', String(TIER_CONSTANTS.preserve.crf),
       '-preset', TIER_CONSTANTS.preserve.preset, '-tag:v', 'hvc1');
     if (tenBit) args.push('-pix_fmt', 'yuv420p10le');
-  } else if (tier === 'aggressive') {
-    args.push('-c:v', 'hevc_videotoolbox', '-q:v', String(TIER_CONSTANTS.aggressive.qv), '-tag:v', 'hvc1');
-    if (tenBit) args.push('-profile:v', 'main10', '-pix_fmt', 'p010le');
-    const se = shortEdge(videoStream?.width, videoStream?.height);
-    if (se && se > 1080) {
-      args.push('-vf', "scale='if(gt(iw,ih),-2,1080)':'if(gt(iw,ih),1080,-2)':force_original_aspect_ratio=decrease");
-    }
   }
 
   args.push(...colorArgs);
@@ -228,13 +221,6 @@ function buildFallbackArgs({ input, tmpOut, tier, videoStream, audioStream }) {
   const tenBit = is10Bit(videoStream?.pix_fmt);
   args.push('-c:v', 'libx265', '-crf', '22', '-preset', 'medium', '-tag:v', 'hvc1');
   if (tenBit) args.push('-pix_fmt', 'yuv420p10le');
-
-  if (tier === 'aggressive') {
-    const se = shortEdge(videoStream?.width, videoStream?.height);
-    if (se && se > 1080) {
-      args.push('-vf', "scale='if(gt(iw,ih),-2,1080)':'if(gt(iw,ih),1080,-2)':force_original_aspect_ratio=decrease");
-    }
-  }
 
   const colorArgs = [];
   if (videoStream?.color_primaries && videoStream.color_primaries !== 'unknown')
@@ -296,7 +282,16 @@ class StopSignal {
   }
 }
 
-async function runBatch(batch, shouldStopFn, onProgress) {
+async function runBatch(batch, controlOrFn, onProgress) {
+  // controlOrFn may be a legacy shouldStopFn function, or a control object:
+  //   { shouldStop(), isCancelled(), onSpawn(child) }
+  const ctl = typeof controlOrFn === 'function'
+    ? { shouldStop: controlOrFn, isCancelled: () => false, onSpawn: null }
+    : (controlOrFn || {});
+  const shouldStop  = ctl.shouldStop  || (() => false);
+  const isCancelled = ctl.isCancelled || (() => false);
+  const onSpawn     = ctl.onSpawn     || null;
+
   const { src, dest, tier } = batch;
   const runDir = path.join(dest, tsRunFolder());
   await ensureDir(runDir);
@@ -323,7 +318,7 @@ async function runBatch(batch, shouldStopFn, onProgress) {
   const { ffmpeg } = getBinaries();
 
   for (let i = 0; i < scan.videos.length; i++) {
-    if (shouldStopFn && shouldStopFn()) {
+    if (shouldStop() || isCancelled()) {
       log(`# Stopped by user after ${done} of ${totalFiles}`);
       break;
     }
@@ -366,10 +361,10 @@ async function runBatch(batch, shouldStopFn, onProgress) {
 
     const args = buildArgs({ input: v.file, tmpOut: tmpPath, tier, videoStream: vs, audioStream: as });
 
-    const stop = new StopSignal(shouldStopFn);
     let stderrBuf = '';
     const result = await runCmd(ffmpeg, args, {
       signal: null,
+      onSpawn,
       onStderr: (chunk) => {
         stderrBuf += chunk;
         if (stderrBuf.length > 20000) stderrBuf = stderrBuf.slice(-10000);
@@ -395,6 +390,7 @@ async function runBatch(batch, shouldStopFn, onProgress) {
       const fallbackArgs = buildFallbackArgs({ input: v.file, tmpOut: tmpPath, tier, videoStream: vs, audioStream: as });
       let stderrBuf2 = '';
       const r2 = await runCmd(ffmpeg, fallbackArgs, {
+        onSpawn,
         onStderr: (chunk) => {
           stderrBuf2 += chunk;
           if (stderrBuf2.length > 20000) stderrBuf2 = stderrBuf2.slice(-10000);
@@ -478,7 +474,7 @@ async function dryRunBatch(batch, onProgress) {
   const { src, tier } = batch;
   const scan = await scanFolder(src);
   let estReclaim = 0;
-  const ratios = { regular: 0.45, preserve: 0.55, aggressive: 0.15 };
+  const ratios = { regular: 0.45, preserve: 0.55 };
   const r = ratios[tier] ?? 0.45;
   for (const v of scan.videos) {
     estReclaim += Math.max(0, v.size - v.size * r);
