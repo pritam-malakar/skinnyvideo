@@ -13,7 +13,7 @@ function createWindow() {
     height: 900,
     minWidth: 1080,
     minHeight: 760,
-    backgroundColor: '#06080d',
+    backgroundColor: '#1a1d22',
     titleBarStyle: 'hiddenInset',
     show: false,
     webPreferences: {
