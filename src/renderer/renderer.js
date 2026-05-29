@@ -187,6 +187,7 @@ function clearDrop() {
   destPathEl.textContent = DEST_PLACEHOLDER;
   destPathEl.classList.add('placeholder');
   clearDropStatus();
+  dropzone.classList.remove('has-source');
   updateAddState();
   updateTierHint();
 }
@@ -234,12 +235,13 @@ dropzone.addEventListener('drop', async (ev) => {
     current.totalSize = scan.totalSize || scan.videos.reduce((a, v) => a + (v.size || 0), 0);
     current.scanned = true;
     dropStatusPath.textContent = p;
-    dropStatusPath.style.color = scan.videos.length > 0 ? 'var(--cyan)' : 'var(--amber)';
+    dropStatusPath.style.color = '';
     dropStatusCount.textContent = `${scan.videos.length} video${scan.videos.length === 1 ? '' : 's'}`;
     const parts = [];
-    if (scan.ignored > 0) parts.push(`${scan.ignored} ignored`);
     if (current.totalSize > 0) parts.push(`${humanBytes(current.totalSize)} total`);
+    if (scan.ignored > 0) parts.push(`${scan.ignored} ignored`);
     dropStatusExtra.textContent = parts.join(' · ') || '—';
+    dropzone.classList.add('has-source');
   } catch (e) {
     dropStatusPath.textContent = `Scan failed: ${e.message}`;
     dropStatusPath.style.color = 'var(--red)';
@@ -469,24 +471,55 @@ function renderQueue() {
   const done = queue.filter((q) => q.status === 'done').length;
   const running = queue.filter((q) => q.status === 'running').length;
   const queued = queue.filter((q) => q.status === 'queued').length;
+  const paused = queue.filter((q) => q.status === 'paused').length;
   const failed = queue.filter((q) => q.status === 'failed').length;
 
   queueHeadingEl.textContent = `Queue · ${total}`;
   queueCountEl.innerHTML = `${done} done · ${running} running · ${queued} waiting · ` +
     (failed > 0 ? `<span class="red">${failed} failed</span>` : `0 failed`);
 
-  // foot totals
-  const srcSum = queue.reduce((a, q) => a + (q.totalSize || 0), 0);
-  const recSum = queue.reduce((a, q) => a + (q.reclaimed || 0), 0);
-  qfootSource.textContent = srcSum > 0 ? humanBytes(srcSum) : '—';
-  qfootReclaimed.textContent = recSum > 0 ? '↓ ' + humanBytes(recSum) : '—';
-  if (failed > 0) {
-    qfootFailed.innerHTML = `<span class="danger">${failed} failure${failed === 1 ? '' : 's'} need${failed === 1 ? 's' : ''} review</span>`;
+  // foot totals — only meaningful when there is at least one row
+  const qfoot = document.getElementById('qfoot');
+  if (total === 0) {
+    qfoot.classList.add('hidden');
   } else {
-    qfootFailed.textContent = 'no failures';
+    qfoot.classList.remove('hidden');
+    const srcSum = queue.reduce((a, q) => a + (q.totalSize || 0), 0);
+    const recSum = queue.reduce((a, q) => a + (q.reclaimed || 0), 0);
+    qfootSource.textContent = srcSum > 0 ? humanBytes(srcSum) : '—';
+    qfootReclaimed.textContent = recSum > 0 ? '↓ ' + humanBytes(recSum) : '—';
+    if (failed > 0) {
+      qfootFailed.innerHTML = `<span class="danger">${failed} failure${failed === 1 ? '' : 's'} need${failed === 1 ? 's' : ''} review</span>`;
+    } else {
+      qfootFailed.textContent = 'no failures';
+    }
   }
 
   startBtn.disabled = queued === 0;
+  updateTlTag({ running, paused, failed });
+}
+
+/* Status pill — shown only when something is actually happening.
+   Priority: running > paused > failed. Hidden when idle. */
+function updateTlTag({ running, paused, failed }) {
+  if (!tlTag) return;
+  tlTag.classList.remove('running', 'paused', 'failed');
+  if (running > 0) {
+    tlTag.classList.add('running');
+    tlTag.textContent = running === 1 ? 'Running' : `Running · ${running}`;
+    tlTag.classList.remove('hidden');
+  } else if (paused > 0) {
+    tlTag.classList.add('paused');
+    tlTag.textContent = paused === 1 ? 'Paused' : `Paused · ${paused}`;
+    tlTag.classList.remove('hidden');
+  } else if (failed > 0) {
+    tlTag.classList.add('failed');
+    tlTag.textContent = failed === 1 ? 'Failure' : `${failed} failures`;
+    tlTag.classList.remove('hidden');
+  } else {
+    tlTag.classList.add('hidden');
+    tlTag.textContent = '';
+  }
 }
 
 startBtn.addEventListener('click', async () => {
@@ -497,7 +530,6 @@ startBtn.addEventListener('click', async () => {
   startBtn.classList.add('hidden');
   stopBtn.classList.remove('hidden');
   if (topProgress) topProgress.classList.add('active');
-  if (tlTag) tlTag.textContent = 'Squeeze · running';
   resetProgressUI();
   await window.api.startQueue(toRun.map((b) => ({
     id: b.id,
@@ -511,7 +543,6 @@ startBtn.addEventListener('click', async () => {
 stopBtn.addEventListener('click', async () => {
   stopBtn.disabled = true;
   stopBtn.textContent = 'Stopping after current file…';
-  if (tlTag) tlTag.textContent = 'Squeeze · stopping…';
   await window.api.stopQueue();
 });
 
@@ -542,12 +573,9 @@ window.api.onBatchStatus(({ id, status, result }) => {
       currentBatchId = id;
       perFileTimes = [];
       progressBatch.textContent = `Running: ${item.srcName}`;
-    } else {
-      if (tlTag) tlTag.textContent = 'Squeeze · running';
     }
   } else if (status === 'Paused') {
     item.status = 'paused';
-    if (tlTag) tlTag.textContent = 'Squeeze · paused';
   } else if (status === 'Cancelling') {
     item.status = 'cancelling';
   } else if (status === 'Cancelled') {
@@ -654,7 +682,8 @@ window.api.onQueueFinished(({ totals, stopped }) => {
   stopBtn.textContent = 'Stop after current file';
   startBtn.classList.remove('hidden');
   if (topProgress) topProgress.classList.remove('active');
-  if (tlTag) tlTag.textContent = stopped ? 'Squeeze · stopped' : 'Squeeze · idle';
+  // tl-tag state will be updated by the next renderQueue() call based on
+  // remaining failed batches; if there are none it hides.
 
   const lines = [];
   if (stopped) lines.push(`<div class="muted">Stopped by user.</div>`);
@@ -672,6 +701,7 @@ window.api.onQueueFinished(({ totals, stopped }) => {
   revealOutputBtn.disabled = !lastRun || !lastRun.runDir;
 
   summaryCard.classList.remove('hidden');
+  renderQueue();
 });
 
 showLogBtn.addEventListener('click', () => {

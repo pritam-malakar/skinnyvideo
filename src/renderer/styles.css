@@ -103,11 +103,28 @@ body::before {
 }
 .tl-spacer { flex: 1; }
 .tl-tag {
-  font-family: var(--font-mono); font-size: 11px; color: var(--fg-3);
-  padding: 3px 9px; border: 1px solid var(--border-subtle); border-radius: 6px;
+  font-family: var(--font-mono); font-size: 11px;
+  padding: 3px 9px 3px 18px;
+  border: 1px solid var(--border-subtle); border-radius: 6px;
   background: var(--bg-1);
   -webkit-app-region: no-drag;
+  position: relative;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  font-weight: 600;
+  display: inline-flex; align-items: center;
 }
+.tl-tag::before {
+  content: '';
+  position: absolute; left: 8px; top: 50%;
+  width: 6px; height: 6px; margin-top: -3px;
+  border-radius: 50%; background: currentColor;
+  opacity: 0.85;
+}
+.tl-tag.running { color: var(--cyan); border-color: var(--cyan-line); background: var(--cyan-tint); }
+.tl-tag.running::before { animation: pulse 1.4s ease-in-out infinite; }
+.tl-tag.paused  { color: var(--amber); border-color: oklch(0.80 0.110 78 / 0.40); background: oklch(0.80 0.110 78 / 0.10); }
+.tl-tag.failed  { color: var(--red);  border-color: oklch(0.70 0.19 25 / 0.50); background: oklch(0.70 0.19 25 / 0.10); }
 
 /* top progress strip during runs */
 .top-progress {
@@ -138,7 +155,7 @@ body::before {
   z-index: 1;
   max-width: 1180px;
   margin: 0 auto;
-  padding: 36px 40px 80px;
+  padding: 20px 40px 40px;
   height: calc(100vh - 36px);
   overflow-y: auto;
   scrollbar-width: none;
@@ -151,7 +168,7 @@ body::before {
 /* ============================================================
    Wordmark
    ============================================================ */
-.header { display: flex; align-items: flex-end; justify-content: space-between; padding: 4px 0 28px; }
+.header { display: flex; align-items: flex-end; justify-content: space-between; padding: 0 0 16px; }
 .wordmark { display: flex; align-items: center; gap: 16px; }
 .wm-logo {
   width: 38px; height: 38px; border-radius: 9px;
@@ -174,57 +191,87 @@ body::before {
    ============================================================ */
 .dropzone {
   position: relative;
-  padding: 56px 44px;
-  border-radius: 16px;
+  padding: 28px 32px;
+  border-radius: 14px;
   background: linear-gradient(180deg, oklch(0.195 0.008 248), oklch(0.170 0.008 248));
   border: 1px solid var(--border-subtle);
   box-shadow:
     inset 0 1px 0 var(--raise-soft),
     0 1px 0 oklch(0 0 0 / 0.4),
-    0 24px 60px -32px oklch(0 0 0 / 0.55);
+    0 16px 36px -28px oklch(0 0 0 / 0.55);
   overflow: hidden;
-  transition: border-color .18s ease, background .18s ease;
+  transition: padding .2s ease, border-color .18s ease, background .18s ease;
 }
 .dropzone.dragover {
   border-color: var(--cyan-line);
   background: linear-gradient(180deg, oklch(0.215 0.022 215), oklch(0.180 0.014 215));
 }
-.dz-inner { display: flex; align-items: center; gap: 32px; position: relative; }
+.dz-inner { display: flex; align-items: center; gap: 22px; position: relative; }
 .dz-icon {
-  width: 76px; height: 76px; flex: 0 0 76px;
-  border-radius: 16px;
+  width: 58px; height: 58px; flex: 0 0 58px;
+  border-radius: 12px;
   background: linear-gradient(180deg, var(--bg-3), var(--bg-2));
   border: 1px solid var(--border);
   box-shadow: inset 0 1px 0 var(--raise);
   display: grid; place-items: center;
   color: var(--fg-2);
 }
+.dz-icon svg { width: 22px !important; height: 22px !important; }
 .dz-text { flex: 1; min-width: 0; }
-.dz-title { font-size: 36px; font-weight: 600; letter-spacing: -0.028em; line-height: 1.05; color: var(--fg); }
+.dz-title { font-size: 24px; font-weight: 600; letter-spacing: -0.028em; line-height: 1.1; color: var(--fg); }
 .dz-title em { color: var(--cyan); font-style: normal; font-weight: 600; }
 
-.dz-loaded {
-  margin-top: 28px; padding: 14px 16px;
-  border-radius: 10px;
-  background: var(--bg-1);
-  border: 1px solid var(--border-subtle);
-  display: flex; align-items: center; gap: 14px;
-  font-family: var(--font-mono); font-size: 12px;
-  color: var(--fg-2);
+/* —— filled state: dropzone holds info, prompt is gone —— */
+.dropzone.has-source {
+  padding: 22px 26px;
+  background: linear-gradient(180deg, oklch(0.215 0.018 215 / 0.4), oklch(0.180 0.012 215 / 0.4)), linear-gradient(180deg, oklch(0.195 0.008 248), oklch(0.170 0.008 248));
+  border-color: var(--cyan-line);
 }
-.dz-loaded .folder { color: var(--cyan); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; max-width: 60%; }
+.dropzone.has-source .dz-inner { display: none; }
+
+.dz-loaded {
+  display: flex; align-items: center; gap: 18px;
+  min-width: 0;
+}
+.dz-loaded-icon {
+  width: 44px; height: 44px; flex: 0 0 44px;
+  border-radius: 11px;
+  background: var(--cyan-tint);
+  border: 1px solid var(--cyan-line);
+  box-shadow: inset 0 1px 0 oklch(0.76 0.115 215 / 0.30);
+  display: grid; place-items: center;
+  color: var(--cyan);
+}
+.dz-loaded-icon svg { width: 20px; height: 20px; }
+.dz-loaded-text { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.dz-loaded-folder { min-width: 0; }
+.dz-loaded .folder {
+  font-family: var(--font-mono);
+  color: var(--fg);
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  display: block;
+}
+.dz-loaded-meta {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--fg-3);
+  display: flex; align-items: center; gap: 8px;
+}
 .dz-loaded .sep { color: var(--fg-4); }
-.dz-loaded .count { color: var(--fg); }
-.dz-loaded .total { color: var(--fg-3); }
+.dz-loaded .count { color: var(--cyan); font-weight: 500; }
+.dz-loaded .total { color: var(--fg-2); }
 
 /* ============================================================
    Options row
    ============================================================ */
 .options-row {
-  margin-top: 18px;
+  margin-top: 12px;
   display: grid;
   grid-template-columns: 1fr auto auto;
-  gap: 12px;
+  gap: 10px;
   align-items: stretch;
 }
 .dest-picker {
@@ -243,10 +290,20 @@ body::before {
 }
 .dest-picker .path.placeholder { color: var(--fg-4); font-family: var(--font-sans); }
 .dest-picker .change {
-  margin-left: auto; font-family: var(--font-sans); font-size: 12px; color: var(--fg-3);
-  background: transparent; border: 0; cursor: pointer; padding: 6px 10px; border-radius: 6px;
+  margin-left: auto;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--cyan);
+  background: var(--cyan-tint);
+  border: 1px solid var(--cyan-line);
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 7px;
+  letter-spacing: -0.005em;
+  transition: background .15s ease, color .15s ease;
 }
-.dest-picker .change:hover:not(:disabled) { color: var(--fg); background: var(--bg-3); }
+.dest-picker .change:hover:not(:disabled) { background: var(--cyan-tint-strong); color: var(--fg); }
 .dest-picker .change:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* Toggle button (Preview only) */
@@ -302,25 +359,25 @@ body::before {
     0 6px 22px -12px oklch(0.76 0.095 148 / 0.55);
 }
 .btn.primary:hover:not(:disabled) { filter: brightness(1.06); }
+/* Ivory = quiet secondary action: keeps the cream identity but tones down
+   weight, brightness and shadow so the green Start CTA dominates. */
 .btn.ivory {
-  background: linear-gradient(180deg, #F8F3E8 0%, #E5DDC8 100%);
-  border-color: #C9C0A8;
-  color: #25221C;
-  font-weight: 600;
+  background: linear-gradient(180deg, #D9D0B5 0%, #BCB39A 100%);
+  border-color: #948B76;
+  color: #2E2920;
+  font-weight: 500;
+  font-size: 13px;
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.55),
-    0 1px 0 oklch(0 0 0 / 0.45),
-    0 0 0 1px rgba(232, 224, 200, 0.10),
-    0 6px 18px -10px rgba(245, 240, 230, 0.45);
+    inset 0 1px 0 rgba(255,255,255,0.25),
+    0 1px 0 oklch(0 0 0 / 0.35);
 }
 .btn.ivory:hover:not(:disabled) {
-  background: linear-gradient(180deg, #FCF7EC 0%, #EBE3CE 100%);
-  filter: brightness(1.02);
+  background: linear-gradient(180deg, #E2D9BD 0%, #C5BCA2 100%);
 }
 .btn.ivory:disabled {
   background: linear-gradient(180deg, var(--bg-3), var(--bg-2));
   border-color: var(--border);
-  color: var(--fg-2);
+  color: var(--fg-3);
   box-shadow: inset 0 1px 0 var(--raise), 0 1px 0 oklch(0 0 0 / 0.4);
 }
 .btn.ghost { background: transparent; }
@@ -339,7 +396,7 @@ body::before {
    ============================================================ */
 .section-head {
   display: flex; align-items: baseline; justify-content: space-between;
-  margin: 38px 0 14px;
+  margin: 22px 0 10px;
 }
 .section-head h2 { margin: 0; font-size: 13px; font-weight: 500; color: var(--fg-3); text-transform: uppercase; letter-spacing: 0.12em; font-family: var(--font-mono); }
 .section-head .hint { font-family: var(--font-mono); font-size: 11px; color: var(--fg-4); }
@@ -350,15 +407,15 @@ body::before {
    ============================================================ */
 .tiers {
   display: grid;
-  grid-template-columns: 320px 320px;
-  gap: 14px;
-  justify-content: start;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  max-width: 720px;   /* constrain so right-side empty space is intentional */
 }
 .tier {
   position: relative;
-  padding: 32px 28px 30px;
-  min-height: 220px;
-  border-radius: 14px;
+  padding: 20px 22px 18px;
+  min-height: 0;
+  border-radius: 13px;
   background:
     radial-gradient(140% 70% at 50% -30%, var(--accent-tint, transparent), transparent 70%),
     linear-gradient(180deg, var(--bg-2), var(--bg-1));
@@ -371,27 +428,28 @@ body::before {
   text-align: left;
   color: inherit;
   font-family: inherit;
-  display: flex; flex-direction: column; gap: 16px;
+  display: flex; flex-direction: column; gap: 10px;
   transition: border-color .18s ease, transform .18s ease, background .18s ease, box-shadow .18s ease;
 }
 .tier:hover { border-color: var(--accent-line, var(--border-strong)); }
 .tier input[type="radio"] { position: absolute; opacity: 0; pointer-events: none; }
 
 .tier .tier-mark {
-  width: 36px; height: 36px; border-radius: 9px;
+  width: 32px; height: 32px; border-radius: 8px;
   background: var(--mark-bg, var(--bg-3));
   display: grid; place-items: center;
   color: var(--accent, var(--fg-2));
-  flex: 0 0 36px;
+  flex: 0 0 32px;
 }
+.tier .tier-mark svg { width: 16px; height: 16px; }
 .tier .name {
-  font-size: 24px; font-weight: 600; letter-spacing: -0.025em; line-height: 1.15;
-  margin-top: 2px;
+  font-size: 21px; font-weight: 600; letter-spacing: -0.025em; line-height: 1.15;
+  margin-top: 0;
 }
 .tier .badge {
   align-self: flex-start;
-  font-family: var(--font-mono); font-size: 10.5px; font-weight: 500;
-  padding: 3px 9px; border-radius: 999px;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+  padding: 2px 8px; border-radius: 999px;
   letter-spacing: 0.08em; text-transform: uppercase;
   border: 1px solid var(--accent-line);
   background: var(--accent-tint);
@@ -399,9 +457,11 @@ body::before {
   white-space: nowrap;
 }
 .tier .desc {
-  font-size: 14px; color: var(--fg-2); line-height: 1.5; letter-spacing: -0.005em;
-  margin-top: auto;
+  font-size: 13px; color: var(--fg-2); line-height: 1.45; letter-spacing: -0.005em;
+  margin-top: 2px;
 }
+/* select-pin removed in favor of card-as-selection-indicator */
+.tier .select-pin { display: none; }
 .tier.selected {
   border-color: var(--accent-line);
   background:
@@ -564,13 +624,8 @@ body::before {
 }
 .qrow .more:hover { background: var(--bg-3); border-color: var(--border-subtle); color: var(--fg); }
 
-/* Empty state */
-.qlist:empty::after {
-  content: "No batches yet. Drop a folder above to begin.";
-  display: block; text-align: center;
-  color: var(--fg-4); font-family: var(--font-mono); font-size: 12px;
-  padding: 36px 18px;
-}
+/* Empty queue list collapses cleanly — heading + table head still visible. */
+.qlist:empty { display: none; }
 
 .qfoot {
   display: flex; align-items: center; gap: 14px;
@@ -578,6 +633,7 @@ body::before {
   border-top: 1px solid var(--border-subtle);
   font-family: var(--font-mono); font-size: 11.5px; color: var(--fg-3);
 }
+.qfoot.hidden { display: none; }
 .qfoot .sep { color: var(--border-strong); }
 .qfoot .savings { color: var(--green); }
 .qfoot .danger  { color: var(--red); }
@@ -586,7 +642,7 @@ body::before {
    Actions
    ============================================================ */
 .actions {
-  margin-top: 18px;
+  margin-top: 14px;
   display: flex; align-items: center; justify-content: flex-end; gap: 12px;
 }
 .start-btn { height: 50px; padding: 0 24px; border-radius: 11px; font-size: 14.5px; font-weight: 600; }
