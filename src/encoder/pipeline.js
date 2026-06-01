@@ -380,12 +380,47 @@ async function runBatch(batch, controlOrFn, onProgress) {
       }
     });
 
+    /* Cancel: if the operator hit Cancel while this encode was running,
+       the encoder child was killed and runCmd returned with a non-zero
+       exit. We must NOT fall back to libx265 (that just starts a second
+       encoder for the same file). Clean tmp, emit 'cancelled', and break
+       the batch loop — no further files start. */
+    if (isCancelled()) {
+      try { await fsp.unlink(tmpPath); } catch {}
+      log(`CANCELLED ${v.file} (operator cancel — primary encoder terminated)`);
+      onProgress && onProgress({
+        type: 'file-done',
+        index: i + 1,
+        total: totalFiles,
+        reclaimed,
+        processed,
+        failed,
+        alreadyDone,
+        elapsedMs: Date.now() - startTs,
+        outcome: 'cancelled'
+      });
+      break;
+    }
+
     let success = result.code === 0 && fs.existsSync(tmpPath);
     let usedFallback = false;
 
     if (!success) {
       try { await fsp.unlink(tmpPath); } catch {}
       log(`PRIMARY-FAIL ${v.file} :: code=${result.code} :: ${stderrBuf.trim().split('\n').slice(-3).join(' | ')}`);
+
+      /* Same cancel-honoring rule before kicking off the fallback. */
+      if (isCancelled()) {
+        log(`CANCELLED ${v.file} (no fallback — cancelled during primary)`);
+        onProgress && onProgress({
+          type: 'file-done',
+          index: i + 1, total: totalFiles,
+          reclaimed, processed, failed, alreadyDone,
+          elapsedMs: Date.now() - startTs,
+          outcome: 'cancelled'
+        });
+        break;
+      }
 
       const fallbackArgs = buildFallbackArgs({ input: v.file, tmpOut: tmpPath, tier, videoStream: vs, audioStream: as });
       let stderrBuf2 = '';
@@ -405,6 +440,20 @@ async function runBatch(batch, controlOrFn, onProgress) {
           }
         }
       });
+      /* And after the fallback returns — cancel could have arrived during
+         that second encoder run. */
+      if (isCancelled()) {
+        try { await fsp.unlink(tmpPath); } catch {}
+        log(`CANCELLED ${v.file} (operator cancel — fallback encoder terminated)`);
+        onProgress && onProgress({
+          type: 'file-done',
+          index: i + 1, total: totalFiles,
+          reclaimed, processed, failed, alreadyDone,
+          elapsedMs: Date.now() - startTs,
+          outcome: 'cancelled'
+        });
+        break;
+      }
       success = r2.code === 0 && fs.existsSync(tmpPath);
       usedFallback = success;
       if (!success) {

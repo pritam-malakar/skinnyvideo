@@ -40,6 +40,7 @@ const showLogBtn = document.getElementById('show-log');
 const revealOutputBtn = document.getElementById('reveal-output');
 const dismissSummaryBtn = document.getElementById('dismiss-summary');
 const topProgress = document.getElementById('top-progress');
+const statEta = document.getElementById('stat-eta');
 const lifetimeSection = document.getElementById('lifetime-section');
 const lifetimeList = document.getElementById('lifetime-list');
 const lifetimeTotal = document.getElementById('lifetime-total');
@@ -181,6 +182,19 @@ function fmtEta(ms) {
   const h = Math.floor(m / 60);
   const rm = Math.ceil((m % 60) / 5) * 5;
   return rm === 0 ? `~${h}h left` : `~${h}h ${rm}m left`;
+}
+
+/* ETA card is shown only when there's a real estimate; hidden state lets
+   the stats grid collapse from 5 cards to 4 cleanly. */
+function showEta(text) {
+  if (!currentEtaEl || !statEta) return;
+  currentEtaEl.textContent = text;
+  statEta.classList.remove('hidden');
+}
+function hideEta() {
+  if (!currentEtaEl || !statEta) return;
+  currentEtaEl.textContent = '—';
+  statEta.classList.add('hidden');
 }
 
 /* Sum source bytes still to do across the queue — for ETA's denominator. */
@@ -881,7 +895,7 @@ startBtn.addEventListener('click', async () => {
      file finishes so we don't show a garbage estimate. */
   runStartTs = Date.now();
   runDoneBytes = 0;
-  if (currentEtaEl) currentEtaEl.textContent = '';
+  hideEta();
   resetProgressUI();
   /* C: per-file skips honored at start time. A batch with at least one
      skipped file is emitted as kind:'files' carrying only the non-skipped
@@ -947,6 +961,14 @@ window.api.onBatchStatus(({ id, status, result }) => {
     item.status = 'cancelling';
   } else if (status === 'Cancelled') {
     item.status = 'cancelled';
+    /* Any remaining queued/running files inherit 'cancelled' — they were
+       never started (we hard-stopped the batch loop), so they're NOT 'done'
+       and never count toward reclaimed/lifetime totals. */
+    for (const f of item.files) {
+      if (f.status === 'queued' || f.status === 'running') {
+        f.status = 'cancelled';
+      }
+    }
     if (result) {
       item.lastResult = result;
       item.processed = result.processed || 0;
@@ -1056,6 +1078,10 @@ window.api.onProgress((d) => {
         if (d.outcome === 'fail') {
           f.status = 'failed';
           f.outputSize = null;
+        } else if (d.outcome === 'cancelled') {
+          /* Operator-cancelled in-flight file. No output produced. */
+          f.status = 'cancelled';
+          f.outputSize = null;
         } else if (d.outcome === 'skip-exists') {
           /* Resumability: pipeline found the output already present.
              Distinct visual from operator-requested skip. */
@@ -1078,18 +1104,19 @@ window.api.onProgress((d) => {
 
     /* E: ETA based on observed throughput. Honest about timing — held back
        until at least one file has completed successfully (runDoneBytes > 0)
-       so we never show a divide-by-tiny estimate. */
-    if (runStartTs > 0 && runDoneBytes > 0 && currentEtaEl) {
+       so we never show a divide-by-tiny estimate. Lives on the headline
+       stat card now; hides itself when there's no more queue to estimate. */
+    if (runStartTs > 0 && runDoneBytes > 0) {
       const elapsed = Date.now() - runStartTs;
       if (elapsed > 0) {
         const bytesPerMs = runDoneBytes / elapsed;
         if (bytesPerMs > 0) {
           const remaining = remainingQueueBytes();
           if (remaining > 0) {
-            const etaMs = remaining / bytesPerMs;
-            currentEtaEl.textContent = fmtEta(etaMs);
+            const text = fmtEta(remaining / bytesPerMs);
+            if (text) showEta(text); else hideEta();
           } else {
-            currentEtaEl.textContent = '';
+            hideEta();
           }
         }
       }
@@ -1148,7 +1175,7 @@ window.api.onQueueFinished(({ totals, stopped }) => {
     summaryCard.classList.remove('hidden');
   }
   /* E: ETA visible only during the run. */
-  if (currentEtaEl) currentEtaEl.textContent = '';
+  hideEta();
   // P7: any further drops are "another folder" — flip the idle copy.
   if (totals.processed > 0 || totals.failed > 0 || queue.some((q) => q.status === 'done' || q.status === 'failed')) {
     hasCompletedRun = true;

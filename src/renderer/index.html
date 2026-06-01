@@ -152,13 +152,17 @@
           <div id="progress-batch" class="progress-batch"></div>
           <div id="progress-counts" class="progress-counts"></div>
         </div>
-        <div id="current-eta" class="current-eta"></div>
       </div>
       <div class="progress-bar">
         <div id="progress-fill" class="progress-fill"></div>
       </div>
       <div id="current-file" class="current-file"></div>
       <div class="progress-stats">
+        <!-- ETA promoted to a headline stat (hidden until first file completes). -->
+        <div id="stat-eta" class="stat stat-eta hidden">
+          <span class="stat-label">Time remaining</span>
+          <span id="current-eta" class="stat-value">—</span>
+        </div>
         <div class="stat">
           <span class="stat-label">Reclaimed</span>
           <span id="reclaimed" class="stat-value reclaimed-val">0 B</span>

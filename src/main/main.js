@@ -214,7 +214,17 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
       const control = {
         shouldStop: () => stopRequested,
         isCancelled: () => state.cancelled,
-        onSpawn: (child) => { state.child = child; }
+        /* If cancel fired between "begin next file" and "spawn ffmpeg",
+           the new child arrives AFTER the cancel handler already kicked.
+           Kill it on the spot so pipeline's runCmd returns immediately
+           and the next cancel check breaks out of the batch. */
+        onSpawn: (child) => {
+          state.child = child;
+          if (state.cancelled) {
+            try { child.kill('SIGTERM'); } catch {}
+            setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, 1200);
+          }
+        }
       };
 
       /* File-list batches arrive with batch.kind === 'files' and an array
@@ -373,13 +383,18 @@ ipcMain.handle('resume-batch', async (_evt, batchId) => {
 ipcMain.handle('cancel-batch', async (_evt, batchId) => {
   const state = rt(batchId);
   state.cancelled = true;
+  const child = state.child;
   // If paused, unpause first so the child can react to SIGTERM.
-  if (state.child && state.paused) {
-    try { state.child.kill('SIGCONT'); } catch {}
+  if (child && state.paused) {
+    try { child.kill('SIGCONT'); } catch {}
     state.paused = false;
   }
-  if (state.child) {
-    try { state.child.kill('SIGTERM'); } catch {}
+  if (child) {
+    try { child.kill('SIGTERM'); } catch {}
+    /* ffmpeg occasionally takes its time finishing the current frame on
+       SIGTERM; SIGKILL after 1.2s guarantees the encode dies and pipeline's
+       runCmd resolves so the cancel check can break the batch loop. */
+    setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, 1200);
   }
   sendBatchUpdate(batchId, 'Cancelling');
   return { ok: true };

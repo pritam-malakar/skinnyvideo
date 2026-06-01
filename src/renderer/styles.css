@@ -834,8 +834,9 @@ body::before {
 .qrow .status.running .pill .dot { animation: pulse 1.4s ease-in-out infinite; }
 .qrow .status.done .pill     { color: var(--green); border-color: oklch(0.78 0.140 148 / 0.4); background: oklch(0.78 0.140 148 / 0.10); }
 .qrow .status.failed .pill   { color: var(--red);  border-color: oklch(0.70 0.19 25 / 0.5); background: oklch(0.70 0.19 25 / 0.10); }
-.qrow .status.skipped .pill  { color: var(--fg-4); border-color: var(--border-subtle); background: var(--bg-1); }
-.qrow .status.existed .pill  { color: var(--fg-3); border-color: var(--border-subtle); background: var(--bg-1); }
+.qrow .status.skipped .pill   { color: var(--fg-4); border-color: var(--border-subtle); background: var(--bg-1); }
+.qrow .status.existed .pill   { color: var(--fg-3); border-color: var(--border-subtle); background: var(--bg-1); }
+.qrow .status.cancelled .pill { color: var(--amber); border-color: var(--amber-line); background: var(--amber-tint); }
 @keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
 
 /* D: per-file progress bar — mirrors the batch-level treatment, half-sized. */
@@ -849,9 +850,10 @@ body::before {
   background: var(--cyan-dim);
   transition: width .25s ease;
 }
-.qbatch-files .qrow .status.done .progressbar > i    { background: var(--green); }
-.qbatch-files .qrow .status.failed .progressbar > i  { background: var(--red); }
-.qbatch-files .qrow .status.existed .progressbar > i { background: var(--fg-4); }
+.qbatch-files .qrow .status.done .progressbar > i      { background: var(--green); }
+.qbatch-files .qrow .status.failed .progressbar > i    { background: var(--red); }
+.qbatch-files .qrow .status.existed .progressbar > i   { background: var(--fg-4); }
+.qbatch-files .qrow .status.cancelled .progressbar > i { background: var(--amber); }
 
 /* Skipped row: dim everything so it visually fades from the active list. */
 .qbatch-files .qrow.status-skipped {
@@ -860,6 +862,11 @@ body::before {
 .qbatch-files .qrow.status-skipped .file .name {
   text-decoration: line-through;
   text-decoration-color: var(--fg-4);
+}
+/* Cancelled row: dimmer than running but legible — terminal but distinct
+   from skip (operator-cancelled vs operator-skipped pre-run). */
+.qbatch-files .qrow.status-cancelled {
+  opacity: 0.7;
 }
 
 /* C: trailing skip control — discoverable on hover, no clutter when idle. */
@@ -924,7 +931,7 @@ body::before {
 .progress-meta { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .progress-batch { font-size: 13px; font-weight: 500; color: var(--fg); letter-spacing: -0.01em; }
 .progress-counts { font-size: 11.5px; color: var(--fg-3); font-family: var(--font-mono); }
-.current-eta { font-size: 11.5px; color: var(--fg-2); font-family: var(--font-mono); white-space: nowrap; }
+/* (current-eta was a header caption — now lives as the ETA stat card.) */
 
 .progress-bar {
   position: relative; height: 8px;
@@ -958,7 +965,12 @@ body::before {
 }
 
 .progress-stats {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr 1fr 1fr;  /* ETA card slightly wider */
+  gap: 10px;
+}
+.progress-stats:has(#stat-eta.hidden) {
+  grid-template-columns: repeat(4, 1fr);          /* shrink cleanly when ETA hidden */
 }
 .stat {
   background: var(--bg-0);
@@ -967,6 +979,7 @@ body::before {
   padding: 12px 14px;
   display: flex; flex-direction: column; gap: 5px;
 }
+.stat.hidden { display: none; }
 .stat-label {
   font-size: 10px; font-weight: 500;
   text-transform: uppercase; letter-spacing: 0.10em;
@@ -977,6 +990,28 @@ body::before {
   letter-spacing: -0.02em; color: var(--fg);
 }
 .reclaimed-val { color: var(--green); }
+
+/* ETA = headline stat. Bigger value, cyan to read as "active run signal"
+   (cyan is the brand active-state color; green stays reserved for success).
+   Label upsized + brightened so it doesn't read as a caption. */
+.stat-eta {
+  background: linear-gradient(180deg, var(--bg-1), var(--bg-0));
+  border-color: var(--cyan-line);
+  box-shadow:
+    inset 0 1px 0 oklch(0.76 0.115 215 / 0.20),
+    0 6px 22px -12px var(--cyan-line);
+}
+.stat-eta .stat-label {
+  color: var(--cyan);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+}
+.stat-eta .stat-value {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--fg);
+  letter-spacing: -0.025em;
+}
 #stat-failed.has-failures { color: var(--red); }
 
 /* ============================================================
