@@ -276,6 +276,40 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
         }
       }
 
+      /* Flatten the source-name wrapper folder.
+         Pipeline mirrors the source structure under runDir, which for a
+         single dropped folder named e.g. "Squeeze" puts output at
+         <runDir>/Squeeze/... — a redundant level beneath Compressed_X/.
+         For file-list batches the wrapper is "Selected files (<id>)".
+         We move the wrapper's contents up to runDir and remove the empty
+         wrapper, so files sit directly under Compressed_X/. Any internal
+         nested structure of the source is preserved (we only lift the
+         outer name, not deeper folders). */
+      if (!isDry && result && result.runDir && fs.existsSync(result.runDir)) {
+        let wrapperName = null;
+        if (wrappedBatch.kind === 'files') {
+          wrapperName = `Selected files (${batch.id})`;
+        } else if (batch.src) {
+          wrapperName = path.basename(batch.src);
+        }
+        if (wrapperName) {
+          const wrapperDir = path.join(result.runDir, wrapperName);
+          try {
+            const ws = await fsp.stat(wrapperDir);
+            if (ws.isDirectory()) {
+              for (const entry of await fsp.readdir(wrapperDir)) {
+                const from = path.join(wrapperDir, entry);
+                const to = path.join(result.runDir, entry);
+                // Don't clobber a sibling at runDir level (e.g. _FAILED).
+                if (fs.existsSync(to)) continue;
+                try { await fsp.rename(from, to); } catch { /* skip */ }
+              }
+              try { await fsp.rmdir(wrapperDir); } catch { /* not empty / not removable */ }
+            }
+          } catch { /* wrapper absent — nothing to lift */ }
+        }
+      }
+
       totals.processed += result.processed || 0;
       totals.failed += result.failed || 0;
       totals.skippedNonVideo += result.skippedNonVideo || 0;
