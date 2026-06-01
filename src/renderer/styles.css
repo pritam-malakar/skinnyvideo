@@ -207,6 +207,7 @@ body::before {
   background: linear-gradient(180deg, oklch(0.215 0.022 215), oklch(0.180 0.014 215));
 }
 .dz-inner { display: flex; align-items: center; gap: 22px; position: relative; }
+/* Drop-zone icon doubles as a click-to-browse button. */
 .dz-icon {
   width: 58px; height: 58px; flex: 0 0 58px;
   border-radius: 12px;
@@ -215,8 +216,29 @@ body::before {
   box-shadow: inset 0 1px 0 var(--raise);
   display: grid; place-items: center;
   color: var(--fg-2);
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, transform .12s ease;
 }
+.dz-icon:hover {
+  background: linear-gradient(180deg, var(--bg-hover), var(--bg-3));
+  border-color: var(--cyan-line);
+  color: var(--cyan);
+}
+.dz-icon:active { transform: scale(0.96); }
 .dz-icon svg { width: 22px !important; height: 22px !important; }
+
+.dz-sub {
+  margin-top: 6px;
+  font-family: var(--font-mono); font-size: 11.5px;
+  color: var(--fg-3);
+}
+.linkish {
+  background: none; border: 0; padding: 0;
+  font: inherit; color: var(--cyan); cursor: pointer;
+  text-decoration: underline; text-decoration-color: var(--cyan-line);
+  text-underline-offset: 2px;
+}
+.linkish:hover { color: var(--cyan-2, var(--cyan)); text-decoration-color: var(--cyan); }
 .dz-text { flex: 1; min-width: 0; }
 .dz-title { font-size: 24px; font-weight: 600; letter-spacing: -0.028em; line-height: 1.1; color: var(--fg); }
 .dz-title em { color: var(--cyan); font-style: normal; font-weight: 600; }
@@ -267,12 +289,98 @@ body::before {
 /* ============================================================
    Options row
    ============================================================ */
-.options-row {
-  margin-top: 12px;
+.output-row { margin-top: 12px; }
+.output-row .dest-picker { width: 100%; }
+
+/* ─── Safety bar: highest-consequence control, its own row ─── */
+.safety-bar {
+  margin-top: 10px;
   display: grid;
-  grid-template-columns: 1fr auto auto;
-  gap: 10px;
-  align-items: stretch;
+  grid-template-columns: 40px 1fr auto;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 14px;
+  background: linear-gradient(180deg, var(--bg-2), var(--bg-1));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: inset 0 1px 0 var(--raise-soft);
+  position: relative;
+  overflow: hidden;
+  transition: background .18s ease, border-color .18s ease;
+}
+.safety-bar[data-mode="preview"] {
+  background:
+    linear-gradient(180deg, oklch(0.265 0.040 78 / 0.55), oklch(0.215 0.028 78 / 0.55)),
+    linear-gradient(180deg, var(--bg-2), var(--bg-1));
+  border-color: var(--amber-line);
+}
+.safety-bar[data-mode="preview"]::before {
+  content: '';
+  position: absolute; inset: 0;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent 0,
+    transparent 10px,
+    oklch(0.80 0.110 78 / 0.05) 10px,
+    oklch(0.80 0.110 78 / 0.05) 11px
+  );
+}
+.safety-bar > * { position: relative; z-index: 1; }
+.safety-icon {
+  width: 36px; height: 36px;
+  border-radius: 9px;
+  background: var(--bg-3);
+  border: 1px solid var(--border-subtle);
+  display: grid; place-items: center;
+  color: var(--fg-2);
+  box-shadow: inset 0 1px 0 var(--raise-soft);
+}
+.safety-bar[data-mode="preview"] .safety-icon {
+  background: var(--amber-tint);
+  border-color: var(--amber-line);
+  color: var(--amber);
+}
+.safety-icon svg { width: 18px; height: 18px; }
+.safety-svg { display: none; }
+.safety-bar[data-mode="write"] .write-svg { display: block; }
+.safety-bar[data-mode="preview"] .preview-svg { display: block; }
+
+.safety-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.safety-mode {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  color: var(--fg);
+}
+.safety-bar[data-mode="preview"] .safety-mode { color: var(--amber); }
+.safety-sub {
+  font-size: 12.5px;
+  color: var(--fg-2);     /* AA-compliant body on the bar surface */
+  letter-spacing: -0.005em;
+}
+.safety-bar[data-mode="preview"] .safety-sub { color: oklch(0.85 0.045 78); }
+
+.safety-toggle {
+  display: inline-flex; align-items: center; gap: 10px;
+  height: 34px; padding: 0 12px;
+  background: var(--bg-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+  cursor: pointer; user-select: none;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--fg-2);
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.safety-toggle:hover { background: var(--bg-hover); color: var(--fg); }
+.safety-toggle[aria-pressed="true"] {
+  background: var(--amber-tint);
+  border-color: var(--amber-line);
+  color: var(--amber);
 }
 .dest-picker {
   display: flex; align-items: center; gap: 12px;
@@ -288,7 +396,8 @@ body::before {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
   flex: 1;
 }
-.dest-picker .path.placeholder { color: var(--fg-4); font-family: var(--font-sans); }
+/* P8: placeholder bumped from fg-4 (~2.3:1) to fg-2 (~8.5:1) for AA body. */
+.dest-picker .path.placeholder { color: var(--fg-2); font-family: var(--font-sans); }
 .dest-picker .change {
   margin-left: auto;
   font-family: var(--font-sans);
@@ -306,33 +415,23 @@ body::before {
 .dest-picker .change:hover:not(:disabled) { background: var(--cyan-tint-strong); color: var(--fg); }
 .dest-picker .change:disabled { opacity: 0.45; cursor: not-allowed; }
 
-/* Toggle button (Preview only) */
-.toggle {
-  display: inline-flex; align-items: center; gap: 10px;
-  height: 46px; padding: 0 14px;
-  background: linear-gradient(180deg, var(--bg-2), var(--bg-1));
-  border: 1px solid var(--border); border-radius: 10px;
-  box-shadow: inset 0 1px 0 var(--raise-soft);
-  cursor: pointer; user-select: none;
-  font-size: 13px; color: var(--fg-2);
-  font-family: var(--font-sans);
-}
-.toggle .sw {
+/* ─── Generalized switch (used by safety bar) ─── */
+.sw {
   width: 30px; height: 18px; border-radius: 9px;
   background: var(--bg-3); border: 1px solid var(--border);
   position: relative; transition: background .18s ease, border-color .18s ease;
   box-shadow: inset 0 1px 1px oklch(0 0 0 / 0.4);
   flex-shrink: 0;
+  display: inline-block;
 }
-.toggle .sw::after {
+.sw::after {
   content: ""; position: absolute; top: 1px; left: 1px;
   width: 14px; height: 14px; border-radius: 50%;
-  background: var(--fg-3);
+  background: var(--fg-2);
   transition: transform .18s ease, background .18s ease, box-shadow .18s ease;
 }
-.toggle[aria-pressed="true"] .sw { background: var(--cyan-tint-strong); border-color: var(--cyan-line); }
-.toggle[aria-pressed="true"] .sw::after { transform: translateX(12px); background: var(--cyan); box-shadow: 0 0 8px var(--cyan-dim); }
-.toggle .hint { color: var(--fg-4); font-family: var(--font-mono); font-size: 11px; margin-left: 4px; }
+[aria-pressed="true"] .sw { background: oklch(0.80 0.110 78 / 0.30); border-color: var(--amber-line); }
+[aria-pressed="true"] .sw::after { transform: translateX(12px); background: var(--amber); box-shadow: 0 0 8px var(--amber-dim); }
 
 /* Buttons */
 .btn {
@@ -347,18 +446,29 @@ body::before {
   white-space: nowrap;
 }
 .btn:hover:not(:disabled) { background: linear-gradient(180deg, var(--bg-hover), var(--bg-3)); }
-.btn.primary {
-  background: linear-gradient(180deg, var(--green), var(--green-dim));
-  border-color: oklch(0.50 0.090 148);
-  color: oklch(0.16 0.020 148);
+
+/* Brand CTA — confident cyan, the app's primary action treatment.
+   Green is reserved exclusively for success indicators (DONE chip,
+   reclaimed total, summary badge), so "go" and "done" no longer
+   collide on color. */
+.btn.cta {
+  background: linear-gradient(180deg, var(--cyan) 0%, var(--cyan-dim) 100%);
+  border-color: oklch(0.55 0.110 215);
+  color: oklch(0.16 0.025 215);
   font-weight: 600;
   box-shadow:
-    inset 0 1px 0 oklch(1 0 0 / 0.30),
+    inset 0 1px 0 oklch(1 0 0 / 0.32),
     0 1px 0 oklch(0 0 0 / 0.5),
-    0 0 0 1px oklch(0.76 0.095 148 / 0.18),
-    0 6px 22px -12px oklch(0.76 0.095 148 / 0.55);
+    0 0 0 1px var(--cyan-line),
+    0 6px 22px -12px var(--cyan-line);
 }
-.btn.primary:hover:not(:disabled) { filter: brightness(1.06); }
+.btn.cta:hover:not(:disabled) { filter: brightness(1.06); }
+.btn.cta:disabled {
+  background: linear-gradient(180deg, var(--bg-3), var(--bg-2));
+  border-color: var(--border);
+  color: var(--fg-3);
+  box-shadow: inset 0 1px 0 var(--raise), 0 1px 0 oklch(0 0 0 / 0.4);
+}
 /* Ivory = quiet secondary action: keeps the cream identity but tones down
    weight, brightness and shadow so the green Start CTA dominates. */
 .btn.ivory {
@@ -381,14 +491,6 @@ body::before {
   box-shadow: inset 0 1px 0 var(--raise), 0 1px 0 oklch(0 0 0 / 0.4);
 }
 .btn.ghost { background: transparent; }
-.btn .kbd {
-  font-family: var(--font-mono); font-size: 11px;
-  padding: 1px 6px; border-radius: 4px;
-  background: oklch(0 0 0 / 0.25); color: oklch(0.14 0.02 248 / 0.8);
-  margin-left: 4px;
-}
-.btn:not(.primary) .kbd { background: var(--bg-1); color: var(--fg-3); border: 1px solid var(--border-subtle); }
-.btn.primary .kbd { background: oklch(0 0 0 / 0.22); color: oklch(0.16 0.020 148 / 0.85); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ============================================================
@@ -411,6 +513,14 @@ body::before {
   gap: 12px;
   max-width: 720px;   /* constrain so right-side empty space is intentional */
 }
+
+/* Add-to-queue commits the staging batch with its frozen tier. */
+.staging-add {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+}
+.staging-add .btn.ivory { min-width: 160px; }
 .tier {
   position: relative;
   padding: 20px 22px 18px;
@@ -521,65 +631,86 @@ body::before {
   box-shadow: inset 0 1px 0 var(--raise-soft), 0 1px 0 oklch(0 0 0 / 0.4);
   overflow: hidden;
 }
-.qhead, .qrow {
-  display: grid;
-  grid-template-columns: 28px 1.9fr 0.7fr 0.9fr 1.5fr 0.7fr 32px;
-  align-items: center;
-  gap: 14px;
-  padding: 13px 18px;
-}
-.qhead {
-  font-size: 10.5px;
-  color: var(--fg-4); text-transform: uppercase; letter-spacing: 0.1em;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-1);
-}
 .qlist { list-style: none; margin: 0; padding: 0; }
-.qrow {
+
+/* ─── BATCH GROUP (top level) ─── */
+.qbatch {
   border-bottom: 1px solid var(--border-subtle);
-  font-size: 13px; color: var(--fg-2);
   transition: background .15s ease;
 }
-.qlist .qrow:last-child { border-bottom: 0; }
-.qrow:hover { background: oklch(0.21 0.009 248); }
-.qrow[draggable="true"] { cursor: grab; }
-.qrow.dragging { opacity: 0.4; cursor: grabbing; }
+.qbatch:last-child { border-bottom: 0; }
+.qbatch[draggable="true"] .qbatch-head { cursor: grab; }
+.qbatch.dragging { opacity: 0.4; }
 
-.qrow .file { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.qrow .file .glyph {
-  width: 26px; height: 26px; border-radius: 6px; flex: 0 0 26px;
-  background: var(--bg-3); border: 1px solid var(--border-subtle);
-  display: grid; place-items: center; color: var(--fg-3);
-  box-shadow: inset 0 1px 0 var(--raise-soft);
+.qbatch-head {
+  display: grid;
+  grid-template-columns: 1.6fr auto auto 28px;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+  background: linear-gradient(180deg, var(--bg-2), var(--bg-1));
 }
-.qrow .file .meta { min-width: 0; }
-.qrow .file .name {
-  color: var(--fg); font-weight: 500; font-size: 13.5px;
+.qbatch-info {
+  display: flex; align-items: center; gap: 12px; min-width: 0;
+}
+.qbatch-seq {
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--fg-3);
+  width: 22px; text-align: right;
+  font-weight: 500;
+}
+.qbatch-text { min-width: 0; }
+.qbatch-name {
+  color: var(--fg); font-weight: 600; font-size: 14.5px;
+  letter-spacing: -0.012em;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.qrow .mono { font-family: var(--font-mono); font-size: 12px; color: var(--fg-2); }
-.qrow .mono.muted { color: var(--fg-4); }
-.qrow .mono.green { color: var(--green); }
-.qrow .mono.red   { color: var(--red); }
-
-.qrow .tierchip {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-family: var(--font-mono); font-size: 11px;
-  padding: 3px 8px; border-radius: 5px;
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-1); color: var(--fg-2);
+.qbatch-meta {
+  margin-top: 2px;
+  font-family: var(--font-mono); font-size: 11.5px;
+  color: var(--fg-2);
+  letter-spacing: 0;
 }
-.qrow .tierchip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--fg-3); }
-.qrow .tierchip.regular  .dot { background: var(--cyan); }
-.qrow .tierchip.archival .dot { background: var(--violet); }
-.qrow .tierchip.lossy    .dot { background: var(--amber); }
 
-.qrow .seq {
-  font-family: var(--font-mono); font-size: 11px; color: var(--fg-4);
-  text-align: right;
+/* Inline tier toggle — two pills, click the inactive to switch */
+.qbatch-tier {
+  display: inline-flex; gap: 6px;
 }
-.qrow .status { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.qrow .status .pill {
+.qbatch-tier .tierchip {
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, opacity .15s ease;
+}
+.qbatch-tier .tierchip.inactive {
+  background: var(--bg-1);
+  border-color: var(--border-subtle);
+  color: var(--fg-3);
+  opacity: 0.7;
+}
+.qbatch-tier .tierchip.inactive .dot { background: var(--fg-4); box-shadow: none; }
+.qbatch-tier .tierchip.inactive:hover {
+  opacity: 1;
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+.qbatch-tier .tierchip.selected {
+  cursor: default;
+}
+/* For non-queued batches we render a plain single chip — no hover/click. */
+.qbatch.status-running .qbatch-tier .tierchip,
+.qbatch.status-paused .qbatch-tier .tierchip,
+.qbatch.status-done .qbatch-tier .tierchip,
+.qbatch.status-failed .qbatch-tier .tierchip,
+.qbatch.status-cancelled .qbatch-tier .tierchip,
+.qbatch.status-cancelling .qbatch-tier .tierchip {
+  cursor: default;
+}
+
+/* Batch-level status pill + progress bar */
+.qbatch-status {
+  display: flex; align-items: center; gap: 10px;
+  min-width: 220px;
+}
+.qbatch-status .pill {
   font-family: var(--font-mono); font-size: 10.5px;
   padding: 3px 9px; border-radius: 999px;
   letter-spacing: 0.08em; text-transform: uppercase;
@@ -587,44 +718,113 @@ body::before {
   white-space: nowrap;
   display: inline-flex; align-items: center; gap: 6px;
 }
-.qrow .status .pill .dot {
-  width: 6px; height: 6px; border-radius: 50%; background: currentColor;
-  opacity: 0.85;
+.qbatch-status .pill .dot {
+  width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: 0.85;
 }
-.qrow .status.queued .pill   { color: var(--fg-3); }
-.qrow .status.running .pill  { color: var(--cyan); border-color: var(--cyan-line); background: var(--cyan-tint); }
-.qrow .status.running .pill .dot { animation: pulse 1.4s ease-in-out infinite; }
-@keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
-.qrow .status.done .pill      { color: var(--green); border-color: oklch(0.78 0.140 148 / 0.4); background: oklch(0.78 0.140 148 / 0.10); }
-.qrow .status.failed .pill    { color: var(--red);   border-color: oklch(0.70 0.19 25 / 0.5); background: oklch(0.70 0.19 25 / 0.10); }
-.qrow .status.paused .pill    { color: var(--amber); border-color: oklch(0.80 0.110 78 / 0.4); background: oklch(0.80 0.110 78 / 0.10); }
-.qrow .status.cancelled .pill { color: var(--fg-4); border-color: var(--border-subtle); background: var(--bg-1); }
-.qrow .status.cancelling .pill { color: var(--amber); border-color: oklch(0.80 0.110 78 / 0.4); background: oklch(0.80 0.110 78 / 0.10); }
-
-.qrow .progressbar {
+.qbatch-status.queued .pill   { color: var(--fg-3); }
+.qbatch-status.running .pill  { color: var(--cyan); border-color: var(--cyan-line); background: var(--cyan-tint); }
+.qbatch-status.running .pill .dot { animation: pulse 1.4s ease-in-out infinite; }
+.qbatch-status.paused .pill   { color: var(--amber); border-color: oklch(0.80 0.110 78 / 0.4); background: oklch(0.80 0.110 78 / 0.10); }
+.qbatch-status.done .pill     { color: var(--green); border-color: oklch(0.78 0.140 148 / 0.4); background: oklch(0.78 0.140 148 / 0.10); }
+.qbatch-status.failed .pill   { color: var(--red); border-color: oklch(0.70 0.19 25 / 0.5); background: oklch(0.70 0.19 25 / 0.10); }
+.qbatch-status.cancelled .pill { color: var(--fg-3); border-color: var(--border-subtle); background: var(--bg-1); }
+.qbatch-status.cancelling .pill { color: var(--amber); border-color: oklch(0.80 0.110 78 / 0.4); background: oklch(0.80 0.110 78 / 0.10); }
+.qbatch-status .progressbar {
   flex: 1; height: 4px; border-radius: 2px;
-  background: var(--bg-3); overflow: hidden; min-width: 0;
+  background: var(--bg-3); overflow: hidden; min-width: 80px;
   border: 1px solid var(--border-subtle);
 }
-.qrow .progressbar > i {
+.qbatch-status .progressbar > i {
   display: block; height: 100%;
   background: var(--cyan-dim);
   transition: width .35s ease;
 }
-.qrow .status.done .progressbar > i      { background: var(--green); }
-.qrow .status.failed .progressbar > i    { background: var(--red); }
-.qrow .status.paused .progressbar > i    { background: var(--amber); }
-.qrow .status.cancelled .progressbar > i { background: var(--fg-4); }
-.qrow .status.cancelling .progressbar > i{ background: var(--amber); }
+.qbatch-status.done .progressbar > i      { background: var(--green); }
+.qbatch-status.failed .progressbar > i    { background: var(--red); }
+.qbatch-status.paused .progressbar > i    { background: var(--amber); }
+.qbatch-status.cancelled .progressbar > i { background: var(--fg-4); }
+.qbatch-status.cancelling .progressbar > i{ background: var(--amber); }
 
-.qrow .more {
-  width: 28px; height: 28px; border-radius: 6px; border: 1px solid transparent;
-  background: transparent; color: var(--fg-3); cursor: pointer;
+.qbatch-actions { display: flex; justify-content: flex-end; }
+.qbatch-remove {
+  width: 28px; height: 28px;
+  border-radius: 7px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--fg-3);
+  cursor: pointer;
   display: grid; place-items: center;
+  transition: color .15s ease, background .15s ease, border-color .15s ease;
 }
-.qrow .more:hover { background: var(--bg-3); border-color: var(--border-subtle); color: var(--fg); }
+.qbatch-remove:hover {
+  color: var(--fg);
+  background: var(--bg-3);
+  border-color: var(--border-subtle);
+}
+.qbatch[draggable="true"] .qbatch-remove:hover {
+  color: var(--red);
+  background: oklch(0.70 0.19 25 / 0.10);
+  border-color: oklch(0.70 0.19 25 / 0.45);
+}
 
-/* Empty queue list collapses cleanly — heading + table head still visible. */
+/* ─── NESTED FILE ROWS ─── */
+.qbatch-files {
+  list-style: none; margin: 0; padding: 0;
+  background: var(--bg-0);
+}
+.qbatch-files .qrow {
+  display: grid;
+  grid-template-columns: 24px 1.8fr 0.7fr 1.2fr 0.7fr;
+  align-items: center;
+  gap: 14px;
+  padding: 9px 18px 9px 28px;
+  border-top: 1px solid oklch(0.22 0.009 248);
+  font-size: 12.5px; color: var(--fg-2);
+  transition: background .12s ease;
+}
+.qbatch-files .qrow:first-child { border-top: 1px solid var(--border-subtle); }
+.qbatch-files .qrow:hover { background: oklch(0.17 0.008 248); }
+.qrow .seq {
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--fg-4);
+  text-align: right;
+}
+.qrow .file { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.qrow .file .glyph {
+  width: 22px; height: 22px; border-radius: 5px; flex: 0 0 22px;
+  background: var(--bg-3); border: 1px solid var(--border-subtle);
+  display: grid; place-items: center; color: var(--fg-3);
+}
+.qrow .file .meta { min-width: 0; }
+.qrow .file .name {
+  color: var(--fg); font-weight: 500; font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.qrow .mono { font-family: var(--font-mono); font-size: 11.5px; color: var(--fg-2); }
+.qrow .mono.muted { color: var(--fg-4); }
+.qrow .mono.green { color: var(--green); }
+.qrow .mono.red   { color: var(--red); }
+
+.qrow .status { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.qrow .status .pill {
+  font-family: var(--font-mono); font-size: 10px;
+  padding: 2px 8px; border-radius: 999px;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  border: 1px solid var(--border-subtle); background: var(--bg-1); color: var(--fg-3);
+  white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.qrow .status .pill .dot {
+  width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: 0.85;
+}
+.qrow .status.queued .pill   { color: var(--fg-3); }
+.qrow .status.running .pill  { color: var(--cyan); border-color: var(--cyan-line); background: var(--cyan-tint); }
+.qrow .status.running .pill .dot { animation: pulse 1.4s ease-in-out infinite; }
+.qrow .status.done .pill     { color: var(--green); border-color: oklch(0.78 0.140 148 / 0.4); background: oklch(0.78 0.140 148 / 0.10); }
+.qrow .status.failed .pill   { color: var(--red);  border-color: oklch(0.70 0.19 25 / 0.5); background: oklch(0.70 0.19 25 / 0.10); }
+.qrow .status.skipped .pill  { color: var(--fg-3); border-color: var(--border-subtle); background: var(--bg-1); }
+@keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
+
+/* Empty queue list collapses cleanly. */
 .qlist:empty { display: none; }
 
 .qfoot {

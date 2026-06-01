@@ -28,13 +28,14 @@
     <!-- dropzone -->
     <div id="dropzone" class="dropzone">
       <div class="dz-inner">
-        <div class="dz-icon">
+        <button id="dz-browse" class="dz-icon" type="button" aria-label="Browse for a source folder" title="Browse for a source folder">
           <svg class="icon" style="width:28px;height:28px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" />
           </svg>
-        </div>
+        </button>
         <div class="dz-text">
-          <div class="dz-title">Drop a <em>folder</em> to begin</div>
+          <div class="dz-title" id="dz-title">Drop a <em>folder</em> to begin</div>
+          <div class="dz-sub">or <button type="button" id="dz-browse-text" class="linkish">click to browse</button></div>
         </div>
       </div>
       <div id="drop-status" class="dz-loaded hidden">
@@ -56,29 +57,41 @@
       </div>
     </div>
 
-    <!-- options row -->
-    <div class="options-row">
+    <!-- Output destination — sticky for next drop, snapshotted into each batch -->
+    <div class="output-row">
       <div class="dest-picker">
         <span class="label">Output</span>
         <span class="path placeholder" id="dest-path">Choose a folder — a run subfolder is created automatically</span>
-        <button id="choose-dest" class="change" disabled>Change…</button>
+        <button id="choose-dest" class="change" type="button">Change…</button>
       </div>
+    </div>
 
-      <button id="dry-run" class="toggle" type="button" aria-pressed="false">
+    <!-- Safety banner: the highest-consequence control gets its own row. -->
+    <div class="safety-bar" id="safety-bar" data-mode="write">
+      <div class="safety-icon">
+        <svg class="safety-svg write-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+          <path d="M17 21v-8H7v8M7 3v5h8"/>
+        </svg>
+        <svg class="safety-svg preview-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      </div>
+      <div class="safety-text">
+        <div class="safety-mode" id="safety-mode">Writes files</div>
+        <div class="safety-sub" id="safety-sub">Encoded videos will be saved to the output folder</div>
+      </div>
+      <button id="dry-run" class="safety-toggle" type="button" aria-pressed="false" aria-label="Toggle preview-only mode">
+        <span class="safety-toggle-label">Preview only</span>
         <span class="sw"></span>
-        <span>Preview only</span>
-        <span class="hint" id="dry-run-hint">writes files</span>
-      </button>
-
-      <button id="add-to-queue" class="btn ivory" disabled>
-        Add to queue
       </button>
     </div>
 
-    <!-- tiers -->
+    <!-- Staging tier: applies to the batch currently being composed. -->
     <div class="section-head">
       <h2>Quality tier</h2>
-      <span class="hint" id="tier-hint">Applies to all files in this batch</span>
+      <span class="hint" id="tier-hint">Applies to this batch only — change before adding</span>
     </div>
     <div class="tiers">
       <label class="tier regular selected" data-tier="regular">
@@ -107,28 +120,25 @@
       </label>
     </div>
 
+    <!-- Commits the staging batch with frozen tier. -->
+    <div class="staging-add">
+      <button id="add-to-queue" class="btn ivory" type="button" disabled>
+        Add to queue
+      </button>
+    </div>
+
     <!-- queue -->
     <div class="section-head">
       <h2 id="queue-heading">Queue · 0</h2>
       <span class="hint" id="queue-count">0 done · 0 running · 0 waiting · 0 failed</span>
     </div>
     <div class="queue" id="queue-wrap">
-      <div class="qhead">
-        <div>#</div>
-        <div>File</div>
-        <div>Source size</div>
-        <div>Tier</div>
-        <div>Status</div>
-        <div style="text-align:right;">Output</div>
-        <div></div>
-      </div>
+      <!-- Each child of #queue is a .qbatch — batch header + nested file rows. -->
       <ul id="queue" class="qlist"></ul>
       <div class="qfoot" id="qfoot">
-        <span>Source · <span id="qfoot-source" style="color:var(--fg-2);">—</span></span>
-        <span class="sep">│</span>
-        <span>Reclaimed · <span id="qfoot-reclaimed" class="savings">—</span></span>
-        <span class="sep">│</span>
-        <span id="qfoot-failed">no failures</span>
+        <span class="qfoot-seg">Source · <span id="qfoot-source" style="color:var(--fg-2);">—</span></span>
+        <span class="qfoot-seg" id="qfoot-reclaimed-wrap"><span class="sep">│</span> Reclaimed · <span id="qfoot-reclaimed" class="savings">—</span></span>
+        <span class="qfoot-seg" id="qfoot-failed-wrap"><span class="sep">│</span> <span id="qfoot-failed"></span></span>
       </div>
     </div>
 
@@ -168,7 +178,7 @@
     <!-- bottom action -->
     <div class="actions">
       <button id="stop" class="btn ghost hidden">Stop after current file</button>
-      <button id="start" class="btn primary start-btn" disabled>
+      <button id="start" class="btn cta start-btn" disabled>
         <svg class="icon" viewBox="0 0 24 24" fill="currentColor" style="width:14px;height:14px;">
           <path d="M7 4v16l13-8L7 4Z"/>
         </svg>

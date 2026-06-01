@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('api', {
   pauseBatch: (id) => ipcRenderer.invoke('pause-batch', id),
   resumeBatch: (id) => ipcRenderer.invoke('resume-batch', id),
   cancelBatch: (id) => ipcRenderer.invoke('cancel-batch', id),
+  browseSource: (suggestedFallback) => ipcRenderer.invoke('browse-source', suggestedFallback),
+  saveLastSrc: (p) => ipcRenderer.invoke('save-last-src', p),
   openPath: (p) => ipcRenderer.invoke('open-path', p),
   revealPath: (p) => ipcRenderer.invoke('reveal-path', p),
   onProgress: (cb) => ipcRenderer.on('progress', (_e, d) => cb(d)),

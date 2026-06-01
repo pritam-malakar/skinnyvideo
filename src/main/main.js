@@ -7,6 +7,23 @@ let mainWindow = null;
 let stopRequested = false;
 let queueRunning = false;
 
+// ----- Lightweight per-user preferences (no external dep) -------------------
+// Persists the last-used source folder so the browse picker defaults there.
+function prefsPath() {
+  return path.join(app.getPath('userData'), 'prefs.json');
+}
+let prefs = {};
+function loadPrefs() {
+  try { prefs = JSON.parse(fs.readFileSync(prefsPath(), 'utf8')); }
+  catch { prefs = {}; }
+}
+function savePrefs() {
+  try {
+    fs.mkdirSync(path.dirname(prefsPath()), { recursive: true });
+    fs.writeFileSync(prefsPath(), JSON.stringify(prefs, null, 2));
+  } catch (e) { /* non-fatal */ }
+}
+
 // Per-batch runtime state for row-level Pause / Resume / Stop.
 // Only one batch runs at a time, but keeping it keyed by id lets renderer
 // dispatch actions targeted at a specific row without ambiguity.
@@ -38,6 +55,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  loadPrefs();
   const bins = getBinaries();
   if (!fs.existsSync(bins.ffmpeg) || !fs.existsSync(bins.ffprobe)) {
     dialog.showErrorBox(
@@ -173,6 +191,33 @@ ipcMain.handle('cancel-batch', async (_evt, batchId) => {
   }
   sendBatchUpdate(batchId, 'Cancelling');
   return { ok: true };
+});
+
+/* Click-to-browse source folder.
+   Default-path priority: persisted lastSrc → renderer-suggested fallback
+   (typically the current output's parent) → user's home. Selected path is
+   persisted so subsequent opens (and drops) land in a useful place. */
+ipcMain.handle('browse-source', async (_evt, suggestedFallback) => {
+  const opts = { properties: ['openDirectory', 'createDirectory'] };
+  if (prefs.lastSrc && fs.existsSync(prefs.lastSrc)) {
+    opts.defaultPath = prefs.lastSrc;
+  } else if (suggestedFallback && fs.existsSync(suggestedFallback)) {
+    opts.defaultPath = suggestedFallback;
+  } else {
+    opts.defaultPath = app.getPath('home');
+  }
+  const r = await dialog.showOpenDialog(mainWindow, opts);
+  if (r.canceled || !r.filePaths.length) return null;
+  prefs.lastSrc = r.filePaths[0];
+  savePrefs();
+  return r.filePaths[0];
+});
+
+ipcMain.handle('save-last-src', async (_evt, p) => {
+  if (typeof p === 'string' && p.length > 0) {
+    prefs.lastSrc = p;
+    savePrefs();
+  }
 });
 
 ipcMain.handle('open-path', async (_evt, p) => {

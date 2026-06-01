@@ -7,7 +7,12 @@ const destPathEl = document.getElementById('dest-path');
 const chooseDestBtn = document.getElementById('choose-dest');
 const tierInputs = document.querySelectorAll('input[name="tier"]');
 const dryRunBtn = document.getElementById('dry-run');
-const dryRunHint = document.getElementById('dry-run-hint');
+const safetyBar = document.getElementById('safety-bar');
+const safetyModeEl = document.getElementById('safety-mode');
+const safetySubEl = document.getElementById('safety-sub');
+const dzTitle = document.getElementById('dz-title');
+const dzBrowseBtn = document.getElementById('dz-browse');
+const dzBrowseTextBtn = document.getElementById('dz-browse-text');
 const addBtn = document.getElementById('add-to-queue');
 const queueEl = document.getElementById('queue');
 const queueCountEl = document.getElementById('queue-count');
@@ -41,6 +46,9 @@ const DEST_PLACEHOLDER = 'Choose a folder — a run subfolder is created automat
 const TIER_CSS = { regular: 'regular', preserve: 'archival' };
 const TIER_LABEL = { regular: 'Who Cares…', preserve: 'Probably Need It Later' };
 
+/* Staging area = the batch currently being composed. Tier and dryRun are
+   sticky on the UI controls; on Add they get FROZEN into the batch and the
+   tier UI resets to the default (RECOMMENDED / "Who Cares…"). */
 let current = {
   src: null,
   srcName: null,
@@ -48,14 +56,17 @@ let current = {
   ignoredCount: 0,
   totalSize: 0,
   scanned: false,
-  dest: null
+  dest: null,
+  files: []        // [{path, name, size}] — frozen into the batch on Add
 };
-let queue = [];
+let queue = [];           // ordered list of batches
 let nextId = 1;
 let lastRun = null;
 let currentBatchId = null;
 let perFileTimes = [];
 let lastFileStartTs = 0;
+let hasCompletedRun = false;     // P7: first-time vs subsequent drops
+let batchPrevReclaimed = 0;      // delta tracker for per-file output size
 
 function humanBytes(n) {
   if (!Number.isFinite(n)) return '0 B';
@@ -168,10 +179,23 @@ function clearDropStatus() {
   dropStatusExtra.textContent = '';
 }
 
+/* Two-step staging: Add becomes enabled once we have a scanned source with
+   videos AND a destination. */
 function updateAddState() {
-  const ready = current.src && current.dest && current.scanned && current.videoCount > 0;
+  if (!addBtn) return;
+  const ready = current.src && current.scanned && current.videoCount > 0 && current.dest;
   addBtn.disabled = !ready;
-  chooseDestBtn.disabled = !current.src;
+}
+
+function resetStagingTier() {
+  /* Per spec: tier resets to the RECOMMENDED default ("Who Cares…") after
+     each Add — so each new batch starts from the safe default. */
+  const reg = document.querySelector('input[name="tier"][value="regular"]');
+  if (!reg) return;
+  reg.checked = true;
+  document.querySelectorAll('.tier').forEach((t) => t.classList.remove('selected'));
+  const wrap = reg.closest('.tier');
+  if (wrap) wrap.classList.add('selected');
 }
 
 function updateTierHint() {
@@ -182,14 +206,34 @@ function updateTierHint() {
   }
 }
 
-function clearDrop() {
-  current = { src: null, srcName: null, videoCount: 0, ignoredCount: 0, totalSize: 0, scanned: false, dest: null };
-  destPathEl.textContent = DEST_PLACEHOLDER;
-  destPathEl.classList.add('placeholder');
+function clearDrop({ resetTier = true } = {}) {
+  const stickyDest = current.dest;
+  current = {
+    src: null, srcName: null,
+    videoCount: 0, ignoredCount: 0, totalSize: 0,
+    scanned: false,
+    dest: stickyDest,
+    files: []
+  };
+  if (!stickyDest) {
+    destPathEl.textContent = DEST_PLACEHOLDER;
+    destPathEl.classList.add('placeholder');
+  }
   clearDropStatus();
   dropzone.classList.remove('has-source');
+  if (resetTier) resetStagingTier();
   updateAddState();
   updateTierHint();
+  updateIdleCopy();
+}
+
+/* P7: dz-title copy reflects the screen's coherent state.
+   Fresh: "Drop a folder to begin". After a completed run: "Drop another folder". */
+function updateIdleCopy() {
+  if (!dzTitle) return;
+  dzTitle.innerHTML = hasCompletedRun
+    ? 'Drop <em>another folder</em>'
+    : 'Drop a <em>folder</em> to begin';
 }
 
 ['dragenter', 'dragover'].forEach((e) => {
@@ -218,21 +262,57 @@ dropzone.addEventListener('drop', async (ev) => {
     dropStatus.classList.remove('hidden');
     return;
   }
+  await stageSource(p);
+  /* Two-step staging: do NOT auto-add. Operator confirms tier + clicks Add. */
+});
+
+chooseDestBtn.addEventListener('click', async () => {
+  /* Dest can be picked at any time (before or after drop) — sticky across drops. */
+  const parent = current.src
+    ? current.src.replace(/\/[^/]*$/, '')
+    : (current.dest || null);
+  const chosen = await window.api.chooseDestination(parent);
+  if (chosen) {
+    current.dest = chosen;
+    destPathEl.textContent = chosen;
+    destPathEl.classList.remove('placeholder');
+    updateAddState();
+  }
+});
+
+/* Drop-zone icon (and the small "click to browse" text) opens the native
+   folder picker. Main-process side defaults to the persisted lastSrc, then
+   the current output's parent, then ~. Selected path is fed through the
+   exact same scan + staging flow as a drag-drop. */
+async function browseAndStage() {
+  const suggested = current.dest || null;
+  const chosen = await window.api.browseSource(suggested);
+  if (!chosen) return;
+  await stageSource(chosen);
+}
+if (dzBrowseBtn) dzBrowseBtn.addEventListener('click', browseAndStage);
+if (dzBrowseTextBtn) dzBrowseTextBtn.addEventListener('click', browseAndStage);
+
+/* Shared scan/stage path used by both drag-drop and browse. */
+async function stageSource(p) {
   current.src = p;
   current.srcName = p.split('/').pop();
   current.scanned = false;
+  current.files = [];
   dropStatus.classList.remove('hidden');
   dropStatusPath.textContent = p;
   dropStatusPath.style.color = 'var(--cyan)';
   dropStatusCount.textContent = 'scanning…';
   dropStatusExtra.textContent = '';
   updateAddState();
-
   try {
     const scan = await window.api.scanSource(p);
     current.videoCount = scan.videos.length;
     current.ignoredCount = scan.ignored;
     current.totalSize = scan.totalSize || scan.videos.reduce((a, v) => a + (v.size || 0), 0);
+    current.files = scan.videos.map((v) => ({
+      path: v.file, name: v.file.split('/').pop(), size: v.size || 0
+    }));
     current.scanned = true;
     dropStatusPath.textContent = p;
     dropStatusPath.style.color = '';
@@ -242,6 +322,7 @@ dropzone.addEventListener('drop', async (ev) => {
     if (scan.ignored > 0) parts.push(`${scan.ignored} ignored`);
     dropStatusExtra.textContent = parts.join(' · ') || '—';
     dropzone.classList.add('has-source');
+    window.api.saveLastSrc(p);
   } catch (e) {
     dropStatusPath.textContent = `Scan failed: ${e.message}`;
     dropStatusPath.style.color = 'var(--red)';
@@ -249,19 +330,7 @@ dropzone.addEventListener('drop', async (ev) => {
   }
   updateAddState();
   updateTierHint();
-});
-
-chooseDestBtn.addEventListener('click', async () => {
-  if (!current.src) return;
-  const parent = current.src.replace(/\/[^/]*$/, '');
-  const chosen = await window.api.chooseDestination(parent);
-  if (chosen) {
-    current.dest = chosen;
-    destPathEl.textContent = chosen;
-    destPathEl.classList.remove('placeholder');
-    updateAddState();
-  }
-});
+}
 
 // Tier selection — keep the underlying radio working
 tierInputs.forEach((inp) => {
@@ -282,174 +351,202 @@ document.querySelectorAll('.tier').forEach((wrap) => {
   });
 });
 
-// Dry-run toggle (button-style, no checkbox)
+// P2 Preview/Writes toggle — updates the safety bar mode + label + sub copy.
 dryRunBtn.addEventListener('click', () => {
   const on = dryRunBtn.getAttribute('aria-pressed') === 'true';
-  dryRunBtn.setAttribute('aria-pressed', on ? 'false' : 'true');
-  dryRunHint.textContent = on ? 'writes files' : 'no files written';
+  const next = !on;
+  dryRunBtn.setAttribute('aria-pressed', next ? 'true' : 'false');
+  safetyBar.setAttribute('data-mode', next ? 'preview' : 'write');
+  safetyModeEl.textContent = next ? 'Preview only' : 'Writes files';
+  safetySubEl.textContent = next
+    ? 'No files will be written — videos are scanned and totals reported only'
+    : 'Encoded videos will be saved to the output folder';
 });
 
-addBtn.addEventListener('click', () => {
+/* Commit the staging area as a new batch. Tier is FROZEN at this moment.
+   Subsequent tier changes affect only the next batch (or the editable
+   batches on the queue header). */
+function addCurrentToQueue() {
   if (addBtn.disabled) return;
   const tier = document.querySelector('input[name="tier"]:checked').value;
   const dry = dryRunBtn.getAttribute('aria-pressed') === 'true';
-  const item = {
+  const batch = {
     id: nextId++,
     src: current.src,
     srcName: current.srcName,
     dest: current.dest,
-    tier,
+    tier,                   // frozen
     dryRun: dry,
     videoCount: current.videoCount,
     totalSize: current.totalSize || 0,
-    status: 'queued',          // queued | running | done | failed
-    progress: 0,                // 0..100
-    processed: 0,               // files done
+    files: current.files.map((f) => ({
+      path: f.path,
+      name: f.name,
+      size: f.size,
+      status: 'queued',     // queued | running | done | failed | skipped
+      outputSize: null
+    })),
+    status: 'queued',       // batch-level
+    progress: 0,
+    processed: 0,
     failed: 0,
+    skipped: 0,
     reclaimed: 0,
     lastResult: null
   };
-  queue.push(item);
+  queue.push(batch);
   renderQueue();
-  clearDrop();
-});
+  clearDrop({ resetTier: true });   // tier returns to RECOMMENDED for next batch
+}
+if (addBtn) addBtn.addEventListener('click', addCurrentToQueue);
 
-function buildQrow(item, idx) {
+/* ───── Batch group builder ─────
+   Each top-level <li class="qbatch"> contains:
+     - a header with: name + meta + tier control + status pill + remove
+     - an inner <ul class="qbatch-files"> with one <li class="qrow"> per file
+   Locking rule: tier toggle + Remove are interactive only while the batch
+   is in 'queued' state. Once it starts running or finishes (done/failed/
+   cancelled), edit controls hide. */
+
+const PILL_LABEL = {
+  queued: 'Queued', running: 'Running', paused: 'Paused',
+  done: 'Done', failed: 'Failed', cancelled: 'Cancelled', cancelling: 'Cancelling…'
+};
+
+function buildBatchGroup(batch, idx) {
   const li = document.createElement('li');
-  li.className = 'qrow';
-  li.dataset.id = item.id;
-  li.draggable = item.status === 'queued';
+  li.className = `qbatch status-${batch.status}`;
+  li.dataset.id = batch.id;
+  li.draggable = batch.status === 'queued';
 
-  // # column
+  // ─── Header ───
+  const head = document.createElement('div');
+  head.className = 'qbatch-head';
+
+  // Batch index + name + meta
+  const info = document.createElement('div');
+  info.className = 'qbatch-info';
   const seq = document.createElement('div');
-  seq.className = 'seq';
+  seq.className = 'qbatch-seq';
   seq.textContent = String(idx + 1).padStart(2, '0');
-  li.appendChild(seq);
+  info.appendChild(seq);
+  const text = document.createElement('div');
+  text.className = 'qbatch-text';
+  const name = document.createElement('div');
+  name.className = 'qbatch-name';
+  name.textContent = batch.srcName + (batch.dryRun ? '  (preview)' : '');
+  const meta = document.createElement('div');
+  meta.className = 'qbatch-meta';
+  const sizeStr = batch.totalSize > 0 ? ` · ${humanBytes(batch.totalSize)}` : '';
+  meta.textContent = `${batch.videoCount} file${batch.videoCount === 1 ? '' : 's'}${sizeStr}`;
+  text.appendChild(name);
+  text.appendChild(meta);
+  info.appendChild(text);
+  head.appendChild(info);
 
-  // File column
-  const fileCol = document.createElement('div');
-  fileCol.className = 'file';
-  const glyph = document.createElement('div');
-  glyph.className = 'glyph';
-  glyph.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4M3 12h18"/></svg>';
-  const fileMeta = document.createElement('div');
-  fileMeta.className = 'meta';
-  const fname = document.createElement('div');
-  fname.className = 'name';
-  fname.textContent = item.srcName + (item.dryRun ? '  (preview)' : '');
-  fileMeta.appendChild(fname);
-  fileCol.appendChild(glyph);
-  fileCol.appendChild(fileMeta);
-  li.appendChild(fileCol);
-
-  // Source size column — show file count when total size isn't known
-  const sizeCol = document.createElement('div');
-  sizeCol.className = 'mono';
-  if (item.totalSize > 0) sizeCol.textContent = humanBytes(item.totalSize);
-  else {
-    sizeCol.textContent = `${item.videoCount} file${item.videoCount === 1 ? '' : 's'}`;
-    sizeCol.classList.add('muted');
+  // Tier control — interactive only while queued, otherwise plain chip
+  const tierCtl = document.createElement('div');
+  tierCtl.className = 'qbatch-tier';
+  if (batch.status === 'queued') {
+    const tiers = [
+      { id: 'regular',  css: 'regular',  label: TIER_LABEL.regular },
+      { id: 'preserve', css: 'archival', label: TIER_LABEL.preserve }
+    ];
+    for (const t of tiers) {
+      const pill = document.createElement('button');
+      pill.type = 'button';
+      pill.className = `tierchip ${t.css}` + (batch.tier === t.id ? ' selected' : ' inactive');
+      pill.innerHTML = `<span class="dot"></span>${t.label}`;
+      pill.setAttribute('aria-pressed', batch.tier === t.id ? 'true' : 'false');
+      pill.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (batch.status !== 'queued') return;
+        if (batch.tier === t.id) return;
+        batch.tier = t.id;
+        renderQueue();
+      });
+      tierCtl.appendChild(pill);
+    }
+  } else {
+    const cls = TIER_CSS[batch.tier] || 'regular';
+    const chip = document.createElement('span');
+    chip.className = `tierchip ${cls}`;
+    chip.innerHTML = `<span class="dot"></span>${TIER_LABEL[batch.tier] || batch.tier}`;
+    tierCtl.appendChild(chip);
   }
-  li.appendChild(sizeCol);
+  head.appendChild(tierCtl);
 
-  // Tier column
-  const tierCol = document.createElement('div');
-  const cls = TIER_CSS[item.tier] || 'regular';
-  const chip = document.createElement('span');
-  chip.className = `tierchip ${cls}`;
-  chip.innerHTML = `<span class="dot"></span>${TIER_LABEL[item.tier] || item.tier}`;
-  tierCol.appendChild(chip);
-  li.appendChild(tierCol);
-
-  // Status column
-  const statusCol = document.createElement('div');
-  statusCol.className = `status ${item.status}`;
-  const pillLabelMap = {
-    queued: 'Queued', running: 'Running', paused: 'Paused',
-    done: 'Done', failed: 'Failed', cancelled: 'Cancelled', cancelling: 'Cancelling…'
-  };
-  const pillLabel = pillLabelMap[item.status] || item.status;
+  // Status pill + progress bar (batch-level)
+  const statusWrap = document.createElement('div');
+  statusWrap.className = `qbatch-status status ${batch.status}`;
   const pill = document.createElement('span');
   pill.className = 'pill';
-  pill.innerHTML = `<span class="dot"></span>${pillLabel}`;
+  pill.innerHTML = `<span class="dot"></span>${PILL_LABEL[batch.status] || batch.status}`;
   const pbar = document.createElement('div');
   pbar.className = 'progressbar';
   const pbi = document.createElement('i');
   let pct;
-  if (item.status === 'done') pct = 100;
-  else if (item.status === 'failed' || item.status === 'cancelled') pct = Math.max(8, item.progress);
-  else pct = item.progress;
+  if (batch.status === 'done') pct = 100;
+  else if (batch.status === 'failed' || batch.status === 'cancelled') pct = Math.max(8, batch.progress);
+  else pct = batch.progress;
   pbi.style.width = `${pct}%`;
   pbar.appendChild(pbi);
-  statusCol.appendChild(pill);
-  statusCol.appendChild(pbar);
-  li.appendChild(statusCol);
+  statusWrap.appendChild(pill);
+  statusWrap.appendChild(pbar);
+  head.appendChild(statusWrap);
 
-  // Output column — final output file size when done
-  const outCol = document.createElement('div');
-  outCol.className = 'mono';
-  outCol.style.textAlign = 'right';
-  if (item.status === 'done') {
-    const outBytes = Math.max(0, (item.totalSize || 0) - (item.reclaimed || 0));
-    if (outBytes > 0) {
-      outCol.textContent = humanBytes(outBytes);
-      outCol.classList.add('green');
-    } else {
-      outCol.textContent = '—';
-      outCol.classList.add('muted');
-    }
-  } else if (item.status === 'failed' || item.status === 'cancelled') {
-    outCol.textContent = '—';
-    outCol.classList.add(item.status === 'failed' ? 'red' : 'muted');
-  } else {
-    outCol.textContent = '—';
-    outCol.classList.add('muted');
-  }
-  li.appendChild(outCol);
-
-  // Actions cell:
-  //   queued        → × remove
-  //   running/paused → ⋯ menu (Pause/Resume + Stop)
-  //   done/failed/cancelled → empty
-  const more = document.createElement('button');
-  more.className = 'more';
-  if (item.status === 'queued') {
-    more.title = 'Remove from queue';
-    more.setAttribute('aria-label', more.title);
-    more.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><path d="M6 6l12 12M18 6L6 18"/></svg>';
-    more.addEventListener('click', (e) => {
+  // Actions — Remove (queued) OR ⋯ menu (running/paused) OR empty
+  const actionsCell = document.createElement('div');
+  actionsCell.className = 'qbatch-actions';
+  if (batch.status === 'queued') {
+    const rm = document.createElement('button');
+    rm.className = 'qbatch-remove';
+    rm.title = 'Remove batch';
+    rm.setAttribute('aria-label', rm.title);
+    rm.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+    rm.addEventListener('click', (e) => {
       e.stopPropagation();
-      queue = queue.filter((x) => x.id !== item.id);
+      queue = queue.filter((x) => x.id !== batch.id);
       renderQueue();
     });
-  } else if (item.status === 'running' || item.status === 'paused') {
+    actionsCell.appendChild(rm);
+  } else if (batch.status === 'running' || batch.status === 'paused') {
+    const more = document.createElement('button');
+    more.className = 'qbatch-remove';
     more.title = 'Actions';
     more.setAttribute('aria-label', more.title);
     more.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" style="width:14px;height:14px;"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';
     more.addEventListener('click', (e) => {
       e.stopPropagation();
-      openRowMenu(more, item);
+      openRowMenu(more, batch);
     });
-  } else {
-    // Done / failed / cancelled / cancelling — no actions apply.
-    more.style.visibility = 'hidden';
-    more.disabled = true;
+    actionsCell.appendChild(more);
   }
-  li.appendChild(more);
+  head.appendChild(actionsCell);
 
-  // Drag-and-drop reordering (only queued)
+  li.appendChild(head);
+
+  // ─── File rows ───
+  const filesUl = document.createElement('ul');
+  filesUl.className = 'qbatch-files';
+  batch.files.forEach((file, i) => {
+    filesUl.appendChild(buildFileRow(file, i));
+  });
+  li.appendChild(filesUl);
+
+  // Drag-and-drop reordering between queued batches
   li.addEventListener('dragstart', (e) => {
-    if (item.status !== 'queued') { e.preventDefault(); return; }
+    if (batch.status !== 'queued') { e.preventDefault(); return; }
     li.classList.add('dragging');
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', String(item.id));
+    e.dataTransfer.setData('text/plain', String(batch.id));
   });
   li.addEventListener('dragend', () => li.classList.remove('dragging'));
   li.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; });
   li.addEventListener('drop', (e) => {
     e.preventDefault();
     const draggedId = Number(e.dataTransfer.getData('text/plain'));
-    const targetId = item.id;
+    const targetId = batch.id;
     if (draggedId === targetId) return;
     const di = queue.findIndex((x) => x.id === draggedId);
     const ti = queue.findIndex((x) => x.id === targetId);
@@ -463,35 +560,116 @@ function buildQrow(item, idx) {
   return li;
 }
 
+function buildFileRow(file, i) {
+  const li = document.createElement('li');
+  li.className = `qrow status-${file.status}`;
+  li.dataset.fpath = file.path;
+
+  // # in batch
+  const seq = document.createElement('div');
+  seq.className = 'seq';
+  seq.textContent = String(i + 1).padStart(2, '0');
+  li.appendChild(seq);
+
+  // File label
+  const fileCol = document.createElement('div');
+  fileCol.className = 'file';
+  const glyph = document.createElement('div');
+  glyph.className = 'glyph';
+  glyph.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4M3 12h18"/></svg>';
+  const fileMeta = document.createElement('div');
+  fileMeta.className = 'meta';
+  const fname = document.createElement('div');
+  fname.className = 'name';
+  fname.textContent = file.name;
+  fileMeta.appendChild(fname);
+  fileCol.appendChild(glyph);
+  fileCol.appendChild(fileMeta);
+  li.appendChild(fileCol);
+
+  // Source size
+  const sizeCol = document.createElement('div');
+  sizeCol.className = 'mono';
+  sizeCol.textContent = file.size > 0 ? humanBytes(file.size) : '—';
+  li.appendChild(sizeCol);
+
+  // Status pill
+  const statusCol = document.createElement('div');
+  statusCol.className = `status ${file.status}`;
+  const pill = document.createElement('span');
+  pill.className = 'pill';
+  pill.innerHTML = `<span class="dot"></span>${PILL_LABEL[file.status] || file.status}`;
+  statusCol.appendChild(pill);
+  li.appendChild(statusCol);
+
+  // Output size
+  const outCol = document.createElement('div');
+  outCol.className = 'mono';
+  outCol.style.textAlign = 'right';
+  if (file.status === 'done' && Number.isFinite(file.outputSize) && file.outputSize > 0) {
+    outCol.textContent = humanBytes(file.outputSize);
+    outCol.classList.add('green');
+  } else if (file.status === 'skipped') {
+    outCol.textContent = 'existing';
+    outCol.classList.add('muted');
+  } else if (file.status === 'failed') {
+    outCol.textContent = '—';
+    outCol.classList.add('red');
+  } else {
+    outCol.textContent = '—';
+    outCol.classList.add('muted');
+  }
+  li.appendChild(outCol);
+
+  return li;
+}
+
 function renderQueue() {
   queueEl.innerHTML = '';
-  queue.forEach((item, idx) => queueEl.appendChild(buildQrow(item, idx)));
+  queue.forEach((batch, idx) => queueEl.appendChild(buildBatchGroup(batch, idx)));
 
-  const total = queue.length;
+  const totalBatches = queue.length;
+  const totalFiles = queue.reduce((a, b) => a + (b.videoCount || 0), 0);
   const done = queue.filter((q) => q.status === 'done').length;
   const running = queue.filter((q) => q.status === 'running').length;
   const queued = queue.filter((q) => q.status === 'queued').length;
   const paused = queue.filter((q) => q.status === 'paused').length;
   const failed = queue.filter((q) => q.status === 'failed').length;
 
-  queueHeadingEl.textContent = `Queue · ${total}`;
-  queueCountEl.innerHTML = `${done} done · ${running} running · ${queued} waiting · ` +
-    (failed > 0 ? `<span class="red">${failed} failed</span>` : `0 failed`);
+  queueHeadingEl.textContent = totalFiles > 0
+    ? `Queue · ${totalBatches} batch${totalBatches === 1 ? '' : 'es'} · ${totalFiles} file${totalFiles === 1 ? '' : 's'}`
+    : `Queue · ${totalBatches}`;
+  /* P5: section-head hint reads live state; hidden when summary panel
+     is the source of truth. */
+  queueCountEl.innerHTML = `${done} done · ${running} running · ${queued} waiting`
+    + (failed > 0 ? ` · <span class="red">${failed} failed</span>` : '');
 
-  // foot totals — only meaningful when there is at least one row
   const qfoot = document.getElementById('qfoot');
-  if (total === 0) {
+  const summaryVisible = summaryCard && !summaryCard.classList.contains('hidden');
+  if (total === 0 || summaryVisible) {
     qfoot.classList.add('hidden');
+    queueCountEl.classList.toggle('hidden', summaryVisible);
   } else {
     qfoot.classList.remove('hidden');
+    queueCountEl.classList.remove('hidden');
     const srcSum = queue.reduce((a, q) => a + (q.totalSize || 0), 0);
     const recSum = queue.reduce((a, q) => a + (q.reclaimed || 0), 0);
     qfootSource.textContent = srcSum > 0 ? humanBytes(srcSum) : '—';
-    qfootReclaimed.textContent = recSum > 0 ? '↓ ' + humanBytes(recSum) : '—';
+    /* P5: "Reclaimed · —" placeholder is noise; only show when there's
+       a real value to report. Failure callout only when failed > 0. */
+    const reclWrap = document.getElementById('qfoot-reclaimed-wrap');
+    if (recSum > 0) {
+      qfootReclaimed.textContent = '↓ ' + humanBytes(recSum);
+      reclWrap.classList.remove('hidden');
+    } else {
+      reclWrap.classList.add('hidden');
+    }
+    const failWrap = document.getElementById('qfoot-failed-wrap');
     if (failed > 0) {
       qfootFailed.innerHTML = `<span class="danger">${failed} failure${failed === 1 ? '' : 's'} need${failed === 1 ? 's' : ''} review</span>`;
+      failWrap.classList.remove('hidden');
     } else {
-      qfootFailed.textContent = 'no failures';
+      failWrap.classList.add('hidden');
     }
   }
 
@@ -572,6 +750,7 @@ window.api.onBatchStatus(({ id, status, result }) => {
       item.progress = 0;
       currentBatchId = id;
       perFileTimes = [];
+      batchPrevReclaimed = 0;
       progressBatch.textContent = `Running: ${item.srcName}`;
     }
   } else if (status === 'Paused') {
@@ -613,25 +792,35 @@ window.api.onBatchStatus(({ id, status, result }) => {
 });
 
 window.api.onProgress((d) => {
+  const batch = queue.find((q) => q.id === currentBatchId);
+
   if (d.type === 'file-start') {
     currentFileEl.textContent = d.basename;
     lastFileStartTs = Date.now();
     progressCounts.textContent = `File ${d.index} of ${d.total}`;
-    // update batch row progress for fractional advance
-    const item = queue.find((q) => q.id === currentBatchId);
-    if (item) {
-      item.progress = ((d.index - 1) / d.total) * 100;
-      const row = queueEl.querySelector(`[data-id="${item.id}"] .progressbar > i`);
-      if (row) row.style.width = `${item.progress.toFixed(1)}%`;
+    if (batch) {
+      batch.progress = ((d.index - 1) / d.total) * 100;
+      /* Match the file in batch.files by absolute path (most robust against
+         readdir ordering quirks). Mark earlier files done if we somehow
+         skipped a 'file-done' (defensive). */
+      const fi = batch.files.findIndex((f) => f.path === d.file);
+      if (fi >= 0) {
+        for (let k = 0; k < fi; k++) {
+          if (batch.files[k].status === 'queued' || batch.files[k].status === 'running') {
+            batch.files[k].status = 'done';
+          }
+        }
+        batch.files[fi].status = 'running';
+      }
+      renderQueue();
     }
   } else if (d.type === 'file-progress') {
     const overall = ((d.index - 1) + d.fileProgress) / d.total;
     progressFill.style.width = `${(overall * 100).toFixed(1)}%`;
-    const item = queue.find((q) => q.id === currentBatchId);
-    if (item) {
-      item.progress = overall * 100;
-      const row = queueEl.querySelector(`[data-id="${item.id}"] .progressbar > i`);
-      if (row) row.style.width = `${item.progress.toFixed(1)}%`;
+    if (batch) {
+      batch.progress = overall * 100;
+      const bar = queueEl.querySelector(`[data-id="${batch.id}"] .qbatch-status .progressbar > i`);
+      if (bar) bar.style.width = `${batch.progress.toFixed(1)}%`;
     }
   } else if (d.type === 'file-done') {
     const overall = d.index / d.total;
@@ -641,21 +830,36 @@ window.api.onProgress((d) => {
     if (d.failed > 0) statFailed.classList.add('has-failures');
     reclaimedEl.textContent = humanBytes(d.reclaimed);
 
-    const item = queue.find((q) => q.id === currentBatchId);
-    if (item) {
-      item.progress = overall * 100;
-      item.reclaimed = d.reclaimed || item.reclaimed;
-      item.processed = (d.processed || 0) + (d.alreadyDone || 0);
-      item.failed = d.failed || 0;
-      // update inline row without full rebuild for smoothness
-      const row = queueEl.querySelector(`[data-id="${item.id}"]`);
-      if (row) {
-        const fill = row.querySelector('.progressbar > i');
-        if (fill) fill.style.width = `${item.progress.toFixed(1)}%`;
+    if (batch) {
+      const delta = (d.reclaimed || 0) - batchPrevReclaimed;
+      batchPrevReclaimed = d.reclaimed || 0;
+      batch.progress = overall * 100;
+      batch.reclaimed = d.reclaimed || batch.reclaimed;
+      batch.processed = (d.processed || 0);
+      batch.skipped = d.alreadyDone || 0;
+      batch.failed = d.failed || 0;
+
+      // Resolve which file this completion is for. file-done doesn't carry
+      // the path, so we use the running file (set at file-start).
+      const runningIdx = batch.files.findIndex((f) => f.status === 'running');
+      if (runningIdx >= 0) {
+        const f = batch.files[runningIdx];
+        if (d.outcome === 'fail') {
+          f.status = 'failed';
+          f.outputSize = null;
+        } else if (d.outcome === 'skip-exists') {
+          f.status = 'skipped';
+          f.outputSize = null;
+        } else {
+          f.status = 'done';
+          // outputSize = source - reclaimed-delta for THIS file
+          if (Number.isFinite(f.size) && f.size > 0) {
+            const out = Math.max(0, f.size - Math.max(0, delta));
+            f.outputSize = out;
+          }
+        }
       }
-      // also refresh footer reclaim total
-      const recSum = queue.reduce((a, q) => a + (q.reclaimed || 0), 0);
-      qfootReclaimed.textContent = recSum > 0 ? '↓ ' + humanBytes(recSum) : '—';
+      renderQueue();
     }
 
     if (lastFileStartTs > 0) {
@@ -685,14 +889,20 @@ window.api.onQueueFinished(({ totals, stopped }) => {
   // tl-tag state will be updated by the next renderQueue() call based on
   // remaining failed batches; if there are none it hides.
 
+  /* P5: one core sentence, not five. Sub-counts only when non-zero. */
   const lines = [];
   if (stopped) lines.push(`<div class="muted">Stopped by user.</div>`);
   const doneBatches = queue.filter((q) => q.status === 'done').length;
-  lines.push(`<div>Processed <strong>${totals.processed}</strong> file${totals.processed === 1 ? '' : 's'} across ${doneBatches} batch${doneBatches === 1 ? '' : 'es'}.</div>`);
-  if (totals.alreadyDone > 0) lines.push(`<div class="muted">Already done (skipped): ${totals.alreadyDone}</div>`);
-  if (totals.skippedNonVideo > 0) lines.push(`<div class="muted">Ignored non-video items: ${totals.skippedNonVideo}</div>`);
-  lines.push(`<div class="reclaimed-line">Reclaimed ${humanBytes(totals.reclaimed)} across ${totals.processed} file${totals.processed === 1 ? '' : 's'}.</div>`);
-  if (totals.failed > 0) lines.push(`<div class="failed-line">Failed: ${totals.failed} (originals copied to _FAILED/ — sources untouched).</div>`);
+  lines.push(
+    `<div class="reclaimed-line">Reclaimed <strong>${humanBytes(totals.reclaimed)}</strong> across `
+    + `<strong>${totals.processed}</strong> file${totals.processed === 1 ? '' : 's'} `
+    + `in ${doneBatches} batch${doneBatches === 1 ? '' : 'es'}.</div>`
+  );
+  const sub = [];
+  if (totals.alreadyDone > 0) sub.push(`${totals.alreadyDone} already done`);
+  if (totals.skippedNonVideo > 0) sub.push(`${totals.skippedNonVideo} non-video ignored`);
+  if (sub.length) lines.push(`<div class="muted">${sub.join(' · ')}</div>`);
+  if (totals.failed > 0) lines.push(`<div class="failed-line">${totals.failed} failure${totals.failed === 1 ? '' : 's'} — originals copied to <code>_FAILED/</code>; sources untouched.</div>`);
   summaryBody.innerHTML = lines.join('');
 
   const lastDone = [...queue].reverse().find((q) => q.lastResult);
@@ -700,7 +910,16 @@ window.api.onQueueFinished(({ totals, stopped }) => {
   showLogBtn.disabled = !lastRun || !lastRun.logPath;
   revealOutputBtn.disabled = !lastRun || !lastRun.runDir;
 
+  // P1: summary REPLACES the action bar in place.
+  document.querySelector('.actions').classList.add('hidden');
   summaryCard.classList.remove('hidden');
+  // P7: any further drops are "another folder" — flip the idle copy.
+  if (totals.processed > 0 || totals.failed > 0 || queue.some((q) => q.status === 'done' || q.status === 'failed')) {
+    hasCompletedRun = true;
+    updateIdleCopy();
+  }
+  // P5: queue-count hint + qfoot are now hidden by renderQueue under the
+  // summary panel, so summary is the single source of truth for totals.
   renderQueue();
 });
 
@@ -712,6 +931,9 @@ revealOutputBtn.addEventListener('click', () => {
 });
 dismissSummaryBtn.addEventListener('click', () => {
   summaryCard.classList.add('hidden');
+  document.querySelector('.actions').classList.remove('hidden');
+  /* P5: bring back the queue-count hint + qfoot now that the panel is gone. */
+  renderQueue();
 });
 
 clearDrop();
