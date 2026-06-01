@@ -61,6 +61,70 @@ function driveLabelForKey(k) {
   return path.basename(k);
 }
 
+/* ─── Output flattening ─────────────────────────────────────────────
+   Pipeline writes outputs mirroring the source folder structure. After
+   each batch we flatten that into a single canonical layout:
+     <runDir>/<file>.mp4         (no per-source / per-batch subfolders)
+   _FAILED/ is preserved as-is (failure forensics live there). Files
+   already at runDir top level (compress.log) stay put.
+   On name collision (same basename across multiple sources/batches in
+   the same run folder), append "_2"/"_3"/… so no output is lost.
+   .tmp.mp4 partials — if any escaped pipeline's own cleanup — are
+   deleted rather than promoted, so a partial never poses as a final. */
+async function flattenRunDir(runDir) {
+  const taken = new Set();
+  try {
+    for (const e of await fsp.readdir(runDir, { withFileTypes: true })) {
+      if (e.isFile()) taken.add(e.name);
+    }
+  } catch { return 0; }
+
+  let lifted = 0;
+
+  async function collect(dir, depth) {
+    let entries = [];
+    try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        if (depth === 0 && e.name === '_FAILED') continue;   // keep nested
+        await collect(p, depth + 1);
+      } else if (e.isFile() && depth > 0) {
+        if (e.name.endsWith('.tmp.mp4')) {
+          try { await fsp.unlink(p); } catch {}
+          continue;
+        }
+        let name = e.name;
+        let safe = name;
+        let n = 2;
+        while (taken.has(safe)) {
+          const ext = path.extname(name);
+          const stem = name.slice(0, name.length - ext.length);
+          safe = `${stem}_${n}${ext}`;
+          n++;
+        }
+        taken.add(safe);
+        try { await fsp.rename(p, path.join(runDir, safe)); lifted++; } catch {}
+      }
+    }
+  }
+  await collect(runDir, 0);
+
+  async function pruneEmpty(dir, depth) {
+    let entries = [];
+    try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      if (depth === 0 && e.name === '_FAILED') continue;
+      await pruneEmpty(path.join(dir, e.name), depth + 1);
+    }
+    if (depth > 0) { try { await fsp.rmdir(dir); } catch {} }
+  }
+  await pruneEmpty(runDir, 0);
+
+  return lifted;
+}
+
 // Per-batch runtime state for row-level Pause / Resume / Stop.
 // Only one batch runs at a time, but keeping it keyed by id lets renderer
 // dispatch actions targeted at a specific row without ambiguity.
@@ -291,50 +355,28 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
         }
       }
 
-      /* Flatten the source-name wrapper folder.
-         Pipeline mirrors the source structure under runDir, which for a
-         single dropped folder named e.g. "Squeeze" puts output at
-         <runDir>/Squeeze/... — a redundant level beneath Compressed_X/.
-         For file-list batches the wrapper is "Selected files (<id>)".
-         We move the wrapper's contents up to runDir and remove the empty
-         wrapper, so files sit directly under Compressed_X/. Any internal
-         nested structure of the source is preserved (we only lift the
-         outer name, not deeper folders). */
+      /* Flatten EVERYTHING into runDir.
+         Pipeline mirrors source structure (per spec §6), so a folder batch
+         produces <runDir>/<src basename>/<...inner mirror...>/file.mp4 and
+         a file-list batch produces <runDir>/Selected files (<id>)/file.mp4.
+         The operator wants a single canonical layout regardless of how the
+         source was supplied: files DIRECTLY under Compressed_<run>/, with
+         no per-source / per-batch subfolder, no internal mirror.
+         compress.log stays at runDir level (pipeline wrote it there); the
+         _FAILED/ directory is kept intact so failure diagnostics aren't
+         flattened too.
+         Name collisions (same basename across batches in the same run, or
+         from two different source subfolders within one batch) get an
+         "_2" / "_3" suffix — no output is silently lost. */
       if (!isDry && result && result.runDir && fs.existsSync(result.runDir)) {
-        let wrapperName = null;
-        if (wrappedBatch.kind === 'files') {
-          wrapperName = `Selected files (${batch.id})`;
-        } else if (batch.src) {
-          wrapperName = path.basename(batch.src);
-        }
-        if (wrapperName) {
-          const wrapperDir = path.join(result.runDir, wrapperName);
-          let lifted = 0;
-          try {
-            const ws = await fsp.stat(wrapperDir);
-            if (ws.isDirectory()) {
-              for (const entry of await fsp.readdir(wrapperDir)) {
-                const from = path.join(wrapperDir, entry);
-                const to = path.join(result.runDir, entry);
-                // Don't clobber a sibling at runDir level (e.g. _FAILED).
-                if (fs.existsSync(to)) continue;
-                try { await fsp.rename(from, to); lifted++; } catch { /* skip */ }
-              }
-              try { await fsp.rmdir(wrapperDir); } catch { /* not empty / not removable */ }
-            }
-          } catch { /* wrapper absent — nothing to lift */ }
-          // Stamp the canonical output structure in the log so any future
-          // "why is there a sub-folder on machine X" question is one cat
-          // away — no need to guess what build is on what machine.
-          try {
-            const logPath = path.join(result.runDir, 'compress.log');
-            fs.appendFileSync(
-              logPath,
-              `# Flatten: wrapper="${wrapperName}" lifted=${lifted}`
-              + ` — canonical layout is <chosen output>/Compressed_<run>/<files>\n`
-            );
-          } catch {}
-        }
+        const lifted = await flattenRunDir(result.runDir);
+        try {
+          fs.appendFileSync(
+            path.join(result.runDir, 'compress.log'),
+            `# Flatten: lifted=${lifted} — canonical layout is`
+            + ` <chosen output>/Compressed_<run>/<files> (flat, no subfolders)\n`
+          );
+        } catch {}
       }
 
       totals.processed += result.processed || 0;

@@ -933,7 +933,7 @@ body::before {
   box-shadow: inset 0 1px 0 var(--raise-soft), 0 1px 0 oklch(0 0 0 / 0.4);
 }
 .progress-header {
-  display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
+  display: flex; justify-content: space-between; align-items: center; gap: 16px;
   margin-bottom: 14px;
 }
 .progress-meta { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
@@ -996,41 +996,28 @@ body::before {
 }
 .reclaimed-val { color: var(--green); }
 
-/* ETA HERO — the single most prominent piece of text in the running panel.
-   Sits between the run header and the progress bar where the eye lands.
-   Hidden until the first file completes (honest behavior). Cyan accent
-   reads as active-run signal; green stays reserved for success. */
-.eta-hero {
-  margin: 6px 0 14px;
-  padding: 16px 20px;
-  border-radius: 14px;
-  background:
-    radial-gradient(140% 80% at 50% 0%, var(--cyan-tint), transparent 70%),
-    linear-gradient(180deg, var(--bg-1), var(--bg-0));
-  border: 1px solid var(--cyan-line);
-  box-shadow:
-    inset 0 1px 0 oklch(0.76 0.115 215 / 0.22),
-    0 0 0 1px oklch(0.76 0.115 215 / 0.10),
-    0 10px 28px -16px var(--cyan-line);
-  display: flex; align-items: baseline; justify-content: space-between;
-  gap: 18px;
-  flex-wrap: wrap;
+/* ETA strip — compact, right-aligned in the running panel header. Sized
+   to read as a key stat (comparable to stat-value), not a billboard.
+   Cyan label ties it to active-run state; value in fg for high contrast. */
+.eta-strip {
+  display: inline-flex; align-items: baseline; gap: 10px;
+  white-space: nowrap;
 }
-.eta-hero.hidden { display: none; }
+.eta-strip.hidden { display: none; }
 .eta-label {
   font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 10.5px;
+  font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.16em;
-  color: var(--cyan);
+  letter-spacing: 0.12em;
+  color: var(--fg-3);
 }
 .eta-value {
   font-family: var(--font-mono);
-  font-size: 36px;
-  font-weight: 700;
+  font-size: 20px;
+  font-weight: 600;
   color: var(--fg);
-  letter-spacing: -0.030em;
+  letter-spacing: -0.020em;
   line-height: 1;
 }
 #stat-failed.has-failures { color: var(--red); }
