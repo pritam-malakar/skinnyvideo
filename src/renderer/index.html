@@ -34,7 +34,7 @@
           </svg>
         </button>
         <div class="dz-text">
-          <div class="dz-title" id="dz-title">Drop a <em>folder</em> to begin</div>
+          <div class="dz-title" id="dz-title">Drop a <em>folder or files</em> to begin</div>
           <div class="dz-sub">or <button type="button" id="dz-browse-text" class="linkish">click to browse</button></div>
         </div>
       </div>
@@ -122,8 +122,11 @@
 
     <!-- Commits the staging batch with frozen tier. -->
     <div class="staging-add">
-      <button id="add-to-queue" class="btn ivory" type="button" disabled>
-        Add to queue
+      <button id="add-to-queue" class="btn add-batch" type="button" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
+        Add batch
       </button>
     </div>
 
@@ -202,6 +205,18 @@
         <button id="reveal-output" class="btn">Reveal output</button>
         <button id="dismiss-summary" class="btn ghost">Dismiss</button>
       </div>
+    </section>
+
+    <!-- Lifetime reclaimed: persistent cumulative totals per drive. Muted /
+         secondary; sits below the active run path so it never competes with
+         drop → configure → start. Auto-appears the first time a real (non
+         dry-run) batch writes files. -->
+    <section id="lifetime-section" class="lifetime-section hidden">
+      <div class="section-head">
+        <h2>Lifetime reclaimed</h2>
+        <span class="hint" id="lifetime-total"></span>
+      </div>
+      <ul id="lifetime-list" class="lt-list"></ul>
     </section>
   </div>
 

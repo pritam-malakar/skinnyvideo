@@ -171,19 +171,10 @@ body::before {
 .header { display: flex; align-items: flex-end; justify-content: space-between; padding: 0 0 16px; }
 .wordmark { display: flex; align-items: center; gap: 16px; }
 .wm-logo {
-  width: 38px; height: 38px; border-radius: 9px;
-  background: linear-gradient(180deg, oklch(0.38 0.014 248), oklch(0.24 0.010 248));
-  border: 1px solid var(--border);
-  box-shadow: inset 0 1px 0 var(--raise), 0 1px 0 oklch(0 0 0 / 0.4);
-  display: grid; place-items: center;
-  position: relative;
+  width: 38px; height: 38px;
+  background: url('assets/squeeze.png') center / contain no-repeat;
 }
-.wm-logo::after {
-  content: ""; width: 16px; height: 8px; border-radius: 2px;
-  background: var(--fg-2);
-  transform: skewX(-18deg);
-  opacity: 0.85;
-}
+.wm-logo::after { content: none; }
 .wm-name { font-size: 30px; font-weight: 600; letter-spacing: -0.028em; line-height: 1; }
 
 /* ============================================================
@@ -469,26 +460,28 @@ body::before {
   color: var(--fg-3);
   box-shadow: inset 0 1px 0 var(--raise), 0 1px 0 oklch(0 0 0 / 0.4);
 }
-/* Ivory = quiet secondary action: keeps the cream identity but tones down
-   weight, brightness and shadow so the green Start CTA dominates. */
-.btn.ivory {
-  background: linear-gradient(180deg, #D9D0B5 0%, #BCB39A 100%);
-  border-color: #948B76;
-  color: #2E2920;
-  font-weight: 500;
-  font-size: 13px;
+/* Add batch — secondary cyan-outline action. Reads clearly as "enabled
+   and clickable" (tinted background + cyan border + cyan label), but
+   visually subordinate to the filled-cyan Start queue primary CTA. */
+.btn.add-batch {
+  background: var(--cyan-tint);
+  border-color: var(--cyan-line);
+  color: var(--cyan);
+  font-weight: 600;
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.25),
+    inset 0 1px 0 oklch(0.76 0.115 215 / 0.20),
     0 1px 0 oklch(0 0 0 / 0.35);
 }
-.btn.ivory:hover:not(:disabled) {
-  background: linear-gradient(180deg, #E2D9BD 0%, #C5BCA2 100%);
+.btn.add-batch:hover:not(:disabled) {
+  background: var(--cyan-tint-strong);
+  border-color: var(--cyan);
+  color: var(--cyan-2, var(--cyan));
 }
-.btn.ivory:disabled {
+.btn.add-batch:disabled {
   background: linear-gradient(180deg, var(--bg-3), var(--bg-2));
-  border-color: var(--border);
-  color: var(--fg-3);
-  box-shadow: inset 0 1px 0 var(--raise), 0 1px 0 oklch(0 0 0 / 0.4);
+  border-color: var(--border-subtle);
+  color: var(--fg-4);
+  box-shadow: inset 0 1px 0 var(--raise-soft), 0 1px 0 oklch(0 0 0 / 0.4);
 }
 .btn.ghost { background: transparent; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -520,7 +513,7 @@ body::before {
   display: flex;
   justify-content: flex-end;
 }
-.staging-add .btn.ivory { min-width: 160px; }
+.staging-add .btn.add-batch { min-width: 168px; }
 .tier {
   position: relative;
   padding: 20px 22px 18px;
@@ -672,38 +665,38 @@ body::before {
   letter-spacing: 0;
 }
 
-/* Inline tier toggle — two pills, click the inactive to switch */
-.qbatch-tier {
-  display: inline-flex; gap: 6px;
+/* Locked tier tag on the batch header — single chip, no toggle. Frozen at
+   Add; to change the tier the operator removes + re-adds. */
+.qbatch-tier { display: inline-flex; }
+.qbatch-tier .tierchip { cursor: default; }
+
+/* Themed tier pill — accent driven by the batch's FROZEN tier so it stays
+   correct through queued → running → done. Reused wherever a tier chip
+   appears (batch header, future re-uses). */
+.tierchip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+  padding: 3px 9px; border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-1); color: var(--fg-2);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
-.qbatch-tier .tierchip {
-  cursor: pointer;
-  transition: background .15s ease, border-color .15s ease, color .15s ease, opacity .15s ease;
+.tierchip .dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--fg-3);
 }
-.qbatch-tier .tierchip.inactive {
-  background: var(--bg-1);
-  border-color: var(--border-subtle);
-  color: var(--fg-3);
-  opacity: 0.7;
+.tierchip.regular {
+  background: var(--cyan-tint);
+  border-color: var(--cyan-line);
+  color: var(--cyan);
 }
-.qbatch-tier .tierchip.inactive .dot { background: var(--fg-4); box-shadow: none; }
-.qbatch-tier .tierchip.inactive:hover {
-  opacity: 1;
-  color: var(--fg);
-  border-color: var(--border-strong);
+.tierchip.regular .dot { background: var(--cyan); box-shadow: 0 0 6px var(--cyan-dim); }
+.tierchip.archival {
+  background: var(--violet-tint);
+  border-color: oklch(0.72 0.115 295 / 0.34);
+  color: var(--violet);
 }
-.qbatch-tier .tierchip.selected {
-  cursor: default;
-}
-/* For non-queued batches we render a plain single chip — no hover/click. */
-.qbatch.status-running .qbatch-tier .tierchip,
-.qbatch.status-paused .qbatch-tier .tierchip,
-.qbatch.status-done .qbatch-tier .tierchip,
-.qbatch.status-failed .qbatch-tier .tierchip,
-.qbatch.status-cancelled .qbatch-tier .tierchip,
-.qbatch.status-cancelling .qbatch-tier .tierchip {
-  cursor: default;
-}
+.tierchip.archival .dot { background: var(--violet); box-shadow: 0 0 6px var(--violet-dim); }
 
 /* Batch-level status pill + progress bar */
 .qbatch-status {
@@ -749,17 +742,17 @@ body::before {
 .qbatch-remove {
   width: 28px; height: 28px;
   border-radius: 7px;
-  background: transparent;
-  border: 1px solid transparent;
-  color: var(--fg-3);
+  background: var(--bg-3);
+  border: 1px solid var(--border-subtle);
+  color: var(--fg-2);
   cursor: pointer;
   display: grid; place-items: center;
   transition: color .15s ease, background .15s ease, border-color .15s ease;
 }
 .qbatch-remove:hover {
   color: var(--fg);
-  background: var(--bg-3);
-  border-color: var(--border-subtle);
+  background: var(--bg-hover);
+  border-color: var(--border);
 }
 .qbatch[draggable="true"] .qbatch-remove:hover {
   color: var(--red);
@@ -768,13 +761,33 @@ body::before {
 }
 
 /* ─── NESTED FILE ROWS ─── */
+/* Per-batch column headers — same grid as the file rows so the labels
+   align with the columns they describe. Sits between .qbatch-head and
+   the file list, scoped to this group only. 6th column reserved for the
+   per-file skip ✕ — no label needed. */
+.qfile-head {
+  display: grid;
+  grid-template-columns: 24px 1.8fr 0.7fr 1.2fr 0.7fr 28px;
+  align-items: center;
+  gap: 14px;
+  padding: 7px 18px 7px 28px;
+  background: var(--bg-1);
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: 10px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: 0.10em;
+  color: var(--fg-2);
+}
+
 .qbatch-files {
   list-style: none; margin: 0; padding: 0;
   background: var(--bg-0);
 }
+.qbatch-files .qrow:first-child { border-top: 0; }
 .qbatch-files .qrow {
   display: grid;
-  grid-template-columns: 24px 1.8fr 0.7fr 1.2fr 0.7fr;
+  grid-template-columns: 24px 1.8fr 0.7fr 1.2fr 0.7fr 28px;
   align-items: center;
   gap: 14px;
   padding: 9px 18px 9px 28px;
@@ -821,8 +834,54 @@ body::before {
 .qrow .status.running .pill .dot { animation: pulse 1.4s ease-in-out infinite; }
 .qrow .status.done .pill     { color: var(--green); border-color: oklch(0.78 0.140 148 / 0.4); background: oklch(0.78 0.140 148 / 0.10); }
 .qrow .status.failed .pill   { color: var(--red);  border-color: oklch(0.70 0.19 25 / 0.5); background: oklch(0.70 0.19 25 / 0.10); }
-.qrow .status.skipped .pill  { color: var(--fg-3); border-color: var(--border-subtle); background: var(--bg-1); }
+.qrow .status.skipped .pill  { color: var(--fg-4); border-color: var(--border-subtle); background: var(--bg-1); }
+.qrow .status.existed .pill  { color: var(--fg-3); border-color: var(--border-subtle); background: var(--bg-1); }
 @keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
+
+/* D: per-file progress bar — mirrors the batch-level treatment, half-sized. */
+.qbatch-files .qrow .status .progressbar {
+  flex: 1; height: 3px; border-radius: 2px;
+  background: var(--bg-3); overflow: hidden; min-width: 40px;
+  border: 1px solid var(--border-subtle);
+}
+.qbatch-files .qrow .status .progressbar > i {
+  display: block; height: 100%;
+  background: var(--cyan-dim);
+  transition: width .25s ease;
+}
+.qbatch-files .qrow .status.done .progressbar > i    { background: var(--green); }
+.qbatch-files .qrow .status.failed .progressbar > i  { background: var(--red); }
+.qbatch-files .qrow .status.existed .progressbar > i { background: var(--fg-4); }
+
+/* Skipped row: dim everything so it visually fades from the active list. */
+.qbatch-files .qrow.status-skipped {
+  opacity: 0.55;
+}
+.qbatch-files .qrow.status-skipped .file .name {
+  text-decoration: line-through;
+  text-decoration-color: var(--fg-4);
+}
+
+/* C: trailing skip control — discoverable on hover, no clutter when idle. */
+.qrow-skip { display: flex; justify-content: flex-end; }
+.qrow-skip-btn {
+  width: 22px; height: 22px;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--fg-4);
+  cursor: pointer;
+  display: grid; place-items: center;
+  opacity: 0;
+  transition: opacity .12s ease, color .12s ease, background .12s ease, border-color .12s ease;
+}
+.qbatch-files .qrow:hover .qrow-skip-btn,
+.qrow-skip-btn:focus-visible { opacity: 1; }
+.qrow-skip-btn:hover {
+  color: var(--red);
+  background: oklch(0.70 0.19 25 / 0.10);
+  border-color: oklch(0.70 0.19 25 / 0.45);
+}
 
 /* Empty queue list collapses cleanly. */
 .qlist:empty { display: none; }
@@ -1001,3 +1060,94 @@ svg { display: block; }
 .row-menu button.danger { color: var(--red); }
 .row-menu button.danger:hover { background: oklch(0.70 0.19 25 / 0.12); color: var(--red); }
 .row-menu .sep { height: 1px; background: var(--border-subtle); margin: 4px 2px; }
+
+/* ============================================================
+   Lifetime reclaimed — muted secondary section, sits below the
+   active run path so it never competes with drop → configure →
+   start. Green stays reserved for the success indicator (the
+   reclaimed amount); everything else is neutral.
+   ============================================================ */
+.lifetime-section {
+  margin-top: 32px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+  opacity: 0.92;
+}
+.lifetime-section .section-head h2 { color: var(--fg-3); }
+.lifetime-section .section-head .hint {
+  font-family: var(--font-mono);
+  color: var(--fg-3);
+}
+.lt-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.lt-row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 14px;
+  background: var(--bg-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  transition: background .15s ease, border-color .15s ease;
+}
+.lt-row:hover { background: oklch(0.20 0.009 248); }
+.lt-icon {
+  width: 36px; height: 36px;
+  border-radius: 9px;
+  background: var(--bg-3);
+  border: 1px solid var(--border-subtle);
+  display: grid; place-items: center;
+  color: var(--fg-3);
+  box-shadow: inset 0 1px 0 var(--raise-soft);
+}
+.lt-icon svg { width: 16px; height: 16px; }
+.lt-info { min-width: 0; }
+.lt-label {
+  color: var(--fg);
+  font-weight: 500;
+  font-size: 13.5px;
+  letter-spacing: -0.012em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.lt-meta {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-3);
+  letter-spacing: 0;
+}
+.lt-amount {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--green);     /* success indicator — allowed use of green */
+  letter-spacing: -0.015em;
+  text-align: right;
+  padding-left: 8px;
+}
+.lt-reset {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--fg-3);
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  transition: color .15s ease, border-color .15s ease, background .15s ease;
+  white-space: nowrap;
+}
+.lt-reset:hover {
+  color: var(--fg);
+  border-color: var(--border);
+  background: var(--bg-2);
+}
+.lt-reset.confirming {
+  color: var(--amber);
+  border-color: var(--amber-line);
+  background: var(--amber-tint);
+}
+.lt-reset.confirming:hover { background: oklch(0.80 0.110 78 / 0.18); }
+

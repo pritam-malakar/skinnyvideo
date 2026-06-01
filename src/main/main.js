@@ -1,7 +1,9 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { runBatch, dryRunBatch, scanFolder, getBinaries } = require('../encoder/pipeline');
+const fsp = fs.promises;
+const os = require('os');
+const { runBatch, dryRunBatch, scanFolder, isVideoFile, getBinaries, VIDEO_EXTS } = require('../encoder/pipeline');
 
 let mainWindow = null;
 let stopRequested = false;
@@ -22,6 +24,41 @@ function savePrefs() {
     fs.mkdirSync(path.dirname(prefsPath()), { recursive: true });
     fs.writeFileSync(prefsPath(), JSON.stringify(prefs, null, 2));
   } catch (e) { /* non-fatal */ }
+}
+
+/* ─────────── Lifetime reclaimed: drive resolution ───────────
+   Keying rule: a path under /Volumes/<name>/... belongs to that
+   /Volumes/<name>; everything else belongs to the boot drive '/'.
+   Boot label is the visible name of the symlink at /Volumes/<name>
+   whose target is '/'. Cached after first lookup. */
+let _bootLabel = null;
+function detectBootLabel() {
+  try {
+    const entries = fs.readdirSync('/Volumes', { withFileTypes: true });
+    for (const e of entries) {
+      if (e.isSymbolicLink && e.isSymbolicLink()) {
+        try {
+          const target = fs.readlinkSync(path.join('/Volumes', e.name));
+          if (target === '/') return e.name;
+        } catch { /* ignore */ }
+      }
+    }
+  } catch { /* ignore */ }
+  return 'Macintosh HD';
+}
+function bootLabel() {
+  if (_bootLabel == null) _bootLabel = detectBootLabel();
+  return _bootLabel;
+}
+function driveKeyForPath(p) {
+  if (!p || typeof p !== 'string') return null;
+  const m = /^\/Volumes\/([^/]+)/.exec(p);
+  if (m) return `/Volumes/${m[1]}`;
+  return '/';
+}
+function driveLabelForKey(k) {
+  if (k === '/') return bootLabel();
+  return path.basename(k);
 }
 
 // Per-batch runtime state for row-level Pause / Resume / Stop.
@@ -87,6 +124,72 @@ ipcMain.handle('scan-source', async (_evt, srcPath) => {
   return await scanFolder(srcPath);
 });
 
+/* Stat — lets the renderer distinguish a dropped folder from dropped files
+   so it can dispatch to the existing folder scan path vs the new file-list
+   path without re-implementing folder detection on the renderer side. */
+ipcMain.handle('stat-path', async (_evt, p) => {
+  if (!p || typeof p !== 'string') return null;
+  try {
+    const s = await fsp.stat(p);
+    return { isFile: s.isFile(), isDirectory: s.isDirectory() };
+  } catch { return null; }
+});
+
+/* File picker — multi-select, video-typed. macOS dialogs can't pick folders
+   AND files in one dialog, so the browse button now picks files; folders
+   still arrive via drag-drop. */
+ipcMain.handle('browse-source-files', async (_evt, suggestedFallback) => {
+  const exts = [...VIDEO_EXTS].map((e) => e.replace(/^\./, ''));
+  const opts = {
+    properties: ['openFile', 'multiSelections'],
+    filters: [
+      { name: 'Video files', extensions: exts },
+      { name: 'All files', extensions: ['*'] }
+    ]
+  };
+  if (prefs.lastSrc && fs.existsSync(prefs.lastSrc)) {
+    // lastSrc may be a folder OR a file — defaultPath as a file is fine.
+    opts.defaultPath = prefs.lastSrc;
+  } else if (suggestedFallback && fs.existsSync(suggestedFallback)) {
+    opts.defaultPath = suggestedFallback;
+  } else {
+    opts.defaultPath = app.getPath('home');
+  }
+  const r = await dialog.showOpenDialog(mainWindow, opts);
+  if (r.canceled || !r.filePaths.length) return null;
+  // Persist the picker's anchor as the parent of the first selected file
+  // — next open lands in the same folder.
+  prefs.lastSrc = path.dirname(r.filePaths[0]);
+  savePrefs();
+  return r.filePaths;
+});
+
+/* scan-files — probe a heterogeneous list of paths (files and/or folders).
+   Each folder expands via the existing scanFolder; each file is probed
+   individually. Folder scanning is the validated path and is reused
+   unchanged — we just don't take that path when the renderer routed a
+   dropped/picked file-list batch here. */
+ipcMain.handle('scan-files', async (_evt, srcPaths) => {
+  if (!Array.isArray(srcPaths) || srcPaths.length === 0) {
+    return { rootKind: 'files', root: null, videos: [], ignored: 0, totalSize: 0 };
+  }
+  const videos = [];
+  let ignored = 0;
+  let totalSize = 0;
+  for (const p of srcPaths) {
+    if (!p || typeof p !== 'string') { ignored++; continue; }
+    try {
+      const sub = await scanFolder(p);     // handles both file + dir cases
+      videos.push(...sub.videos);
+      ignored += sub.ignored || 0;
+      totalSize += sub.totalSize || 0;
+    } catch {
+      ignored++;
+    }
+  }
+  return { rootKind: 'files', root: srcPaths[0], videos, ignored, totalSize };
+});
+
 ipcMain.handle('start-queue', async (_evt, batches) => {
   if (queueRunning) return { ok: false, error: 'Already running' };
   queueRunning = true;
@@ -114,9 +217,64 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
         onSpawn: (child) => { state.child = child; }
       };
 
-      const result = isDry
-        ? await dryRunBatch(batch, (progress) => send('progress', { batchId: batch.id, ...progress }))
-        : await runBatch(batch, control, (progress) => send('progress', { batchId: batch.id, ...progress }));
+      /* File-list batches arrive with batch.kind === 'files' and an array
+         of original file paths in batch.fileSources. We stage them in a
+         temp dir of symlinks named so the encoder sees a regular folder
+         and mirrors output under "Selected files (<id>)/". Pipeline.js is
+         untouched — it walks the temp dir like any other source.
+         Cleanup runs in finally so symlinks never leak. */
+      let runSrc = batch.src;
+      let tmpCleanup = null;
+      if (batch.kind === 'files' && Array.isArray(batch.fileSources) && batch.fileSources.length > 0) {
+        const tmpRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'squeeze-fl-'));
+        const niceName = `Selected files (${batch.id})`;
+        const stageDir = path.join(tmpRoot, niceName);
+        await fsp.mkdir(stageDir, { recursive: true });
+        const used = new Set();
+        for (const fp of batch.fileSources) {
+          let base = path.basename(fp);
+          let safe = base;
+          let n = 1;
+          while (used.has(safe)) {
+            const ext = path.extname(base);
+            const stem = base.slice(0, base.length - ext.length);
+            safe = `${stem} (${n})${ext}`;
+            n++;
+          }
+          used.add(safe);
+          const linkPath = path.join(stageDir, safe);
+          /* Hardlink so the entry shows up as a regular file to pipeline's
+             readdir({withFileTypes:true}) walker. Symlinks are skipped
+             because Dirent#isFile() returns false for them. If the source
+             is on a different filesystem (EXDEV — e.g. /Volumes/NAS),
+             fall back to a copy that uses APFS clonefile when available
+             (effectively free CoW). */
+          try {
+            await fsp.link(fp, linkPath);
+          } catch (e) {
+            if (e && e.code === 'EXDEV') {
+              await fsp.copyFile(fp, linkPath, fs.constants.COPYFILE_FICLONE);
+            } else {
+              throw e;
+            }
+          }
+        }
+        runSrc = stageDir;
+        tmpCleanup = tmpRoot;
+      }
+
+      const wrappedBatch = (runSrc === batch.src) ? batch : { ...batch, src: runSrc };
+
+      let result;
+      try {
+        result = isDry
+          ? await dryRunBatch(wrappedBatch, (progress) => send('progress', { batchId: batch.id, ...progress }))
+          : await runBatch(wrappedBatch, control, (progress) => send('progress', { batchId: batch.id, ...progress }));
+      } finally {
+        if (tmpCleanup) {
+          try { await fsp.rm(tmpCleanup, { recursive: true, force: true }); } catch { /* non-fatal */ }
+        }
+      }
 
       totals.processed += result.processed || 0;
       totals.failed += result.failed || 0;
@@ -218,6 +376,68 @@ ipcMain.handle('save-last-src', async (_evt, p) => {
     prefs.lastSrc = p;
     savePrefs();
   }
+});
+
+/* ─────────── Lifetime reclaimed: IPC ───────────
+   - get-lifetime-drives → sorted (totalReclaimed desc) array of records.
+   - add-reclaimed → credits a batch's contribution to its drive. Caller
+     is the renderer; it has already excluded dry-run batches and filtered
+     to files that finished with status 'done', so we just accumulate.
+     New drives are auto-created on first credit.
+   - reset-drive → zeroes counters for ONE drive (no file effects). */
+ipcMain.handle('get-lifetime-drives', async () => {
+  const drives = prefs.lifetimeDrives || {};
+  return Object.values(drives).sort((a, b) => (b.totalReclaimed || 0) - (a.totalReclaimed || 0));
+});
+
+ipcMain.handle('add-reclaimed', async (_evt, payload) => {
+  if (!payload || !payload.dest) return null;
+  const filesAdded = Math.max(0, Math.floor(payload.filesAdded || 0));
+  const addedBytes = Math.max(0, Math.floor(payload.addedBytes || 0));
+  // No work? Don't create a drive row for nothing.
+  if (filesAdded === 0) return null;
+
+  const driveKey = driveKeyForPath(payload.dest);
+  if (!driveKey) return null;
+
+  prefs.lifetimeDrives = prefs.lifetimeDrives || {};
+  const now = Date.now();
+  let rec = prefs.lifetimeDrives[driveKey];
+  if (!rec) {
+    rec = {
+      driveKey,
+      label: driveLabelForKey(driveKey),
+      totalReclaimed: 0,
+      filesProcessed: 0,
+      runsCount: 0,
+      firstSeen: now,
+      lastUsed: now
+    };
+    prefs.lifetimeDrives[driveKey] = rec;
+  } else {
+    // Cheap refresh in case the mount was renamed since first seen.
+    rec.label = driveLabelForKey(driveKey);
+  }
+  rec.totalReclaimed += addedBytes;
+  rec.filesProcessed += filesAdded;
+  rec.runsCount += 1;        // one batch with real work = one run
+  rec.lastUsed = now;
+  savePrefs();
+  return rec;
+});
+
+ipcMain.handle('reset-drive', async (_evt, driveKey) => {
+  if (!driveKey || !prefs.lifetimeDrives) return null;
+  const rec = prefs.lifetimeDrives[driveKey];
+  if (!rec) return null;
+  const now = Date.now();
+  rec.totalReclaimed = 0;
+  rec.filesProcessed = 0;
+  rec.runsCount = 0;
+  rec.firstSeen = now;        // counter starts over from now
+  rec.lastUsed = now;
+  savePrefs();
+  return rec;
 });
 
 ipcMain.handle('open-path', async (_evt, p) => {
