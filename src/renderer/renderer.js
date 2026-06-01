@@ -41,6 +41,7 @@ const revealOutputBtn = document.getElementById('reveal-output');
 const dismissSummaryBtn = document.getElementById('dismiss-summary');
 const topProgress = document.getElementById('top-progress');
 const statEta = document.getElementById('stat-eta');
+const appVersionEl = document.getElementById('app-version');
 const lifetimeSection = document.getElementById('lifetime-section');
 const lifetimeList = document.getElementById('lifetime-list');
 const lifetimeTotal = document.getElementById('lifetime-total');
@@ -1350,3 +1351,13 @@ function renderLifetime(drives) {
 clearDrop();
 renderQueue();
 refreshLifetime();
+
+/* Version label — single source of truth. main.js returns app.getVersion()
+   which reads CFBundleShortVersionString in the packaged .app and falls
+   through to package.json in dev. Bumping package.json is the only edit. */
+(async () => {
+  try {
+    const v = await window.api.getAppVersion();
+    if (appVersionEl && v) appVersionEl.textContent = 'v' + v;
+  } catch { /* leave blank if IPC fails */ }
+})();

@@ -112,6 +112,11 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
+/* Version read from Electron's bundled identity — single source of truth.
+   In dev this falls through to package.json; in a packaged .app it returns
+   CFBundleShortVersionString. The renderer fetches it once at startup. */
+ipcMain.handle('app-version', async () => app.getVersion());
+
 ipcMain.handle('choose-destination', async (_evt, defaultPath) => {
   const opts = { properties: ['openDirectory', 'createDirectory'] };
   if (defaultPath && fs.existsSync(defaultPath)) opts.defaultPath = defaultPath;
@@ -304,6 +309,7 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
         }
         if (wrapperName) {
           const wrapperDir = path.join(result.runDir, wrapperName);
+          let lifted = 0;
           try {
             const ws = await fsp.stat(wrapperDir);
             if (ws.isDirectory()) {
@@ -312,11 +318,22 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
                 const to = path.join(result.runDir, entry);
                 // Don't clobber a sibling at runDir level (e.g. _FAILED).
                 if (fs.existsSync(to)) continue;
-                try { await fsp.rename(from, to); } catch { /* skip */ }
+                try { await fsp.rename(from, to); lifted++; } catch { /* skip */ }
               }
               try { await fsp.rmdir(wrapperDir); } catch { /* not empty / not removable */ }
             }
           } catch { /* wrapper absent — nothing to lift */ }
+          // Stamp the canonical output structure in the log so any future
+          // "why is there a sub-folder on machine X" question is one cat
+          // away — no need to guess what build is on what machine.
+          try {
+            const logPath = path.join(result.runDir, 'compress.log');
+            fs.appendFileSync(
+              logPath,
+              `# Flatten: wrapper="${wrapperName}" lifted=${lifted}`
+              + ` — canonical layout is <chosen output>/Compressed_<run>/<files>\n`
+            );
+          } catch {}
         }
       }
 

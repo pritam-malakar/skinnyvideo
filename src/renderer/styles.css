@@ -175,7 +175,15 @@ body::before {
   background: url('assets/squeeze.png') center / contain no-repeat;
 }
 .wm-logo::after { content: none; }
+.wm-text { display: flex; flex-direction: column; gap: 4px; }
 .wm-name { font-size: 30px; font-weight: 600; letter-spacing: -0.028em; line-height: 1; }
+.wm-version {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--fg-4);
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
 
 /* ============================================================
    Dropzone
@@ -966,11 +974,8 @@ body::before {
 
 .progress-stats {
   display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr 1fr 1fr;  /* ETA card slightly wider */
+  grid-template-columns: repeat(4, 1fr);
   gap: 10px;
-}
-.progress-stats:has(#stat-eta.hidden) {
-  grid-template-columns: repeat(4, 1fr);          /* shrink cleanly when ETA hidden */
 }
 .stat {
   background: var(--bg-0);
@@ -991,26 +996,42 @@ body::before {
 }
 .reclaimed-val { color: var(--green); }
 
-/* ETA = headline stat. Bigger value, cyan to read as "active run signal"
-   (cyan is the brand active-state color; green stays reserved for success).
-   Label upsized + brightened so it doesn't read as a caption. */
-.stat-eta {
-  background: linear-gradient(180deg, var(--bg-1), var(--bg-0));
-  border-color: var(--cyan-line);
+/* ETA HERO — the single most prominent piece of text in the running panel.
+   Sits between the run header and the progress bar where the eye lands.
+   Hidden until the first file completes (honest behavior). Cyan accent
+   reads as active-run signal; green stays reserved for success. */
+.eta-hero {
+  margin: 6px 0 14px;
+  padding: 16px 20px;
+  border-radius: 14px;
+  background:
+    radial-gradient(140% 80% at 50% 0%, var(--cyan-tint), transparent 70%),
+    linear-gradient(180deg, var(--bg-1), var(--bg-0));
+  border: 1px solid var(--cyan-line);
   box-shadow:
-    inset 0 1px 0 oklch(0.76 0.115 215 / 0.20),
-    0 6px 22px -12px var(--cyan-line);
+    inset 0 1px 0 oklch(0.76 0.115 215 / 0.22),
+    0 0 0 1px oklch(0.76 0.115 215 / 0.10),
+    0 10px 28px -16px var(--cyan-line);
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
 }
-.stat-eta .stat-label {
+.eta-hero.hidden { display: none; }
+.eta-label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
   color: var(--cyan);
-  font-size: 11px;
-  letter-spacing: 0.12em;
 }
-.stat-eta .stat-value {
-  font-size: 26px;
+.eta-value {
+  font-family: var(--font-mono);
+  font-size: 36px;
   font-weight: 700;
   color: var(--fg);
-  letter-spacing: -0.025em;
+  letter-spacing: -0.030em;
+  line-height: 1;
 }
 #stat-failed.has-failures { color: var(--red); }
 

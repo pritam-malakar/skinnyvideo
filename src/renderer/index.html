@@ -19,8 +19,9 @@
     <div class="header">
       <div class="wordmark">
         <div class="wm-logo"></div>
-        <div>
+        <div class="wm-text">
           <div class="wm-name">Squeeze</div>
+          <div id="app-version" class="wm-version"></div>
         </div>
       </div>
     </div>
@@ -153,16 +154,18 @@
           <div id="progress-counts" class="progress-counts"></div>
         </div>
       </div>
+      <!-- ETA hero: hidden until first file completes; refines as run progresses;
+           cleared at end. Sits right above the running progress bar where the
+           eye lands; biggest single piece of text in the running panel. -->
+      <div id="stat-eta" class="eta-hero hidden">
+        <span class="eta-label">Time remaining</span>
+        <span id="current-eta" class="eta-value">—</span>
+      </div>
       <div class="progress-bar">
         <div id="progress-fill" class="progress-fill"></div>
       </div>
       <div id="current-file" class="current-file"></div>
       <div class="progress-stats">
-        <!-- ETA promoted to a headline stat (hidden until first file completes). -->
-        <div id="stat-eta" class="stat stat-eta hidden">
-          <span class="stat-label">Time remaining</span>
-          <span id="current-eta" class="stat-value">—</span>
-        </div>
         <div class="stat">
           <span class="stat-label">Reclaimed</span>
           <span id="reclaimed" class="stat-value reclaimed-val">0 B</span>
