@@ -83,6 +83,29 @@ let runStartTs = 0;
 let runDoneBytes = 0;
 let runActive = false;           // true while a queue run is in progress (gates the flow's Start cue)
 
+/* A file row in a settled state — done/failed/cancelled/already-present/
+   operator-skipped. Used to resolve file-done events to the right row and to
+   reconcile leftovers when a batch reaches a terminal status (BUG A). */
+const TERMINAL_FILE_STATUSES = new Set(['done', 'failed', 'cancelled', 'existed', 'skipped']);
+function isTerminalFileStatus(s) { return TERMINAL_FILE_STATUSES.has(s); }
+
+/* BUG A — once a batch reaches a terminal status, make sure NO file row is
+   left mid-flight, so the batch pill always agrees with its file rows. A row
+   still 'running' when the batch finished actually completed (its file-done
+   just didn't resolve) → done; a row never started (e.g. its source was
+   removed before the run scanned it) → failed. On cancel, all leftovers →
+   cancelled. */
+function reconcileBatchFiles(item) {
+  const kind = item.status; // 'done' | 'failed' | 'cancelled'
+  for (const f of item.files) {
+    if (isTerminalFileStatus(f.status)) continue;
+    if (kind === 'cancelled') f.status = 'cancelled';
+    else if (kind === 'failed') f.status = 'failed';
+    else f.status = (f.status === 'running') ? 'done' : 'failed';
+    f.progress = 100;
+  }
+}
+
 function humanBytes(n) {
   if (!Number.isFinite(n)) return '0 B';
   const sign = n < 0 ? '-' : '';
@@ -1225,14 +1248,6 @@ window.api.onBatchStatus(({ id, status, result }) => {
     item.status = 'cancelling';
   } else if (status === 'Cancelled') {
     item.status = 'cancelled';
-    /* Any remaining queued/running files inherit 'cancelled' — they were
-       never started (we hard-stopped the batch loop), so they're NOT 'done'
-       and never count toward reclaimed/lifetime totals. */
-    for (const f of item.files) {
-      if (f.status === 'queued' || f.status === 'running') {
-        f.status = 'cancelled';
-      }
-    }
     if (result) {
       item.lastResult = result;
       item.processed = result.processed || 0;
@@ -1261,6 +1276,11 @@ window.api.onBatchStatus(({ id, status, result }) => {
   } else if (status === 'Failed') {
     item.status = 'failed';
     if (result) item.lastResult = result;
+  }
+  /* BUG A: once terminal, reconcile leftover file rows so the pill and the
+     per-file rows always agree (no batch DONE over a row stuck RUNNING). */
+  if (item.status === 'done' || item.status === 'failed' || item.status === 'cancelled') {
+    reconcileBatchFiles(item);
   }
   /* Terminal states are credited to the lifetime tracker. dryRun is the
      batch's FROZEN flag (snapshotted at Add), not the live toggle, so a
@@ -1326,7 +1346,6 @@ window.api.onProgress((d) => {
     reclaimedEl.textContent = humanBytes(d.reclaimed);
 
     if (batch) {
-      const delta = (d.reclaimed || 0) - batchPrevReclaimed;
       batchPrevReclaimed = d.reclaimed || 0;
       batch.progress = overall * 100;
       batch.reclaimed = d.reclaimed || batch.reclaimed;
@@ -1334,35 +1353,40 @@ window.api.onProgress((d) => {
       batch.skipped = d.alreadyDone || 0;
       batch.failed = d.failed || 0;
 
-      // Resolve which file this completion is for. file-done doesn't carry
-      // the path, so we use the running file (set at file-start).
-      const runningIdx = batch.files.findIndex((f) => f.status === 'running');
-      if (runningIdx >= 0) {
-        const f = batch.files[runningIdx];
+      /* BUG A — resolve which file this completion belongs to RELIABLY:
+         prefer the index recorded at file-start (the file-start↔file-done
+         pairing), then an exact source-path match, then a basename match among
+         not-yet-terminal rows. Then assign the REAL output size the pipeline
+         sent (d.outBytes) — no more reverse-engineering from a reclaim delta,
+         which left rows showing "–". */
+      let ti = Number.isFinite(batch.runningFileIdx) ? batch.runningFileIdx : -1;
+      if (ti < 0 || !batch.files[ti] || isTerminalFileStatus(batch.files[ti].status)) {
+        if (d.file) ti = batch.files.findIndex((f) => f.path === d.file);
+        if (ti < 0 && d.basename) ti = batch.files.findIndex(
+          (f) => f.name === d.basename && !isTerminalFileStatus(f.status)
+        );
+      }
+      if (ti >= 0 && batch.files[ti]) {
+        const f = batch.files[ti];
+        const realOut = Number.isFinite(d.outBytes) && d.outBytes >= 0 ? d.outBytes : null;
         if (d.outcome === 'fail') {
           f.status = 'failed';
           f.outputSize = null;
         } else if (d.outcome === 'cancelled') {
-          /* Operator-cancelled in-flight file. No output produced. */
           f.status = 'cancelled';
           f.outputSize = null;
         } else if (d.outcome === 'skip-exists') {
-          /* Resumability: pipeline found the output already present.
-             Distinct visual from operator-requested skip. */
+          /* Resumability: output already present. Show its real size. */
           f.status = 'existed';
-          f.outputSize = null;
+          f.outputSize = realOut;
         } else {
           f.status = 'done';
-          // outputSize = source - reclaimed-delta for THIS file
-          if (Number.isFinite(f.size) && f.size > 0) {
-            const out = Math.max(0, f.size - Math.max(0, delta));
-            f.outputSize = out;
-          }
-          /* E: count successful source bytes for throughput. */
+          f.outputSize = realOut;
           if (Number.isFinite(f.size) && f.size > 0) runDoneBytes += f.size;
         }
         f.progress = 100;
       }
+      batch.runningFileIdx = -1;
       renderQueue();
     }
 
