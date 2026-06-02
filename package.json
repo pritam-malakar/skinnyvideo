@@ -6,10 +6,14 @@
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --mac --arm64"
+    "dist": "electron-builder --mac --arm64",
+    "postinstall": "node scripts/fix-electron.js"
   },
   "author": "Squeeze",
   "license": "UNLICENSED",
+  "engines": {
+    "node": "22.x"
+  },
   "devDependencies": {
     "electron": "^33.2.0",
     "electron-builder": "^25.1.8"
