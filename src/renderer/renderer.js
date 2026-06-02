@@ -1298,19 +1298,18 @@ window.api.onProgress((d) => {
     progressCounts.textContent = `File ${d.index} of ${d.total}`;
     if (batch) {
       batch.progress = ((d.index - 1) / d.total) * 100;
-      /* Match the file in batch.files first by absolute path, then by
-         basename (handles file-list batches where main.js stages via temp
-         hardlinks with renamed entries). Mark earlier files done if we
-         somehow missed a 'file-done' (defensive). */
+      /* BUG A — resolve THIS file by exact source path first (main now maps
+         file-list temp paths back to originals), then by basename among
+         not-yet-terminal rows. Mark ONLY this file running. We deliberately do
+         NOT mark "earlier" files done: the pipeline's processing order can
+         differ from the row order (file-list temp readdir), and that defensive
+         loop was marking files done with no output size, so their own
+         file-done could no longer land. Every file gets its own start/done. */
       let fi = batch.files.findIndex((f) => f.path === d.file);
       if (fi < 0) fi = batch.files.findIndex(
-        (f) => f.name === d.basename && (f.status === 'queued' || f.status === 'running')
+        (f) => f.name === d.basename && !isTerminalFileStatus(f.status)
       );
       if (fi >= 0) {
-        for (let k = 0; k < fi; k++) {
-          const s = batch.files[k].status;
-          if (s === 'queued' || s === 'running') batch.files[k].status = 'done';
-        }
         batch.files[fi].status = 'running';
         batch.files[fi].progress = 0;
         batch.runningFileIdx = fi;
@@ -1353,19 +1352,20 @@ window.api.onProgress((d) => {
       batch.skipped = d.alreadyDone || 0;
       batch.failed = d.failed || 0;
 
-      /* BUG A — resolve which file this completion belongs to RELIABLY:
-         prefer the index recorded at file-start (the file-start↔file-done
-         pairing), then an exact source-path match, then a basename match among
+      /* BUG A — resolve which file this completion belongs to by EXACT source
+         path first (main maps file-list temp paths back to originals, so this
+         is reliable regardless of processing order or duplicate basenames),
+         then the running index from file-start, then a basename match among
          not-yet-terminal rows. Then assign the REAL output size the pipeline
-         sent (d.outBytes) — no more reverse-engineering from a reclaim delta,
-         which left rows showing "–". */
-      let ti = Number.isFinite(batch.runningFileIdx) ? batch.runningFileIdx : -1;
-      if (ti < 0 || !batch.files[ti] || isTerminalFileStatus(batch.files[ti].status)) {
-        if (d.file) ti = batch.files.findIndex((f) => f.path === d.file);
-        if (ti < 0 && d.basename) ti = batch.files.findIndex(
-          (f) => f.name === d.basename && !isTerminalFileStatus(f.status)
-        );
+         sent (d.outBytes). Order-independent → every done file gets its size. */
+      let ti = d.file ? batch.files.findIndex((f) => f.path === d.file) : -1;
+      if (ti < 0 && Number.isFinite(batch.runningFileIdx) && batch.files[batch.runningFileIdx]
+          && !isTerminalFileStatus(batch.files[batch.runningFileIdx].status)) {
+        ti = batch.runningFileIdx;
       }
+      if (ti < 0 && d.basename) ti = batch.files.findIndex(
+        (f) => f.name === d.basename && !isTerminalFileStatus(f.status)
+      );
       if (ti >= 0 && batch.files[ti]) {
         const f = batch.files[ti];
         const realOut = Number.isFinite(d.outBytes) && d.outBytes >= 0 ? d.outBytes : null;

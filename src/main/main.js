@@ -308,6 +308,13 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
          Cleanup runs in finally so symlinks never leak. */
       let runSrc = batch.src;
       let tmpCleanup = null;
+      /* BUG A — map each staged temp path back to its ORIGINAL source path.
+         The pipeline scans the temp stage dir, so its progress events carry
+         temp paths; the renderer's rows are keyed by ORIGINAL paths. Translating
+         here lets the renderer resolve every file by exact path regardless of
+         the temp readdir order or duplicate basenames (which was leaving some
+         done files with no output size). */
+      const stageMap = new Map();
       if (batch.kind === 'files' && Array.isArray(batch.fileSources) && batch.fileSources.length > 0) {
         const tmpRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'squeeze-fl-'));
         const niceName = `Selected files (${batch.id})`;
@@ -326,6 +333,7 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
           }
           used.add(safe);
           const linkPath = path.join(stageDir, safe);
+          stageMap.set(linkPath, fp);
           /* Hardlink so the entry shows up as a regular file to pipeline's
              readdir({withFileTypes:true}) walker. Symlinks are skipped
              because Dirent#isFile() returns false for them. If the source
@@ -348,11 +356,22 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
 
       const wrappedBatch = (runSrc === batch.src) ? batch : { ...batch, src: runSrc };
 
+      /* Forward progress to the renderer, translating staged temp paths back
+         to original source paths so file rows resolve by exact path (BUG A). */
+      const forward = (progress) => {
+        let p = progress;
+        if (stageMap.size && p && typeof p.file === 'string' && stageMap.has(p.file)) {
+          const orig = stageMap.get(p.file);
+          p = { ...p, file: orig, basename: path.basename(orig) };
+        }
+        send('progress', { batchId: batch.id, ...p });
+      };
+
       let result;
       try {
         result = isDry
-          ? await dryRunBatch(wrappedBatch, (progress) => send('progress', { batchId: batch.id, ...progress }))
-          : await runBatch(wrappedBatch, control, (progress) => send('progress', { batchId: batch.id, ...progress }));
+          ? await dryRunBatch(wrappedBatch, forward)
+          : await runBatch(wrappedBatch, control, forward);
       } catch (e) {
         /* BUG 3 backstop: any unexpected hard failure (e.g. the destination
            drive vanished before we could write) must fail the batch cleanly,
