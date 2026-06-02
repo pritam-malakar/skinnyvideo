@@ -730,17 +730,25 @@ function buildBatchGroup(batch, idx) {
   statusWrap.appendChild(pbar);
   head.appendChild(statusWrap);
 
-  // Actions — Remove (queued) OR ⋯ menu (running/paused) OR empty
+  /* Actions — Remove ✕ for removable batches (queued OR completed: done /
+     failed / cancelled), the ⋯ menu while running/paused, else empty.
+     Removing a completed batch ONLY clears it from this queue view: it
+     filters the in-memory list and re-renders. No file is touched (outputs
+     and originals stay on disk) and lifetime-reclaimed totals — already
+     persisted to prefs when the batch finished — are unaffected. */
+  const REMOVABLE = new Set(['queued', 'done', 'failed', 'cancelled']);
   const actionsCell = document.createElement('div');
   actionsCell.className = 'qbatch-actions';
-  if (batch.status === 'queued') {
+  if (REMOVABLE.has(batch.status)) {
     const rm = document.createElement('button');
-    rm.className = 'qbatch-remove';
-    rm.title = 'Remove batch';
+    rm.className = 'qbatch-remove qbatch-remove--x';
+    rm.title = batch.status === 'queued' ? 'Remove batch' : 'Remove from list';
     rm.setAttribute('aria-label', rm.title);
     rm.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><path d="M6 6l12 12M18 6L6 18"/></svg>';
     rm.addEventListener('click', (e) => {
       e.stopPropagation();
+      // View-only removal — never deletes outputs/originals, never re-credits
+      // or decrements lifetime stats.
       queue = queue.filter((x) => x.id !== batch.id);
       renderQueue();
     });
