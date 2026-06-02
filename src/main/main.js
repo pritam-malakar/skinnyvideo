@@ -255,7 +255,7 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
   };
 
-  const totals = { processed: 0, failed: 0, skippedNonVideo: 0, reclaimed: 0, alreadyDone: 0 };
+  const totals = { processed: 0, failed: 0, failedCopied: 0, failedNoCopy: 0, skippedNonVideo: 0, reclaimed: 0, alreadyDone: 0 };
 
   try {
     for (let i = 0; i < batches.length; i++) {
@@ -368,6 +368,8 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
 
       totals.processed += result.processed || 0;
       totals.failed += result.failed || 0;
+      totals.failedCopied += result.failedCopied || 0;
+      totals.failedNoCopy += result.failedNoCopy || 0;
       totals.skippedNonVideo += result.skippedNonVideo || 0;
       totals.reclaimed += result.reclaimed || 0;
       totals.alreadyDone += result.alreadyDone || 0;

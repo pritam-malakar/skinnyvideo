@@ -311,6 +311,8 @@ async function runBatch(batch, controlOrFn, onProgress) {
   let done = 0;
   let processed = 0;
   let failed = 0;
+  let failedCopied = 0;   // failed, but original preserved to _FAILED/
+  let failedNoCopy = 0;   // failed AND original unreadable/missing — no copy made
   let alreadyDone = 0;
   let reclaimed = 0;
   const startTs = Date.now();
@@ -485,10 +487,25 @@ async function runBatch(batch, controlOrFn, onProgress) {
     } else {
       failed++;
       done++;
-      try { await copyToFailed(runDir, scan.rootKind, scan.root, v.file); } catch (e) {
+      /* Preserve the original next to the run for forensics. Correct for a
+         file that is PRESENT but corrupt/undecodable. If the source itself
+         is gone (moved/deleted/unreadable mid-run) the copy throws and NO
+         _FAILED/ copy exists — record that so the log and the UI never
+         promise a copy that isn't there. */
+      let copied = false;
+      try {
+        await copyToFailed(runDir, scan.rootKind, scan.root, v.file);
+        copied = true;
+      } catch (e) {
         log(`FAILED-COPY-ERROR ${v.file} :: ${e.message}`);
       }
-      log(`FAIL ${v.file} (copied to _FAILED)`);
+      if (copied) {
+        failedCopied++;
+        log(`FAIL ${v.file} (copied to _FAILED)`);
+      } else {
+        failedNoCopy++;
+        log(`FAIL ${v.file} (original could not be read — may have been moved or deleted during the run; no _FAILED copy made)`);
+      }
       onProgress && onProgress({
         type: 'file-done',
         index: i + 1,
@@ -498,13 +515,14 @@ async function runBatch(batch, controlOrFn, onProgress) {
         failed,
         alreadyDone,
         elapsedMs: Date.now() - startTs,
-        outcome: 'fail'
+        outcome: 'fail',
+        failKind: copied ? 'copied' : 'nocopy'
       });
     }
   }
 
   log(`# Run finished ${new Date().toISOString()}`);
-  log(`# Totals: processed=${processed} failed=${failed} already-done=${alreadyDone} ignored-non-video=${scan.ignored} reclaimed=${humanBytes(reclaimed)}`);
+  log(`# Totals: processed=${processed} failed=${failed} (copied-to-_FAILED=${failedCopied}, source-unreadable=${failedNoCopy}) already-done=${alreadyDone} ignored-non-video=${scan.ignored} reclaimed=${humanBytes(reclaimed)}`);
   logStream.end();
 
   return {
@@ -512,6 +530,8 @@ async function runBatch(batch, controlOrFn, onProgress) {
     logPath,
     processed,
     failed,
+    failedCopied,
+    failedNoCopy,
     alreadyDone,
     skippedNonVideo: scan.ignored,
     reclaimed,
@@ -536,6 +556,8 @@ async function dryRunBatch(batch, onProgress) {
     logPath: null,
     processed: 0,
     failed: 0,
+    failedCopied: 0,
+    failedNoCopy: 0,
     alreadyDone: 0,
     skippedNonVideo: scan.ignored,
     reclaimed: 0,
@@ -553,6 +575,7 @@ module.exports = {
   dryRunBatch,
   isVideoFile,
   humanBytes,
+  copyToFailed,
   VIDEO_EXTS,
   TIER_CONSTANTS
 };

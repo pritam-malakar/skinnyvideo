@@ -1349,8 +1349,30 @@ window.api.onQueueFinished(({ totals, stopped }) => {
   if (totals.skippedNonVideo > 0) sub.push(`${totals.skippedNonVideo} non-video ignored`);
   if (sub.length) lines.push(`<div class="muted">${sub.join(' · ')}</div>`);
   /* Item 3: failures stay plain — no exit codes or ffmpeg text here. The
-     technical detail lives one click away in the run log (Show log). */
-  if (totals.failed > 0) lines.push(`<div class="failed-line">${totals.failed} file${totals.failed === 1 ? '' : 's'} couldn’t be compressed and ${totals.failed === 1 ? 'was' : 'were'} skipped. A copy of each is in <code>_FAILED/</code> for you to check. Open “Show log” for details.</div>`);
+     technical detail lives one click away in the run log (Show log).
+     Wording is conditional on whether the _FAILED/ copy was actually
+     written: we only promise a copy when one exists. A file whose original
+     couldn't be read (moved/deleted mid-run) has no copy — say so, and
+     never point at _FAILED/ for it. */
+  if (totals.failed > 0) {
+    const f = totals.failed;
+    const copied = totals.failedCopied || 0;
+    const noCopy = totals.failedNoCopy || 0;
+    const plural = (n) => (n === 1 ? '' : 's');
+    if (noCopy === 0) {
+      // All preserved (or legacy result without a breakdown → assume copied).
+      lines.push(`<div class="failed-line">${f} file${plural(f)} couldn’t be compressed and ${f === 1 ? 'was' : 'were'} skipped. A copy of each is in <code>_FAILED/</code> for you to check. Open “Show log” for details.</div>`);
+    } else if (copied === 0) {
+      // None could be read → no copies saved; do not mention _FAILED/.
+      lines.push(`<div class="failed-line">${f} file${plural(f)} couldn’t be read — the original${plural(f)} may have been moved or deleted during the run, so no copy was saved. Open “Show log” for details.</div>`);
+    } else {
+      // Mixed: some preserved, some unreadable.
+      lines.push(
+        `<div class="failed-line">${copied} file${plural(copied)} couldn’t be compressed and ${copied === 1 ? 'was' : 'were'} skipped — a copy of each is in <code>_FAILED/</code>. `
+        + `${noCopy} other${plural(noCopy)} couldn’t be read at all (the original${plural(noCopy)} may have been moved or deleted during the run), so no copy was saved. Open “Show log” for details.</div>`
+      );
+    }
+  }
   /* Item 4: the trust promise, restated on every run summary. */
   lines.push(
     `<div class="summary-trust">`

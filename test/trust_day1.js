@@ -7,6 +7,7 @@ const fsp = fs.promises;
 const os = require('os');
 const { flattenRunDir } = require('../src/encoder/flatten');
 const { findOrphanPartials, isDeletablePartial, deletePartials } = require('../src/encoder/orphans');
+const { copyToFailed } = require('../src/encoder/pipeline');
 
 const PASS = [], FAIL = [];
 function check(cond, label) { (cond ? PASS : FAIL).push(label); console.log((cond ? 'PASS' : 'FAIL') + ': ' + label); }
@@ -104,6 +105,31 @@ const read = (p) => fs.readFileSync(p, 'utf8');
   check(!exists(path.join(run1, 'a.tmp.mp4')) && !exists(path.join(run1sub, 'c.tmp.mp4')),
     'both orphan partials removed');
   check(exists(path.join(run1, 'b.mp4')), 'finished output survived orphan cleanup');
+
+  // ─────────────────────────────────────────────────────────────
+  header('Failed-file copy: present preserved, missing throws (no-copy path)');
+  // This is the hinge the conditional _FAILED/ wording rests on: a present
+  // source is copied (copied=true → "A copy is in _FAILED/"); a vanished
+  // source makes copyToFailed throw (copied=false → "couldn't be read").
+  const fcRun = path.join(sandbox, 'Compressed_2026-06-03_1000');
+  await fsp.mkdir(fcRun, { recursive: true });
+  const presentSrc = path.join(sandbox, 'present.mov');
+  await fsp.writeFile(presentSrc, 'CORRUPT-BUT-PRESENT');
+
+  let presentThrew = false;
+  try { await copyToFailed(fcRun, 'file', presentSrc, presentSrc); }
+  catch { presentThrew = true; }
+  check(!presentThrew, 'present source: copyToFailed did not throw (copy made)');
+  check(exists(path.join(fcRun, '_FAILED', 'present.mov')),
+    'present source: original preserved under _FAILED/');
+
+  const missingSrc = path.join(sandbox, 'gone.mov');   // never created
+  let missingThrew = false;
+  try { await copyToFailed(fcRun, 'file', missingSrc, missingSrc); }
+  catch { missingThrew = true; }
+  check(missingThrew, 'missing source: copyToFailed threw (no-copy path → honest wording)');
+  check(!exists(path.join(fcRun, '_FAILED', 'gone.mov')),
+    'missing source: no _FAILED/ copy was written');
 
   // ─────────────────────────────────────────────────────────────
   await fsp.rm(sandbox, { recursive: true, force: true });
