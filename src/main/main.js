@@ -279,7 +279,7 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
 
       const isDry = !!batch.dryRun;
       const state = rt(batch.id);
-      state.child = null; state.paused = false; state.cancelled = false;
+      state.child = null; state.paused = false; state.cancelled = false; state.resolved = false;
 
       const control = {
         shouldStop: () => stopRequested,
@@ -411,6 +411,7 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
       else                                                 finalStatus = 'Done';
 
       send('batch-status', { id: batch.id, status: finalStatus, result });
+      state.resolved = true;   // the batch reported a terminal status — cancel watchdog stands down
 
       state.child = null;
       if (stopRequested) break;
@@ -461,6 +462,8 @@ ipcMain.handle('resume-batch', async (_evt, batchId) => {
   }
 });
 
+const CANCEL_HARD_MS = 4000;   // pill must resolve within this, no matter what
+
 ipcMain.handle('cancel-batch', async (_evt, batchId) => {
   const state = rt(batchId);
   state.cancelled = true;
@@ -472,12 +475,25 @@ ipcMain.handle('cancel-batch', async (_evt, batchId) => {
   }
   if (child) {
     try { child.kill('SIGTERM'); } catch {}
-    /* ffmpeg occasionally takes its time finishing the current frame on
-       SIGTERM; SIGKILL after 1.2s guarantees the encode dies and pipeline's
-       runCmd resolves so the cancel check can break the batch loop. */
-    setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, 1200);
+    /* Bounded SIGKILL fallback: if the child hasn't died on SIGTERM shortly,
+       force-kill it. (pipeline's runCmd also resolves immediately on the
+       cancel flag, so the batch loop never waits for the child to confirm
+       death — see runCmd's cancel poll.) */
+    setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, 1000);
   }
   sendBatchUpdate(batchId, 'Cancelling');
+
+  /* BUG C hard guarantee: the pill must NEVER stick on "Cancelling". If the
+     batch loop hasn't reported a terminal status within CANCEL_HARD_MS (e.g.
+     a child wedged in uninterruptible I/O that even SIGKILL can't reap), force
+     the UI to Cancelled regardless of whether the child confirmed death. */
+  setTimeout(() => {
+    if (!state.resolved) {
+      state.resolved = true;
+      sendBatchUpdate(batchId, 'Cancelled');
+    }
+  }, CANCEL_HARD_MS);
+
   return { ok: true };
 });
 
