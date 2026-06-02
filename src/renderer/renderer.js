@@ -347,11 +347,13 @@ function updateAddState() {
   updateFlowState();
 }
 
-/* ───── Guided progressive-disclosure flow ─────
+/* ───── Guided progressive-disclosure flow (hard-gated) ─────
    Computes the single REQUIRED next action and the reachable state of each
    step, then paints:
-     • .step-dim on steps not yet reached (visual only — legitimately-
-       available controls stay interactive so expert users aren't blocked).
+     • .step-dim + `inert` on steps not yet reached — they read as "coming
+       next" but are genuinely non-interactive. The sequence is ENFORCED
+       (drop → Output → tier → Add → Start); no skipping ahead, no expert
+       exception. The drop zone never locks (always the way back to start).
      • .next-action (orange "act here" cue + pulse) on EXACTLY ONE control.
    Orange means ONLY "your next action, act here" — nowhere else.
    Priority of the single cue:
@@ -371,15 +373,23 @@ function updateFlowState() {
   else if (staging && hasDest)  next = 'add';
   else if (!staging && runnable && startVisible) next = 'start';
 
-  // Reachability → dim. Output + safety bar are the "config" step (un-dim once
-  // files are detected); tier un-dims once a location is chosen. Add and Start
-  // use their own :disabled state as the inactive treatment (no .step-dim).
+  // Reachability → dim + HARD LOCK. Output + safety bar are the "config" step
+  // (unlock once files are detected); tier unlocks once a location is chosen.
+  // A locked step is dimmed (.step-dim) AND non-interactive (`inert` — no
+  // pointer, no keyboard focus, out of the a11y tree). The sequence is enforced:
+  // no skipping ahead. The drop zone is never locked. Add and Start lock via
+  // their own :disabled state.
   const outputReachable = staging;
   const tierReachable   = staging && hasDest;
-  if (outputRow) outputRow.classList.toggle('step-dim', !outputReachable);
-  if (safetyBar) safetyBar.classList.toggle('step-dim', !outputReachable);
-  if (tierHead)  tierHead.classList.toggle('step-dim', !tierReachable);
-  if (tiersEl)   tiersEl.classList.toggle('step-dim', !tierReachable);
+  const lockStep = (el, reachable) => {
+    if (!el) return;
+    el.classList.toggle('step-dim', !reachable);
+    el.toggleAttribute('inert', !reachable);
+  };
+  lockStep(outputRow, outputReachable);
+  lockStep(safetyBar, outputReachable);
+  lockStep(tierHead,  tierReachable);
+  lockStep(tiersEl,   tierReachable);
 
   // Exactly one orange cue.
   if (chooseDestBtn) chooseDestBtn.classList.toggle('next-action', next === 'location');

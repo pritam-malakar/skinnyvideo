@@ -1365,13 +1365,14 @@ svg { display: block; }
    Guided progressive-disclosure flow
    ============================================================ */
 
-/* A step not yet reached: dimmed so it reads as "coming next," never a
-   broken grey box. Visual only — we deliberately do NOT pointer-events:none,
-   so legitimately-available controls (choose output, pick a tier) stay
-   reachable for returning/expert users. Genuinely-unavailable actions
-   (Add / Start) are gated by their own :disabled state instead. */
+/* A step not yet reached: dimmed so it reads as "coming next," never a broken
+   grey box — AND genuinely non-interactive (true zero-thinking sequencing).
+   The JS also sets the `inert` attribute (kills pointer + keyboard focus + a11y
+   tree); pointer-events:none here is the CSS-side belt-and-suspenders. Add /
+   Start lock via their own :disabled state. The drop zone never gets this. */
 .step-dim {
   opacity: 0.5;
+  pointer-events: none;
   transition: opacity .28s ease;
 }
 
