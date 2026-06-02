@@ -1355,22 +1355,44 @@ window.api.onQueueFinished(({ totals, stopped }) => {
      couldn't be read (moved/deleted mid-run) has no copy — say so, and
      never point at _FAILED/ for it. */
   if (totals.failed > 0) {
-    const f = totals.failed;
     const copied = totals.failedCopied || 0;
     const noCopy = totals.failedNoCopy || 0;
+    const destLost = totals.failedDestLost || 0;
     const plural = (n) => (n === 1 ? '' : 's');
-    if (noCopy === 0) {
-      // All preserved (or legacy result without a breakdown → assume copied).
-      lines.push(`<div class="failed-line">${f} file${plural(f)} couldn’t be compressed and ${f === 1 ? 'was' : 'were'} skipped. A copy of each is in <code>_FAILED/</code> for you to check. Open “Show log” for details.</div>`);
-    } else if (copied === 0) {
-      // None could be read → no copies saved; do not mention _FAILED/.
-      lines.push(`<div class="failed-line">${f} file${plural(f)} couldn’t be read — the original${plural(f)} may have been moved or deleted during the run, so no copy was saved. Open “Show log” for details.</div>`);
-    } else {
-      // Mixed: some preserved, some unreadable.
+
+    /* BUG 3: destination drive vanished — a destination problem, never a
+       source one. Say so plainly and never blame the original or point at
+       _FAILED/ (which lived on the drive that disappeared). */
+    if (destLost > 0 || totals.destLost) {
       lines.push(
-        `<div class="failed-line">${copied} file${plural(copied)} couldn’t be compressed and ${copied === 1 ? 'was' : 'were'} skipped — a copy of each is in <code>_FAILED/</code>. `
-        + `${noCopy} other${plural(noCopy)} couldn’t be read at all (the original${plural(noCopy)} may have been moved or deleted during the run), so no copy was saved. Open “Show log” for details.</div>`
+        `<div class="failed-line">The destination drive became unavailable during the run`
+        + `${destLost > 0 ? `, so ${destLost} file${plural(destLost)} couldn’t be saved` : ''}. `
+        + `Your original files are untouched. Open “Show log” for details.</div>`
       );
+    }
+
+    /* Ordinary failures: corrupt/undecodable (preserved to _FAILED/) vs
+       source unreadable (no copy possible). Wording only ever promises a
+       _FAILED/ copy that actually exists. */
+    const ordinary = copied + noCopy;
+    if (ordinary > 0) {
+      if (noCopy === 0) {
+        lines.push(`<div class="failed-line">${copied} file${plural(copied)} couldn’t be compressed and ${copied === 1 ? 'was' : 'were'} skipped. A copy of each is in <code>_FAILED/</code> for you to check. Open “Show log” for details.</div>`);
+      } else if (copied === 0) {
+        lines.push(`<div class="failed-line">${noCopy} file${plural(noCopy)} couldn’t be read — the original${plural(noCopy)} may have been moved or deleted during the run, so no copy was saved. Open “Show log” for details.</div>`);
+      } else {
+        lines.push(
+          `<div class="failed-line">${copied} file${plural(copied)} couldn’t be compressed and ${copied === 1 ? 'was' : 'were'} skipped — a copy of each is in <code>_FAILED/</code>. `
+          + `${noCopy} other${plural(noCopy)} couldn’t be read at all (the original${plural(noCopy)} may have been moved or deleted during the run), so no copy was saved. Open “Show log” for details.</div>`
+        );
+      }
+    }
+
+    /* Fallback for an inconsistent breakdown (legacy result): never go silent
+       about failures. */
+    if (ordinary === 0 && destLost === 0 && !totals.destLost) {
+      const f = totals.failed;
+      lines.push(`<div class="failed-line">${f} file${plural(f)} couldn’t be processed and ${f === 1 ? 'was' : 'were'} skipped. Open “Show log” for details.</div>`);
     }
   }
   /* Item 4: the trust promise, restated on every run summary. */
@@ -1587,13 +1609,13 @@ window.api.onOrphansFound(async ({ orphans } = {}) => {
   const n = orphans.length;
   const totalBytes = orphans.reduce((a, o) => a + (Number.isFinite(o.size) ? o.size : 0), 0);
   const body =
-    `<div>Squeeze found <strong>${n}</strong> unfinished file${n === 1 ? '' : 's'} left over from a run `
-    + `that was interrupted last time (about <strong>${humanBytes(totalBytes)}</strong>). `
+    `<div>Squeeze found <strong>${n}</strong> unfinished file${n === 1 ? '' : 's'} left over from `
+    + `one or more interrupted runs (about <strong>${humanBytes(totalBytes)}</strong> in total). `
     + `${n === 1 ? 'It’s' : 'They’re'} incomplete and can’t be played.</div>`
     + `<div class="fine">Deleting ${n === 1 ? 'it' : 'them'} only removes the leftover, partly-written `
     + `file${n === 1 ? '' : 's'}. Your original videos and any finished compressed files are not affected.</div>`;
   const choice = await showModal({
-    title: 'Clean up an interrupted run?',
+    title: 'Clean up unfinished files?',
     tone: 'info',
     body,
     actions: [

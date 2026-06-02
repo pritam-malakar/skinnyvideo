@@ -116,13 +116,21 @@ app.whenReady().then(() => {
   }
   createWindow();
 
-  /* Orphaned-partial sweep: if a previous run was interrupted, its dest(s)
-     are still recorded in prefs.pendingDests. Scan them once, hand any
-     leftover .tmp.mp4 partials to the renderer (which offers to delete),
-     then clear the marker so we never nag twice for the same crash. */
-  const pendingDests = Array.isArray(prefs.pendingDests) ? prefs.pendingDests.slice() : [];
-  if (pendingDests.length) {
-    findOrphanPartials(pendingDests)
+  /* Orphaned-partial sweep (BUG 2 — intended scope, documented):
+     On every launch we scan EVERY output folder Squeeze has written to —
+     prefs.outputRoots accumulates each destination ever used — plus any
+     in-flight pendingDests, for leftover .tmp.mp4 partials under their
+     "Compressed_" run folders. This catches partials from ANY interrupted
+     run, not just the most recent one. We deliberately do NOT walk the whole
+     filesystem: scope is "known Squeeze output locations". pendingDests is
+     cleared after the scan; outputRoots persists so a partial the operator
+     chooses to keep is re-offered next launch until it's resolved. */
+  const sweepRoots = [...new Set([
+    ...(Array.isArray(prefs.outputRoots) ? prefs.outputRoots : []),
+    ...(Array.isArray(prefs.pendingDests) ? prefs.pendingDests : [])
+  ])];
+  if (sweepRoots.length) {
+    findOrphanPartials(sweepRoots)
       .then((orphans) => {
         prefs.pendingDests = [];
         savePrefs();
@@ -242,12 +250,18 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
   /* Mark this run's real (non-dry) destinations as in-flight so a crash
      mid-encode is recoverable: the next launch scans these for orphaned
      .tmp.mp4 partials. Cleared in the finally below once the run ends
-     cleanly (whether finished or user-stopped). */
+     cleanly (whether finished or user-stopped).
+     Also fold them into prefs.outputRoots — the persistent set of every
+     destination Squeeze has ever written to — so the launch sweep (BUG 2)
+     can find orphans under ANY past output location, not just the last run. */
   try {
     const runDests = [...new Set(
       (batches || []).filter((b) => b && !b.dryRun).map((b) => b.dest).filter(Boolean)
     )];
     prefs.pendingDests = runDests;
+    const roots = new Set(Array.isArray(prefs.outputRoots) ? prefs.outputRoots : []);
+    for (const d of runDests) roots.add(d);
+    prefs.outputRoots = [...roots];
     savePrefs();
   } catch { /* non-fatal */ }
 
@@ -255,7 +269,7 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
   };
 
-  const totals = { processed: 0, failed: 0, failedCopied: 0, failedNoCopy: 0, skippedNonVideo: 0, reclaimed: 0, alreadyDone: 0 };
+  const totals = { processed: 0, failed: 0, failedCopied: 0, failedNoCopy: 0, failedDestLost: 0, destLost: false, skippedNonVideo: 0, reclaimed: 0, alreadyDone: 0 };
 
   try {
     for (let i = 0; i < batches.length; i++) {
@@ -270,6 +284,9 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
       const control = {
         shouldStop: () => stopRequested,
         isCancelled: () => state.cancelled,
+        /* So the encoder's stall watchdog never kills a deliberately paused
+           (SIGSTOP'd) encode, which legitimately emits no output. */
+        isPaused: () => state.paused,
         /* If cancel fired between "begin next file" and "spawn ffmpeg",
            the new child arrives AFTER the cancel handler already kicked.
            Kill it on the spot so pipeline's runCmd returns immediately
@@ -336,6 +353,16 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
         result = isDry
           ? await dryRunBatch(wrappedBatch, (progress) => send('progress', { batchId: batch.id, ...progress }))
           : await runBatch(wrappedBatch, control, (progress) => send('progress', { batchId: batch.id, ...progress }));
+      } catch (e) {
+        /* BUG 3 backstop: any unexpected hard failure (e.g. the destination
+           drive vanished before we could write) must fail the batch cleanly,
+           never leave it stuck on "Running". */
+        result = {
+          runDir: null, logPath: null,
+          processed: 0, failed: 0, failedCopied: 0, failedNoCopy: 0, failedDestLost: 0,
+          destLost: true, alreadyDone: 0, skippedNonVideo: 0, reclaimed: 0, totalFiles: 0,
+          error: e && e.message
+        };
       } finally {
         if (tmpCleanup) {
           try { await fsp.rm(tmpCleanup, { recursive: true, force: true }); } catch { /* non-fatal */ }
@@ -370,14 +397,18 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
       totals.failed += result.failed || 0;
       totals.failedCopied += result.failedCopied || 0;
       totals.failedNoCopy += result.failedNoCopy || 0;
+      totals.failedDestLost += result.failedDestLost || 0;
+      if (result.destLost) totals.destLost = true;
       totals.skippedNonVideo += result.skippedNonVideo || 0;
       totals.reclaimed += result.reclaimed || 0;
       totals.alreadyDone += result.alreadyDone || 0;
 
       let finalStatus;
-      if (state.cancelled)        finalStatus = 'Cancelled';
-      else if (result.failed > 0) finalStatus = 'Done (with failures)';
-      else                        finalStatus = 'Done';
+      if (state.cancelled)                                 finalStatus = 'Cancelled';
+      // Destination vanished with nothing saved → a failure, never green "Done".
+      else if (result.destLost && (result.processed || 0) === 0) finalStatus = 'Failed';
+      else if (result.failed > 0)                          finalStatus = 'Done (with failures)';
+      else                                                 finalStatus = 'Done';
 
       send('batch-status', { id: batch.id, status: finalStatus, result });
 

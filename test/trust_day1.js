@@ -7,7 +7,7 @@ const fsp = fs.promises;
 const os = require('os');
 const { flattenRunDir } = require('../src/encoder/flatten');
 const { findOrphanPartials, isDeletablePartial, deletePartials } = require('../src/encoder/orphans');
-const { copyToFailed } = require('../src/encoder/pipeline');
+const { copyToFailed, runCmd, isDestWritable } = require('../src/encoder/pipeline');
 
 const PASS = [], FAIL = [];
 function check(cond, label) { (cond ? PASS : FAIL).push(label); console.log((cond ? 'PASS' : 'FAIL') + ': ' + label); }
@@ -130,6 +130,63 @@ const read = (p) => fs.readFileSync(p, 'utf8');
   check(missingThrew, 'missing source: copyToFailed threw (no-copy path → honest wording)');
   check(!exists(path.join(fcRun, '_FAILED', 'gone.mov')),
     'missing source: no _FAILED/ copy was written');
+
+  // ─────────────────────────────────────────────────────────────
+  header('BUG 2: multi-root sweep finds all partials; finished + outside survive');
+  // Two separate output roots, each with its own Compressed_ run folder.
+  // Pre-fix the sweep only looked at the last run's dest and missed the rest.
+  const rootA = path.join(sandbox, 'OutputA');
+  const rootB = path.join(sandbox, 'OutputB');
+  const cmpA = path.join(rootA, 'Compressed_2026-05-28_1927');
+  const cmpB = path.join(rootB, 'Compressed_2026-06-01_0830');
+  await fsp.mkdir(cmpA, { recursive: true });
+  await fsp.mkdir(path.join(cmpB, 'Nested'), { recursive: true });
+  await fsp.writeFile(path.join(cmpA, 'p1.tmp.mp4'), 'PARTIAL-1');
+  await fsp.writeFile(path.join(cmpA, 'clip.mp4'), 'FINISHED-CLIP');          // finished — must survive
+  await fsp.writeFile(path.join(cmpB, 'p2.tmp.mp4'), 'PARTIAL-2');
+  await fsp.writeFile(path.join(cmpB, 'Nested', 'p3.tmp.mp4'), 'PARTIAL-3');
+  // A real video sitting OUTSIDE any Compressed_ folder — must never match.
+  const outsideMaster = path.join(rootB, 'master.mov');
+  await fsp.writeFile(outsideMaster, 'PRECIOUS-ORIGINAL');
+
+  const sweep = await findOrphanPartials([rootA, rootB]);
+  check(sweep.length === 3, `multi-root sweep found all 3 partials (got ${sweep.length})`);
+  const sizesAccurate = sweep.every((o) => o.size === fs.statSync(o.path).size && o.size > 0);
+  check(sizesAccurate, 'each reported size equals the file’s actual bytes on disk');
+
+  const deletedSweep = await deletePartials(sweep.map((o) => o.path));
+  check(deletedSweep === 3, `deleted all 3 partials across both roots (got ${deletedSweep})`);
+  check(exists(path.join(cmpA, 'clip.mp4')), 'finished clip.mp4 survived the sweep');
+  check(read(path.join(cmpA, 'clip.mp4')) === 'FINISHED-CLIP', 'finished clip.mp4 bytes intact');
+  check(exists(outsideMaster) && read(outsideMaster) === 'PRECIOUS-ORIGINAL',
+    'outside-folder original survived untouched');
+
+  // ─────────────────────────────────────────────────────────────
+  header('BUG 3: stall watchdog, pause-awareness, destination reachability');
+  // A silent long process is killed once the inactivity window elapses, and
+  // runCmd resolves fast with stalled=true (never hangs the queue).
+  const t0 = Date.now();
+  const stalledRes = await runCmd('sleep', ['5'], { stallTimeoutMs: 250 });
+  const stalledMs = Date.now() - t0;
+  check(stalledRes.stalled === true && stalledRes.code === -1, 'silent process flagged stalled');
+  check(stalledMs < 1500, `stall resolved fast (${stalledMs}ms, no hang)`);
+
+  // A "paused" encode emits nothing too — the watchdog must NOT kill it.
+  const t1 = Date.now();
+  const pausedRes = await runCmd('sleep', ['1'], { stallTimeoutMs: 150, isPaused: () => true });
+  const pausedMs = Date.now() - t1;
+  check(!pausedRes.stalled && pausedRes.code === 0, 'paused (silent) process not killed by watchdog');
+  check(pausedMs >= 900, `paused process ran to completion (${pausedMs}ms)`);
+
+  // Normal chatty process under a generous window is unaffected.
+  const okRes = await runCmd('sh', ['-c', 'echo hello'], { stallTimeoutMs: 5000 });
+  check(okRes.code === 0 && /hello/.test(okRes.stdout) && !okRes.stalled, 'normal command unaffected by watchdog');
+
+  // Reachability probe: real dir writable, vanished path not — and the check
+  // returns fast either way.
+  check((await isDestWritable(sandbox)) === true, 'isDestWritable true for a live writable dir');
+  check((await isDestWritable(path.join(sandbox, 'nope', 'gone'))) === false,
+    'isDestWritable false for a missing/unreachable path');
 
   // ─────────────────────────────────────────────────────────────
   await fsp.rm(sandbox, { recursive: true, force: true });

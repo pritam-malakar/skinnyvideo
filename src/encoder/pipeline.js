@@ -29,27 +29,87 @@ function getBinaries() {
   };
 }
 
-function runCmd(cmd, args, { onStderr, onStdout, signal, onSpawn } = {}) {
+/* BUG 3 — anti-hang on a vanished destination.
+   STALL_TIMEOUT_MS: if an encoder emits NOTHING (no stdout/stderr) for this
+   long, we treat it as wedged. ffmpeg with -stats prints a progress line on
+   a sub-second cadence while it's alive, so total silence this long means it
+   is blocked — classically on a write() to a destination volume that was
+   ejected/unmounted mid-run. We kill it and resolve immediately so a child
+   stuck in uninterruptible I/O can never hang the queue.
+   REACH_TIMEOUT_MS caps the destination-writability probe so a stale mount
+   can't hang that check either. */
+const STALL_TIMEOUT_MS = 60000;
+const REACH_TIMEOUT_MS = 3000;
+
+/* Resolve a promise but never wait longer than `ms`; on timeout resolve to
+   `fallbackVal`. Used to bound fs probes that could otherwise hang on a dead
+   mount. */
+function withTimeout(promise, ms, fallbackVal) {
+  return new Promise((resolve) => {
+    let done = false;
+    const t = setTimeout(() => { if (!done) { done = true; resolve(fallbackVal); } }, ms);
+    promise.then(
+      (v) => { if (!done) { done = true; clearTimeout(t); resolve(v); } },
+      () => { if (!done) { done = true; clearTimeout(t); resolve(fallbackVal); } }
+    );
+  });
+}
+
+/* True only if `dir` is writable right now. Bounded by REACH_TIMEOUT_MS so a
+   stale/half-dead mount returns false fast instead of blocking. */
+async function isDestWritable(dir) {
+  if (!dir || typeof dir !== 'string') return false;
+  return withTimeout(
+    fsp.access(dir, fs.constants.W_OK).then(() => true, () => false),
+    REACH_TIMEOUT_MS,
+    false
+  );
+}
+
+function runCmd(cmd, args, { onStderr, onStdout, signal, onSpawn, stallTimeoutMs, isPaused } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     if (onSpawn) { try { onSpawn(child); } catch {} }
     let stdout = '';
     let stderr = '';
+    let settled = false;
+    let stallTimer = null;
+    const clearStall = () => { if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; } };
+    const finish = (val) => { if (settled) return; settled = true; clearStall(); resolve(val); };
+    const fail = (err) => { if (settled) return; settled = true; clearStall(); reject(err); };
+    /* (Re)arm the inactivity watchdog. Any output cancels and restarts it, so
+       it only fires after a full window of true silence. */
+    function armStall() {
+      if (!stallTimeoutMs) return;
+      clearStall();
+      stallTimer = setTimeout(() => {
+        // A paused encode (SIGSTOP) legitimately emits nothing — never kill
+        // it; just keep watching until it resumes.
+        if (isPaused && isPaused()) { armStall(); return; }
+        try { child.kill('SIGTERM'); } catch {}
+        setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, 1500);
+        // Resolve NOW regardless of whether 'close' ever arrives.
+        finish({ code: -1, stdout, stderr, child, stalled: true });
+      }, stallTimeoutMs);
+    }
     child.stdout.on('data', (d) => {
       const s = d.toString();
       stdout += s;
+      armStall();
       if (onStdout) onStdout(s);
     });
     child.stderr.on('data', (d) => {
       const s = d.toString();
       stderr += s;
+      armStall();
       if (onStderr) onStderr(s);
     });
-    child.on('error', reject);
-    child.on('close', (code) => resolve({ code, stdout, stderr, child }));
+    child.on('error', fail);
+    child.on('close', (code) => finish({ code, stdout, stderr, child }));
     if (signal) {
       signal.attach(() => { try { child.kill('SIGTERM'); } catch {} });
     }
+    armStall();   // start watching at spawn — covers a dest that's already dead
   });
 }
 
@@ -291,14 +351,30 @@ async function runBatch(batch, controlOrFn, onProgress) {
   const shouldStop  = ctl.shouldStop  || (() => false);
   const isCancelled = ctl.isCancelled || (() => false);
   const onSpawn     = ctl.onSpawn     || null;
+  const isPaused    = ctl.isPaused    || (() => false);
 
   const { src, dest, tier } = batch;
   const runDir = path.join(dest, tsRunFolder());
+
+  /* BUG 3 — fail fast if the destination is unreachable before we write a
+     single byte (drive never mounted / already ejected). Bail with a
+     destLost result instead of hanging on mkdir to a dead path. */
+  if (!(await isDestWritable(dest))) {
+    return {
+      runDir, logPath: null,
+      processed: 0, failed: 0, failedCopied: 0, failedNoCopy: 0, failedDestLost: 0,
+      alreadyDone: 0, skippedNonVideo: 0, reclaimed: 0, totalFiles: 0,
+      destLost: true
+    };
+  }
   await ensureDir(runDir);
 
   const logPath = path.join(runDir, 'compress.log');
   const logStream = fs.createWriteStream(logPath, { flags: 'a' });
-  const log = (line) => logStream.write(line + '\n');
+  // If the drive vanishes mid-run, log writes error asynchronously — swallow
+  // so an unhandled 'error' can't crash the process.
+  logStream.on('error', () => {});
+  const log = (line) => { try { logStream.write(line + '\n'); } catch {} };
   log(`# Squeeze run started ${new Date().toISOString()}`);
   log(`# Source: ${src}`);
   log(`# Destination: ${runDir}`);
@@ -311,13 +387,55 @@ async function runBatch(batch, controlOrFn, onProgress) {
   let done = 0;
   let processed = 0;
   let failed = 0;
-  let failedCopied = 0;   // failed, but original preserved to _FAILED/
-  let failedNoCopy = 0;   // failed AND original unreadable/missing — no copy made
+  let failedCopied = 0;     // failed, but original preserved to _FAILED/
+  let failedNoCopy = 0;     // failed AND original unreadable/missing — no copy made
+  let failedDestLost = 0;   // failed because the destination drive went away
+  let destLost = false;     // sticky once the destination is confirmed gone
   let alreadyDone = 0;
   let reclaimed = 0;
   const startTs = Date.now();
 
   const { ffmpeg } = getBinaries();
+
+  /* Record an ordinary file failure (corrupt/undecodable, or a stuck encode
+     on a HEALTHY dest): try to preserve the source to _FAILED/ and classify
+     whether that copy actually landed. Mutates the closure counters. */
+  async function recordPlainFailure(v, i) {
+    failed++; done++;
+    let copied = false;
+    try {
+      await copyToFailed(runDir, scan.rootKind, scan.root, v.file);
+      copied = true;
+    } catch (e) {
+      log(`FAILED-COPY-ERROR ${v.file} :: ${e.message}`);
+    }
+    if (copied) {
+      failedCopied++;
+      log(`FAIL ${v.file} (copied to _FAILED)`);
+    } else {
+      failedNoCopy++;
+      log(`FAIL ${v.file} (original could not be read — may have been moved or deleted during the run; no _FAILED copy made)`);
+    }
+    onProgress && onProgress({
+      type: 'file-done', index: i + 1, total: totalFiles,
+      reclaimed, processed, failed, alreadyDone,
+      elapsedMs: Date.now() - startTs, outcome: 'fail',
+      failKind: copied ? 'copied' : 'nocopy'
+    });
+  }
+
+  /* Record a destination-lost failure: the drive is gone, so no output and no
+     _FAILED/ copy are possible. Sets destLost so the batch loop stops. */
+  function recordDestLost(v, i) {
+    destLost = true; failed++; failedDestLost++; done++;
+    log(`DEST-LOST ${v.file} (destination drive became unavailable; no output and no _FAILED copy made)`);
+    onProgress && onProgress({
+      type: 'file-done', index: i + 1, total: totalFiles,
+      reclaimed, processed, failed, alreadyDone,
+      elapsedMs: Date.now() - startTs, outcome: 'fail',
+      failKind: 'dest-lost'
+    });
+  }
 
   for (let i = 0; i < scan.videos.length; i++) {
     if (shouldStop() || isCancelled()) {
@@ -326,6 +444,10 @@ async function runBatch(batch, controlOrFn, onProgress) {
     }
     const v = scan.videos[i];
     const { finalPath, tmpPath, dir } = destForInput(runDir, scan.rootKind, scan.root, v.file);
+    /* BUG 3: is the destination still reachable? If it vanished, fail this
+       file fast and stop the batch — every remaining file would fail the same
+       way, and we must not block on a dead path. */
+    if (!(await isDestWritable(runDir))) { recordDestLost(v, i); break; }
     await ensureDir(dir);
 
     onProgress && onProgress({
@@ -367,6 +489,8 @@ async function runBatch(batch, controlOrFn, onProgress) {
     const result = await runCmd(ffmpeg, args, {
       signal: null,
       onSpawn,
+      stallTimeoutMs: STALL_TIMEOUT_MS,
+      isPaused,
       onStderr: (chunk) => {
         stderrBuf += chunk;
         if (stderrBuf.length > 20000) stderrBuf = stderrBuf.slice(-10000);
@@ -381,6 +505,17 @@ async function runBatch(batch, controlOrFn, onProgress) {
         }
       }
     });
+
+    /* BUG 3: the primary encode produced no output for the whole stall window
+       — almost always a destination that vanished mid-write. Confirm, then
+       fail fast WITHOUT the fallback (a second encode would just stall too). */
+    if (result.stalled) {
+      try { await fsp.unlink(tmpPath); } catch {}
+      log(`STALL ${v.file} (primary encoder produced no output for ${Math.round(STALL_TIMEOUT_MS / 1000)}s; terminated)`);
+      if (!(await isDestWritable(runDir))) { recordDestLost(v, i); break; }
+      await recordPlainFailure(v, i);   // stalled but dest is fine — genuine stuck encode
+      continue;
+    }
 
     /* Cancel: if the operator hit Cancel while this encode was running,
        the encoder child was killed and runCmd returned with a non-zero
@@ -428,6 +563,8 @@ async function runBatch(batch, controlOrFn, onProgress) {
       let stderrBuf2 = '';
       const r2 = await runCmd(ffmpeg, fallbackArgs, {
         onSpawn,
+        stallTimeoutMs: STALL_TIMEOUT_MS,
+        isPaused,
         onStderr: (chunk) => {
           stderrBuf2 += chunk;
           if (stderrBuf2.length > 20000) stderrBuf2 = stderrBuf2.slice(-10000);
@@ -442,6 +579,15 @@ async function runBatch(batch, controlOrFn, onProgress) {
           }
         }
       });
+
+      /* BUG 3: fallback stalled too — same dead-destination handling. */
+      if (r2.stalled) {
+        try { await fsp.unlink(tmpPath); } catch {}
+        log(`STALL ${v.file} (fallback encoder produced no output for ${Math.round(STALL_TIMEOUT_MS / 1000)}s; terminated)`);
+        if (!(await isDestWritable(runDir))) { recordDestLost(v, i); break; }
+        await recordPlainFailure(v, i);
+        continue;
+      }
       /* And after the fallback returns — cancel could have arrived during
          that second encoder run. */
       if (isCancelled()) {
@@ -485,44 +631,18 @@ async function runBatch(batch, controlOrFn, onProgress) {
         outcome: usedFallback ? 'ok-fallback' : 'ok'
       });
     } else {
-      failed++;
-      done++;
       /* Preserve the original next to the run for forensics. Correct for a
          file that is PRESENT but corrupt/undecodable. If the source itself
          is gone (moved/deleted/unreadable mid-run) the copy throws and NO
-         _FAILED/ copy exists — record that so the log and the UI never
-         promise a copy that isn't there. */
-      let copied = false;
-      try {
-        await copyToFailed(runDir, scan.rootKind, scan.root, v.file);
-        copied = true;
-      } catch (e) {
-        log(`FAILED-COPY-ERROR ${v.file} :: ${e.message}`);
-      }
-      if (copied) {
-        failedCopied++;
-        log(`FAIL ${v.file} (copied to _FAILED)`);
-      } else {
-        failedNoCopy++;
-        log(`FAIL ${v.file} (original could not be read — may have been moved or deleted during the run; no _FAILED copy made)`);
-      }
-      onProgress && onProgress({
-        type: 'file-done',
-        index: i + 1,
-        total: totalFiles,
-        reclaimed,
-        processed,
-        failed,
-        alreadyDone,
-        elapsedMs: Date.now() - startTs,
-        outcome: 'fail',
-        failKind: copied ? 'copied' : 'nocopy'
-      });
+         _FAILED/ copy exists — recordPlainFailure classifies which, so the
+         log and the UI never promise a copy that isn't there. */
+      await recordPlainFailure(v, i);
     }
   }
 
   log(`# Run finished ${new Date().toISOString()}`);
-  log(`# Totals: processed=${processed} failed=${failed} (copied-to-_FAILED=${failedCopied}, source-unreadable=${failedNoCopy}) already-done=${alreadyDone} ignored-non-video=${scan.ignored} reclaimed=${humanBytes(reclaimed)}`);
+  log(`# Totals: processed=${processed} failed=${failed} (copied-to-_FAILED=${failedCopied}, source-unreadable=${failedNoCopy}, dest-lost=${failedDestLost}) already-done=${alreadyDone} ignored-non-video=${scan.ignored} reclaimed=${humanBytes(reclaimed)}`);
+  if (destLost) log(`# Destination became unavailable during the run — remaining files were not attempted. Originals untouched.`);
   logStream.end();
 
   return {
@@ -532,6 +652,8 @@ async function runBatch(batch, controlOrFn, onProgress) {
     failed,
     failedCopied,
     failedNoCopy,
+    failedDestLost,
+    destLost,
     alreadyDone,
     skippedNonVideo: scan.ignored,
     reclaimed,
@@ -558,6 +680,8 @@ async function dryRunBatch(batch, onProgress) {
     failed: 0,
     failedCopied: 0,
     failedNoCopy: 0,
+    failedDestLost: 0,
+    destLost: false,
     alreadyDone: 0,
     skippedNonVideo: scan.ignored,
     reclaimed: 0,
@@ -576,6 +700,8 @@ module.exports = {
   isVideoFile,
   humanBytes,
   copyToFailed,
+  runCmd,
+  isDestWritable,
   VIDEO_EXTS,
   TIER_CONSTANTS
 };
