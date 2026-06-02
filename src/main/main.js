@@ -4,6 +4,8 @@ const fs = require('fs');
 const fsp = fs.promises;
 const os = require('os');
 const { runBatch, dryRunBatch, scanFolder, isVideoFile, getBinaries, VIDEO_EXTS } = require('../encoder/pipeline');
+const { flattenRunDir } = require('../encoder/flatten');
+const { findOrphanPartials, deletePartials } = require('../encoder/orphans');
 
 let mainWindow = null;
 let stopRequested = false;
@@ -61,69 +63,15 @@ function driveLabelForKey(k) {
   return path.basename(k);
 }
 
-/* ─── Output flattening ─────────────────────────────────────────────
-   Pipeline writes outputs mirroring the source folder structure. After
-   each batch we flatten that into a single canonical layout:
-     <runDir>/<file>.mp4         (no per-source / per-batch subfolders)
-   _FAILED/ is preserved as-is (failure forensics live there). Files
-   already at runDir top level (compress.log) stay put.
-   On name collision (same basename across multiple sources/batches in
-   the same run folder), append "_2"/"_3"/… so no output is lost.
-   .tmp.mp4 partials — if any escaped pipeline's own cleanup — are
-   deleted rather than promoted, so a partial never poses as a final. */
-async function flattenRunDir(runDir) {
-  const taken = new Set();
-  try {
-    for (const e of await fsp.readdir(runDir, { withFileTypes: true })) {
-      if (e.isFile()) taken.add(e.name);
-    }
-  } catch { return 0; }
+/* Output flattening lives in ../encoder/flatten (pure fs, unit-tested in
+   test/trust_day1.js). main just calls flattenRunDir after each batch:
+   it mirrors source structure into a single flat run folder, suffixes
+   name collisions _2/_3, and sweeps any stray .tmp.mp4 partials. */
 
-  let lifted = 0;
-
-  async function collect(dir, depth) {
-    let entries = [];
-    try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
-      const p = path.join(dir, e.name);
-      if (e.isDirectory()) {
-        if (depth === 0 && e.name === '_FAILED') continue;   // keep nested
-        await collect(p, depth + 1);
-      } else if (e.isFile() && depth > 0) {
-        if (e.name.endsWith('.tmp.mp4')) {
-          try { await fsp.unlink(p); } catch {}
-          continue;
-        }
-        let name = e.name;
-        let safe = name;
-        let n = 2;
-        while (taken.has(safe)) {
-          const ext = path.extname(name);
-          const stem = name.slice(0, name.length - ext.length);
-          safe = `${stem}_${n}${ext}`;
-          n++;
-        }
-        taken.add(safe);
-        try { await fsp.rename(p, path.join(runDir, safe)); lifted++; } catch {}
-      }
-    }
-  }
-  await collect(runDir, 0);
-
-  async function pruneEmpty(dir, depth) {
-    let entries = [];
-    try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
-      if (!e.isDirectory()) continue;
-      if (depth === 0 && e.name === '_FAILED') continue;
-      await pruneEmpty(path.join(dir, e.name), depth + 1);
-    }
-    if (depth > 0) { try { await fsp.rmdir(dir); } catch {} }
-  }
-  await pruneEmpty(runDir, 0);
-
-  return lifted;
-}
+/* Orphaned-partial detection lives in ../encoder/orphans (pure fs,
+   unit-tested in test/trust_day1.js). findOrphanPartials scans an
+   interrupted run's dest(s) for leftover .tmp.mp4; deletePartials removes
+   only those, never originals or finished outputs. */
 
 // Per-batch runtime state for row-level Pause / Resume / Stop.
 // Only one batch runs at a time, but keeping it keyed by id lets renderer
@@ -167,6 +115,33 @@ app.whenReady().then(() => {
     return;
   }
   createWindow();
+
+  /* Orphaned-partial sweep: if a previous run was interrupted, its dest(s)
+     are still recorded in prefs.pendingDests. Scan them once, hand any
+     leftover .tmp.mp4 partials to the renderer (which offers to delete),
+     then clear the marker so we never nag twice for the same crash. */
+  const pendingDests = Array.isArray(prefs.pendingDests) ? prefs.pendingDests.slice() : [];
+  if (pendingDests.length) {
+    findOrphanPartials(pendingDests)
+      .then((orphans) => {
+        prefs.pendingDests = [];
+        savePrefs();
+        if (orphans.length && mainWindow && !mainWindow.isDestroyed()) {
+          const send = () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('orphans-found', { orphans });
+            }
+          };
+          if (mainWindow.webContents.isLoading()) {
+            mainWindow.webContents.once('did-finish-load', send);
+          } else {
+            send();
+          }
+        }
+      })
+      .catch(() => { prefs.pendingDests = []; savePrefs(); });
+  }
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -263,6 +238,18 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
   if (queueRunning) return { ok: false, error: 'Already running' };
   queueRunning = true;
   stopRequested = false;
+
+  /* Mark this run's real (non-dry) destinations as in-flight so a crash
+     mid-encode is recoverable: the next launch scans these for orphaned
+     .tmp.mp4 partials. Cleared in the finally below once the run ends
+     cleanly (whether finished or user-stopped). */
+  try {
+    const runDests = [...new Set(
+      (batches || []).filter((b) => b && !b.dryRun).map((b) => b.dest).filter(Boolean)
+    )];
+    prefs.pendingDests = runDests;
+    savePrefs();
+  } catch { /* non-fatal */ }
 
   const send = (channel, payload) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
@@ -397,6 +384,8 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
     }
   } finally {
     queueRunning = false;
+    // Run reached a clean end — no orphaned partials to recover next launch.
+    try { prefs.pendingDests = []; savePrefs(); } catch { /* non-fatal */ }
     send('queue-finished', { totals, stopped: stopRequested });
   }
   return { ok: true };
@@ -546,6 +535,30 @@ ipcMain.handle('reset-drive', async (_evt, driveKey) => {
   rec.lastUsed = now;
   savePrefs();
   return rec;
+});
+
+/* ─── Disk-space pre-flight ───────────────────────────────────────────
+   Returns the free bytes available to an unprivileged writer on the volume
+   that holds `p` (bavail × bsize). Returns null free when the path can't be
+   stat'd (e.g. drive unplugged) so the renderer can fail OPEN — never block
+   a run just because we couldn't read the figure. */
+ipcMain.handle('free-space', async (_evt, p) => {
+  if (!p || typeof p !== 'string') return { free: null };
+  try {
+    const s = await fsp.statfs(p);
+    return { free: s.bavail * s.bsize };
+  } catch {
+    return { free: null };
+  }
+});
+
+/* ─── Orphaned-partial deletion ───────────────────────────────────────
+   Renderer hands back the subset the operator approved. deletePartials
+   re-validates every path defensively (only ".tmp.mp4" under a
+   "Compressed_" run folder is ever unlinked) — see ../encoder/orphans. */
+ipcMain.handle('delete-orphans', async (_evt, paths) => {
+  const deleted = await deletePartials(paths);
+  return { deleted };
 });
 
 ipcMain.handle('open-path', async (_evt, p) => {

@@ -89,6 +89,79 @@ function humanBytes(n) {
   return sign + n.toFixed(n >= 10 || i === 0 ? 0 : 1) + ' ' + units[i];
 }
 
+/* ───── Generic modal ─────
+   A promise-returning decision dialog used by the disk-space pre-flight
+   and the orphaned-partial recovery prompt. Resolves to an action's
+   `value`, or null when dismissed (backdrop click / Esc / ✕) — dismissal
+   is always the safe no-op. Only one modal at a time. `body` is trusted
+   HTML built by callers (no user-controlled markup is interpolated raw —
+   paths go through escapeHtml). */
+let activeModal = null;
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+const MODAL_ICONS = {
+  warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.6 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.6a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>',
+  info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg>'
+};
+function showModal({ title, body, tone = 'warn', actions = [] }) {
+  if (activeModal) { activeModal.cleanup(null); }
+  return new Promise((resolve) => {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    const card = document.createElement('div');
+    card.className = `modal-card tone-${tone}`;
+    card.setAttribute('role', 'dialog');
+    card.setAttribute('aria-modal', 'true');
+
+    const head = document.createElement('div');
+    head.className = 'modal-head';
+    head.innerHTML =
+      `<div class="modal-icon">${MODAL_ICONS[tone] || MODAL_ICONS.warn}</div>`
+      + `<div class="modal-title">${escapeHtml(title)}</div>`;
+    card.appendChild(head);
+
+    const bodyEl = document.createElement('div');
+    bodyEl.className = 'modal-body';
+    bodyEl.innerHTML = body;
+    card.appendChild(bodyEl);
+
+    const actionsEl = document.createElement('div');
+    actionsEl.className = 'modal-actions';
+    actions.forEach((a) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn' + (a.kind === 'primary' ? ' cta' : a.kind === 'ghost' ? ' ghost' : '');
+      btn.textContent = a.label;
+      btn.addEventListener('click', () => cleanup(a.value));
+      actionsEl.appendChild(btn);
+    });
+    card.appendChild(actionsEl);
+    backdrop.appendChild(card);
+
+    function onKey(e) { if (e.key === 'Escape') cleanup(null); }
+    function onBackdrop(e) { if (e.target === backdrop) cleanup(null); }
+    function cleanup(val) {
+      if (activeModal !== handle) return;
+      document.removeEventListener('keydown', onKey, true);
+      backdrop.removeEventListener('mousedown', onBackdrop);
+      backdrop.remove();
+      activeModal = null;
+      resolve(val);
+    }
+    const handle = { cleanup };
+    activeModal = handle;
+    document.addEventListener('keydown', onKey, true);
+    backdrop.addEventListener('mousedown', onBackdrop);
+    document.body.appendChild(backdrop);
+    // Focus the primary (last) action for keyboard users.
+    const primary = actionsEl.querySelector('.btn.cta') || actionsEl.lastElementChild;
+    if (primary) primary.focus();
+  });
+}
+
 // ----- Row action popover ---------------------------------------
 let activeRowMenu = null;
 function closeRowMenu() {
@@ -210,6 +283,32 @@ function remainingQueueBytes() {
     }
   }
   return bytes;
+}
+
+/* Item 2: end-of-run tally, built from queue file state. Every file lands
+   in exactly one bucket. "skipped" folds operator-skips and already-present
+   outputs; "cancelled" only appears if the operator stopped a file in
+   flight. done is the lone green (success); failed red; rest neutral. */
+function summaryCountsHtml() {
+  let done = 0, failed = 0, skipped = 0, cancelled = 0;
+  for (const b of queue) {
+    for (const f of b.files) {
+      if (f.status === 'done') done++;
+      else if (f.status === 'failed') failed++;
+      else if (f.status === 'skipped' || f.status === 'existed') skipped++;
+      else if (f.status === 'cancelled') cancelled++;
+    }
+  }
+  const seg = (n, label, cls) =>
+    `<span class="seg ${n > 0 ? cls : 'c-zero'}"><span class="num">${n}</span>`
+    + `<span class="lbl">${label}</span></span>`;
+  let html = seg(done, 'done', 'c-done')
+    + `<span class="vsep">·</span>` + seg(failed, 'failed', 'c-failed')
+    + `<span class="vsep">·</span>` + seg(skipped, 'skipped', 'c-skip');
+  if (cancelled > 0) {
+    html += `<span class="vsep">·</span>` + seg(cancelled, 'cancelled', 'c-skip');
+  }
+  return `<div class="summary-counts">${html}</div>`;
 }
 
 function setDropStatus(text, kind = 'cyan') {
@@ -377,6 +476,19 @@ function fileListDisplayName(paths) {
   return `${first} + ${paths.length - 1} more`;
 }
 
+/* Item 3: a scan failure in plain words, with the raw technical text tucked
+   behind a "Details" disclosure (collapsed by default). The main UI never
+   shows codes or stack text on its face. */
+function showScanError(raw) {
+  dropStatus.classList.remove('hidden');
+  dropStatusPath.textContent = 'Couldn’t read that — the file may be damaged or in a format Squeeze can’t open.';
+  dropStatusPath.style.color = 'var(--red)';
+  dropStatusCount.textContent = '';
+  dropStatusExtra.innerHTML = raw
+    ? `<details class="dz-error-details"><summary>Details</summary><div class="raw">${escapeHtml(raw)}</div></details>`
+    : '';
+}
+
 /* Shared scan/stage path used by both drag-drop and browse — FOLDER kind.
    Unchanged from the validated folder workflow. */
 async function stageSource(p) {
@@ -411,8 +523,7 @@ async function stageSource(p) {
     dropzone.classList.add('has-source');
     window.api.saveLastSrc(p);
   } catch (e) {
-    dropStatusPath.textContent = `Scan failed: ${e.message}`;
-    dropStatusPath.style.color = 'var(--red)';
+    showScanError(e && e.message);
     current.scanned = false;
   }
   updateAddState();
@@ -458,8 +569,7 @@ async function stageFiles(paths) {
     dropzone.classList.add('has-source');
     if (paths[0]) window.api.saveLastSrc(paths[0]);
   } catch (e) {
-    dropStatusPath.textContent = `Scan failed: ${e.message}`;
-    dropStatusPath.style.color = 'var(--red)';
+    showScanError(e && e.message);
     current.scanned = false;
   }
   updateAddState();
@@ -881,12 +991,92 @@ function updateTlTag({ running, paused, failed }) {
   }
 }
 
+/* Drive label for plain-language disk messages: a /Volumes/<name>/… path
+   belongs to that named volume; anything else is the startup disk. Mirrors
+   the main process's driveKeyForPath rule, kept loose for display only. */
+function driveLabelForDest(dest) {
+  if (typeof dest === 'string') {
+    const m = /^\/Volumes\/([^/]+)/.exec(dest);
+    if (m) return m[1];
+  }
+  return 'your startup disk';
+}
+
+/* Disk-space pre-flight: per destination drive, compare the run's total
+   SOURCE bytes against free space. Source size is a conservative ceiling
+   (compressed copies are smaller), so this errs toward warning. Returns a
+   list of shortages; empty = clear to run. Fails OPEN: a dest whose free
+   space can't be read (drive unplugged, etc.) is never treated as short. */
+async function computeDiskShortages(toRun) {
+  const byDest = new Map();
+  for (const b of toRun) {
+    if (b.dryRun || !b.dest) continue;           // dry runs write nothing
+    const need = b.files.reduce(
+      (a, f) => a + (f.status !== 'skipped' && Number.isFinite(f.size) && f.size > 0 ? f.size : 0),
+      0
+    );
+    byDest.set(b.dest, (byDest.get(b.dest) || 0) + need);
+  }
+  const shortages = [];
+  for (const [dest, need] of byDest) {
+    if (need <= 0) continue;
+    let free = null;
+    try { const r = await window.api.freeSpace(dest); free = r ? r.free : null; } catch { free = null; }
+    if (Number.isFinite(free) && free < need) shortages.push({ dest, need, free });
+  }
+  return shortages;
+}
+
+function diskShortageModal(shortages) {
+  const lines = shortages.map((s) =>
+    `<li>The videos add up to <span class="num-warn">${humanBytes(s.need)}</span>, but `
+    + `<strong>${escapeHtml(driveLabelForDest(s.dest))}</strong> has only `
+    + `<span class="num-warn">${humanBytes(s.free)}</span> free.</li>`
+  ).join('');
+  const body =
+    `<div>There may not be enough room to save the compressed copies:</div>`
+    + `<ul>${lines}</ul>`
+    + `<div class="fine">Compressed copies are usually smaller than the originals, so they may still `
+    + `fit — but Squeeze can’t promise it. Either way, your original files are never touched.</div>`;
+  return showModal({
+    title: 'This drive may be too full',
+    tone: 'warn',
+    body,
+    actions: [
+      { label: 'Continue anyway', kind: 'ghost', value: 'continue' },
+      { label: 'Choose another location', kind: 'primary', value: 'relocate' }
+    ]
+  });
+}
+
 startBtn.addEventListener('click', async () => {
   /* Skip all-skipped batches and any other non-runnable. */
   const toRun = queue.filter(
     (q) => q.status === 'queued' && q.files.some((f) => f.status !== 'skipped')
   );
   if (toRun.length === 0) return;
+
+  /* Disk pre-flight, with a relocate→recheck loop. Dismissing the warning
+     (Esc / backdrop) aborts the start — the safe default. */
+  while (true) {
+    const shortages = await computeDiskShortages(toRun);
+    if (shortages.length === 0) break;
+    const choice = await diskShortageModal(shortages);
+    if (choice === 'continue') break;
+    if (choice === 'relocate') {
+      const parent = current.dest || (toRun[0] && toRun[0].dest) || null;
+      const newDest = await window.api.chooseDestination(parent);
+      if (!newDest) return;                 // relocate cancelled → don't start
+      for (const b of toRun) b.dest = newDest;
+      current.dest = newDest;
+      destPathEl.textContent = newDest;
+      destPathEl.classList.remove('placeholder');
+      renderQueue();
+      continue;                             // re-check the new drive
+    }
+    return;                                 // dismissed → abort safely
+  }
+
   summaryCard.classList.add('hidden');
   progressCard.classList.remove('hidden');
   startBtn.classList.add('hidden');
@@ -1142,7 +1332,12 @@ window.api.onQueueFinished(({ totals, stopped }) => {
 
   /* P5: one core sentence, not five. Sub-counts only when non-zero. */
   const lines = [];
-  if (stopped) lines.push(`<div class="muted">Stopped by user.</div>`);
+  /* Item 2: the headline tally — every file accounted for, in plain words.
+     Counted from queue file state (renderer is authoritative; operator
+     skips never reach the pipeline totals). done=success, failed, skipped
+     folds operator-skips + already-present, cancelled shown only if any. */
+  lines.push(summaryCountsHtml());
+  if (stopped) lines.push(`<div class="muted">Stopped by user — one file at a time, never mid-file.</div>`);
   const doneBatches = queue.filter((q) => q.status === 'done').length;
   lines.push(
     `<div class="reclaimed-line">Reclaimed <strong>${humanBytes(totals.reclaimed)}</strong> across `
@@ -1153,7 +1348,15 @@ window.api.onQueueFinished(({ totals, stopped }) => {
   if (totals.alreadyDone > 0) sub.push(`${totals.alreadyDone} already done`);
   if (totals.skippedNonVideo > 0) sub.push(`${totals.skippedNonVideo} non-video ignored`);
   if (sub.length) lines.push(`<div class="muted">${sub.join(' · ')}</div>`);
-  if (totals.failed > 0) lines.push(`<div class="failed-line">${totals.failed} failure${totals.failed === 1 ? '' : 's'} — originals copied to <code>_FAILED/</code>; sources untouched.</div>`);
+  /* Item 3: failures stay plain — no exit codes or ffmpeg text here. The
+     technical detail lives one click away in the run log (Show log). */
+  if (totals.failed > 0) lines.push(`<div class="failed-line">${totals.failed} file${totals.failed === 1 ? '' : 's'} couldn’t be compressed and ${totals.failed === 1 ? 'was' : 'were'} skipped. A copy of each is in <code>_FAILED/</code> for you to check. Open “Show log” for details.</div>`);
+  /* Item 4: the trust promise, restated on every run summary. */
+  lines.push(
+    `<div class="summary-trust">`
+    + `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`
+    + `Your original files were not changed — Squeeze only wrote new compressed copies.</div>`
+  );
   summaryBody.innerHTML = lines.join('');
 
   const lastDone = [...queue].reverse().find((q) => q.lastResult);
@@ -1351,6 +1554,35 @@ function renderLifetime(drives) {
 clearDrop();
 renderQueue();
 refreshLifetime();
+
+/* Item 6: orphaned-partial recovery. On launch the main process scans the
+   last interrupted run's destination(s) for leftover ".tmp.mp4" partials —
+   unplayable, partly-written files from a crash/quit mid-encode. Offer to
+   delete them. Only those temp files are ever removed; originals and
+   finished outputs are untouched. Dismissing keeps everything. */
+window.api.onOrphansFound(async ({ orphans } = {}) => {
+  if (!orphans || !orphans.length) return;
+  const n = orphans.length;
+  const totalBytes = orphans.reduce((a, o) => a + (Number.isFinite(o.size) ? o.size : 0), 0);
+  const body =
+    `<div>Squeeze found <strong>${n}</strong> unfinished file${n === 1 ? '' : 's'} left over from a run `
+    + `that was interrupted last time (about <strong>${humanBytes(totalBytes)}</strong>). `
+    + `${n === 1 ? 'It’s' : 'They’re'} incomplete and can’t be played.</div>`
+    + `<div class="fine">Deleting ${n === 1 ? 'it' : 'them'} only removes the leftover, partly-written `
+    + `file${n === 1 ? '' : 's'}. Your original videos and any finished compressed files are not affected.</div>`;
+  const choice = await showModal({
+    title: 'Clean up an interrupted run?',
+    tone: 'info',
+    body,
+    actions: [
+      { label: 'Keep for now', kind: 'ghost', value: 'keep' },
+      { label: n === 1 ? 'Delete file' : 'Delete files', kind: 'primary', value: 'delete' }
+    ]
+  });
+  if (choice === 'delete') {
+    try { await window.api.deleteOrphans(orphans.map((o) => o.path)); } catch { /* non-fatal */ }
+  }
+});
 
 /* Version label — single source of truth. main.js returns app.getVersion()
    which reads CFBundleShortVersionString in the packaged .app and falls

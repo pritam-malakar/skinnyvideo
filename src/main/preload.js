@@ -19,9 +19,12 @@ contextBridge.exposeInMainWorld('api', {
   resetDrive: (driveKey) => ipcRenderer.invoke('reset-drive', driveKey),
   openPath: (p) => ipcRenderer.invoke('open-path', p),
   revealPath: (p) => ipcRenderer.invoke('reveal-path', p),
+  freeSpace: (p) => ipcRenderer.invoke('free-space', p),
+  deleteOrphans: (paths) => ipcRenderer.invoke('delete-orphans', paths),
   onProgress: (cb) => ipcRenderer.on('progress', (_e, d) => cb(d)),
   onBatchStatus: (cb) => ipcRenderer.on('batch-status', (_e, d) => cb(d)),
   onQueueFinished: (cb) => ipcRenderer.on('queue-finished', (_e, d) => cb(d)),
+  onOrphansFound: (cb) => ipcRenderer.on('orphans-found', (_e, d) => cb(d)),
   pathForFile: (file) => {
     try { return webUtils.getPathForFile(file); } catch { return null; }
   }
