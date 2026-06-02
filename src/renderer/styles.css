@@ -61,6 +61,18 @@
   --red:   oklch(0.68 0.140 25);
   --red-dim: oklch(0.58 0.130 25);
 
+  /* Orange = "your next action, act here." Reserved EXCLUSIVELY for the single
+     required next step in the guided flow (Select location / Add batch /
+     Start). Light + desaturated (chroma below cyan/violet) for AA on the dark
+     surface and to avoid vibrating against them. Measured contrast on the dark
+     UI: ~9:1 text (≥4.5 AA), ~5:1 translucent border (≥3 AA component). */
+  --orange:             oklch(0.78 0.105 58);
+  --orange-dim:         oklch(0.66 0.10 58);
+  --orange-tint:        oklch(0.78 0.105 58 / 0.10);
+  --orange-tint-strong: oklch(0.78 0.105 58 / 0.18);
+  --orange-line:        oklch(0.78 0.105 58 / 0.55);
+  --orange-glow:        oklch(0.78 0.105 58 / 0.40);
+
   --font-sans: "Geist", "General Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "Geist Mono", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
@@ -1348,4 +1360,69 @@ svg { display: block; }
   display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;
 }
 .modal-actions .btn { height: 42px; }
+
+/* ============================================================
+   Guided progressive-disclosure flow
+   ============================================================ */
+
+/* A step not yet reached: dimmed so it reads as "coming next," never a
+   broken grey box. Visual only — we deliberately do NOT pointer-events:none,
+   so legitimately-available controls (choose output, pick a tier) stay
+   reachable for returning/expert users. Genuinely-unavailable actions
+   (Add / Start) are gated by their own :disabled state instead. */
+.step-dim {
+  opacity: 0.5;
+  transition: opacity .28s ease;
+}
+
+/* The single "act here now" element. An orange ring + soft glow layered via
+   ::after so each control keeps its own identity — in particular Start stays
+   cyan and is NOT repainted. Gentle pulse; reduced-motion gets the static
+   orange state with no animation. */
+.next-action { position: relative; }
+.next-action::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 11px;
+  border: 1.5px solid var(--orange);
+  box-shadow: 0 0 12px 1px var(--orange-glow);
+  pointer-events: none;
+  opacity: 1;
+  animation: next-pulse 2.4s ease-in-out infinite;
+}
+@keyframes next-pulse {
+  0%, 100% { opacity: 0.5; }
+  50%      { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .next-action::after { animation: none; opacity: 1; }
+}
+
+/* Orange repaint for the two REQUIRED-action buttons (Select location, Add).
+   Start is intentionally excluded — it keeps its cyan identity and only wears
+   the ring above. */
+.dest-picker .change.next-action {
+  color: var(--orange);
+  background: var(--orange-tint);
+  border-color: var(--orange-line);
+}
+.dest-picker .change.next-action:hover:not(:disabled) {
+  background: var(--orange-tint-strong);
+  color: var(--orange);
+}
+.btn.add-batch.next-action {
+  background: var(--orange-tint);
+  border-color: var(--orange-line);
+  color: var(--orange);
+}
+.btn.add-batch.next-action:hover:not(:disabled) {
+  background: var(--orange-tint-strong);
+  border-color: var(--orange);
+  color: var(--orange);
+}
+/* The ring's corner radius tracks each button so it hugs the shape. */
+.dest-picker .change.next-action::after { border-radius: 9px; }
+.btn.add-batch.next-action::after { border-radius: 12px; }
+.btn.cta.next-action::after { border-radius: 13px; }
 

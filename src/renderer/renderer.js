@@ -10,6 +10,9 @@ const dryRunBtn = document.getElementById('dry-run');
 const safetyBar = document.getElementById('safety-bar');
 const safetyModeEl = document.getElementById('safety-mode');
 const safetySubEl = document.getElementById('safety-sub');
+const outputRow = document.querySelector('.output-row');
+const tierHead = document.getElementById('tier-head');
+const tiersEl = document.querySelector('.tiers');
 const dzTitle = document.getElementById('dz-title');
 const dzBrowseBtn = document.getElementById('dz-browse');
 const dzBrowseTextBtn = document.getElementById('dz-browse-text');
@@ -78,6 +81,7 @@ let batchPrevReclaimed = 0;      // delta tracker for per-file output size
    divided by elapsed time, applied to the remaining bytes in the queue. */
 let runStartTs = 0;
 let runDoneBytes = 0;
+let runActive = false;           // true while a queue run is in progress (gates the flow's Start cue)
 
 function humanBytes(n) {
   if (!Number.isFinite(n)) return '0 B';
@@ -340,6 +344,51 @@ function updateAddState() {
     : !!current.src;
   const ready = hasSource && current.scanned && current.videoCount > 0 && current.dest;
   addBtn.disabled = !ready;
+  updateFlowState();
+}
+
+/* ───── Guided progressive-disclosure flow ─────
+   Computes the single REQUIRED next action and the reachable state of each
+   step, then paints:
+     • .step-dim on steps not yet reached (visual only — legitimately-
+       available controls stay interactive so expert users aren't blocked).
+     • .next-action (orange "act here" cue + pulse) on EXACTLY ONE control.
+   Orange means ONLY "your next action, act here" — nowhere else.
+   Priority of the single cue:
+     compose a batch (Select location → Add) outranks Start; once staging is
+     empty and a batch is queued, Start becomes the cue. */
+function updateFlowState() {
+  const staging  = !!(current.scanned && current.videoCount > 0);
+  const hasDest  = !!current.dest;
+  const runnable = queue.some(
+    (q) => q.status === 'queued' && q.files.some((f) => f.status !== 'skipped')
+  );
+  const startVisible = startBtn && !startBtn.classList.contains('hidden') && !runActive;
+
+  // The one orange cue.
+  let next = null; // 'location' | 'add' | 'start'
+  if (staging && !hasDest)      next = 'location';
+  else if (staging && hasDest)  next = 'add';
+  else if (!staging && runnable && startVisible) next = 'start';
+
+  // Reachability → dim. Output + safety bar are the "config" step (un-dim once
+  // files are detected); tier un-dims once a location is chosen. Add and Start
+  // use their own :disabled state as the inactive treatment (no .step-dim).
+  const outputReachable = staging;
+  const tierReachable   = staging && hasDest;
+  if (outputRow) outputRow.classList.toggle('step-dim', !outputReachable);
+  if (safetyBar) safetyBar.classList.toggle('step-dim', !outputReachable);
+  if (tierHead)  tierHead.classList.toggle('step-dim', !tierReachable);
+  if (tiersEl)   tiersEl.classList.toggle('step-dim', !tierReachable);
+
+  // Exactly one orange cue.
+  if (chooseDestBtn) chooseDestBtn.classList.toggle('next-action', next === 'location');
+  if (addBtn)        addBtn.classList.toggle('next-action', next === 'add');
+  if (startBtn)      startBtn.classList.toggle('next-action', next === 'start');
+
+  // Output control label: required "Select location" until a location exists,
+  // then the resting "Change" (no ellipsis, ever).
+  if (chooseDestBtn) chooseDestBtn.textContent = hasDest ? 'Change' : 'Select location';
 }
 
 function resetStagingTier() {
@@ -354,8 +403,11 @@ function resetStagingTier() {
 }
 
 function updateTierHint() {
+  /* Tier is OPTIONAL — "Who Cares…" is already selected by default. Once the
+     tier step is live (files staged), say so softly so the zero-thinking
+     default isn't contradicted and no tier action is forced. */
   if (current.scanned && current.videoCount > 0) {
-    tierHintEl.textContent = `Applies to ${current.videoCount} file${current.videoCount === 1 ? '' : 's'} in this batch`;
+    tierHintEl.textContent = 'Recommended already selected — change only if you want';
   } else {
     tierHintEl.textContent = 'Applies to all files in this batch';
   }
@@ -974,6 +1026,7 @@ function renderQueue() {
   ).length;
   startBtn.disabled = (runnableQueued === 0) || (running > 0);
   updateTlTag({ running, paused, failed });
+  updateFlowState();
 }
 
 /* Status pill — shown only when something is actually happening.
@@ -1089,6 +1142,8 @@ startBtn.addEventListener('click', async () => {
   progressCard.classList.remove('hidden');
   startBtn.classList.add('hidden');
   stopBtn.classList.remove('hidden');
+  runActive = true;
+  updateFlowState();   // run in progress → clear the orange cue
   if (topProgress) topProgress.classList.add('active');
   /* E: throughput tracking starts now. ETA stays hidden until at least one
      file finishes so we don't show a garbage estimate. */
@@ -1329,6 +1384,7 @@ window.api.onProgress((d) => {
 });
 
 window.api.onQueueFinished(({ totals, stopped }) => {
+  runActive = false;   // run over → flow can re-cue Start if work remains
   progressCard.classList.add('hidden');
   stopBtn.classList.add('hidden');
   stopBtn.disabled = false;
