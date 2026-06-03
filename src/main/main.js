@@ -6,6 +6,7 @@ const os = require('os');
 const { runBatch, dryRunBatch, scanFolder, isVideoFile, getBinaries, VIDEO_EXTS } = require('../encoder/pipeline');
 const { flattenRunDir } = require('../encoder/flatten');
 const { findOrphanPartials, deletePartials } = require('../encoder/orphans');
+const { stageFileList } = require('../encoder/stage');
 
 let mainWindow = null;
 let stopRequested = false;
@@ -300,58 +301,45 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
         }
       };
 
-      /* File-list batches arrive with batch.kind === 'files' and an array
-         of original file paths in batch.fileSources. We stage them in a
-         temp dir of symlinks named so the encoder sees a regular folder
-         and mirrors output under "Selected files (<id>)/". Pipeline.js is
-         untouched — it walks the temp dir like any other source.
-         Cleanup runs in finally so symlinks never leak. */
+      /* File-list staging (file-pick / multi-file-drop, or a folder batch with
+         skips → kind:'files'). Hardlink/copy each original into a temp dir so
+         the encoder reads a stable path (this is what makes a STARTED job
+         robust to the original moving/being deleted). stageMap maps temp →
+         original for progress translation (BUG A).
+         FIX 1 — the staging is WRAPPED: if a source is missing/unstageable
+         (e.g. deleted before this batch's turn) stageFileList throws, we catch
+         it, fail this batch CLEANLY as source-missing, and CONTINUE the queue.
+         Previously this throw escaped the per-batch try/catch and left the
+         batch stuck on "Running". */
       let runSrc = batch.src;
       let tmpCleanup = null;
-      /* BUG A — map each staged temp path back to its ORIGINAL source path.
-         The pipeline scans the temp stage dir, so its progress events carry
-         temp paths; the renderer's rows are keyed by ORIGINAL paths. Translating
-         here lets the renderer resolve every file by exact path regardless of
-         the temp readdir order or duplicate basenames (which was leaving some
-         done files with no output size). */
-      const stageMap = new Map();
+      let stageMap = new Map();
+      let stageError = null;
       if (batch.kind === 'files' && Array.isArray(batch.fileSources) && batch.fileSources.length > 0) {
-        const tmpRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'squeeze-fl-'));
-        const niceName = `Selected files (${batch.id})`;
-        const stageDir = path.join(tmpRoot, niceName);
-        await fsp.mkdir(stageDir, { recursive: true });
-        const used = new Set();
-        for (const fp of batch.fileSources) {
-          let base = path.basename(fp);
-          let safe = base;
-          let n = 1;
-          while (used.has(safe)) {
-            const ext = path.extname(base);
-            const stem = base.slice(0, base.length - ext.length);
-            safe = `${stem} (${n})${ext}`;
-            n++;
-          }
-          used.add(safe);
-          const linkPath = path.join(stageDir, safe);
-          stageMap.set(linkPath, fp);
-          /* Hardlink so the entry shows up as a regular file to pipeline's
-             readdir({withFileTypes:true}) walker. Symlinks are skipped
-             because Dirent#isFile() returns false for them. If the source
-             is on a different filesystem (EXDEV — e.g. /Volumes/NAS),
-             fall back to a copy that uses APFS clonefile when available
-             (effectively free CoW). */
-          try {
-            await fsp.link(fp, linkPath);
-          } catch (e) {
-            if (e && e.code === 'EXDEV') {
-              await fsp.copyFile(fp, linkPath, fs.constants.COPYFILE_FICLONE);
-            } else {
-              throw e;
-            }
-          }
+        try {
+          const staged = await stageFileList(batch.id, batch.fileSources);
+          runSrc = staged.stageDir;
+          tmpCleanup = staged.tmpRoot;
+          stageMap = staged.stageMap;
+        } catch (e) {
+          stageError = e;
         }
-        runSrc = stageDir;
-        tmpCleanup = tmpRoot;
+      }
+
+      if (stageError) {
+        const n = Math.max(1, (batch.fileSources || []).length);
+        const result = {
+          runDir: null, logPath: null,
+          processed: 0, failed: n, failedCopied: 0, failedNoCopy: n, failedDestLost: 0,
+          destLost: false, alreadyDone: 0, skippedNonVideo: 0, reclaimed: 0, totalFiles: n,
+          sourceMissing: true, error: stageError && stageError.message
+        };
+        totals.failed += n;
+        totals.failedNoCopy += n;
+        send('batch-status', { id: batch.id, status: 'Failed', result });
+        state.resolved = true;
+        state.child = null;
+        continue;   // queue continues to the next batch — never stuck on Running
       }
 
       const wrappedBatch = (runSrc === batch.src) ? batch : { ...batch, src: runSrc };

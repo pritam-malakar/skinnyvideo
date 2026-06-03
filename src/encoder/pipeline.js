@@ -43,10 +43,6 @@ const REACH_TIMEOUT_MS = 3000;
 // Hard cap on a single ffprobe — it emits all output at once at the end, so a
 // wedged probe (source on a vanished volume) is caught by the same watchdog.
 const PROBE_TIMEOUT_MS = 15000;
-// While an encode runs, re-check the SOURCE this often. If it vanishes mid-
-// encode (deleted/moved, or volume ejected), kill fast instead of waiting out
-// the 60s inactivity stall — that slow path read as a hang (BUG B).
-const SOURCE_CHECK_MS = 2000;
 
 /* Resolve a promise but never wait longer than `ms`; on timeout resolve to
    `fallbackVal`. Used to bound fs probes that could otherwise hang on a dead
@@ -86,7 +82,7 @@ async function isSourceReadable(file) {
   );
 }
 
-function runCmd(cmd, args, { onStderr, onStdout, signal, onSpawn, stallTimeoutMs, isPaused, isCancelled, sourceFile } = {}) {
+function runCmd(cmd, args, { onStderr, onStdout, signal, onSpawn, stallTimeoutMs, isPaused, isCancelled } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     if (onSpawn) { try { onSpawn(child); } catch {} }
@@ -95,12 +91,10 @@ function runCmd(cmd, args, { onStderr, onStdout, signal, onSpawn, stallTimeoutMs
     let settled = false;
     let stallTimer = null;
     let cancelPoll = null;
-    let sourceTimer = null;
     const clearStall = () => { if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; } };
     const clearCancel = () => { if (cancelPoll) { clearInterval(cancelPoll); cancelPoll = null; } };
-    const clearSource = () => { if (sourceTimer) { clearTimeout(sourceTimer); sourceTimer = null; } };
-    const finish = (val) => { if (settled) return; settled = true; clearStall(); clearCancel(); clearSource(); resolve(val); };
-    const fail = (err) => { if (settled) return; settled = true; clearStall(); clearCancel(); clearSource(); reject(err); };
+    const finish = (val) => { if (settled) return; settled = true; clearStall(); clearCancel(); resolve(val); };
+    const fail = (err) => { if (settled) return; settled = true; clearStall(); clearCancel(); reject(err); };
     /* BUG C — cancel must ALWAYS terminate. Poll the cancel flag; the moment
        it's set, kill the child (SIGTERM then a bounded SIGKILL) and resolve
        IMMEDIATELY. We do not wait for 'close' — a child wedged in
@@ -115,30 +109,13 @@ function runCmd(cmd, args, { onStderr, onStdout, signal, onSpawn, stallTimeoutMs
         finish({ code: -1, stdout, stderr, child, cancelled: true });
       }, 150);
     }
-    /* BUG B — while encoding, re-check the SOURCE on a short cadence. If it
-       goes away mid-encode (deleted/moved, or its volume ejected), kill the
-       child and resolve `sourceGone` FAST — don't wait out the 60s inactivity
-       stall (which read as a hang). isSourceReadable is itself bounded, so a
-       vanished volume returns "gone" within a few seconds rather than blocking.
-       Re-scheduled (not setInterval) so checks never overlap. */
-    if (sourceFile) {
-      const scheduleSourceCheck = () => {
-        sourceTimer = setTimeout(async () => {
-          if (settled) return;
-          let alive = true;
-          try { alive = await isSourceReadable(sourceFile); } catch { alive = false; }
-          if (settled) return;
-          if (!alive) {
-            try { child.kill('SIGTERM'); } catch {}
-            setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, 800);
-            finish({ code: -1, stdout, stderr, child, sourceGone: true });
-          } else {
-            scheduleSourceCheck();
-          }
-        }, SOURCE_CHECK_MS);
-      };
-      scheduleSourceCheck();
-    }
+    /* NOTE: there is deliberately NO mid-encode "source readability" poll. A
+       STARTED encode holds the input open, so moving/deleting the original
+       does not break it (the file's data survives via the open fd, just like
+       the file-list hardlink). We let it finish. A source whose whole VOLUME
+       ejects mid-encode blocks the encoder → the inactivity watchdog below
+       catches that. A NOT-yet-started file whose source is gone is caught by
+       the pre-encode isSourceReadable() check in runBatch (folder mode). */
     /* (Re)arm the inactivity watchdog. Any output cancels and restarts it, so
        it only fires after a full window of true silence. */
     function armStall() {
@@ -567,10 +544,20 @@ async function runBatch(batch, controlOrFn, onProgress) {
       continue;
     }
 
-    /* BUG B: is the source still there/readable? If it was deleted/moved (fast
-       ENOENT) or its volume vanished (would block on I/O), fail THIS file fast
-       — before we probe or spawn ffmpeg, both of which would otherwise wedge —
-       and continue the queue. */
+    /* Pre-encode source check (NOT-YET-STARTED files only). This file hasn't
+       opened yet, so if its source is already gone/unreadable we fail it fast
+       — before probing or spawning ffmpeg, which would otherwise error slowly
+       (deleted) or block (vanished volume). Scope, stated honestly:
+         • FOLDER batches — v.file is the ORIGINAL path, so this catches a file
+           deleted/moved or a volume ejected after the run's scan but before
+           this file's turn.
+         • FILE-LIST batches — v.file is the staged TEMP hardlink/copy, which is
+           insulated from the original moving, so this is effectively a no-op
+           there (the whole batch was staged up front).
+       Files that are ALREADY encoding are intentionally NOT re-checked — a
+       started encode holds its input open and finishes regardless (see runCmd:
+       no source poll); a vanished volume mid-encode is caught by the stall
+       watchdog. */
     if (!(await isSourceReadable(v.file))) { recordSourceMissing(v, i); continue; }
 
     try { await fsp.unlink(tmpPath); } catch {}
@@ -589,7 +576,6 @@ async function runBatch(batch, controlOrFn, onProgress) {
       stallTimeoutMs: STALL_TIMEOUT_MS,
       isPaused,
       isCancelled,
-      sourceFile: v.file,
       onStderr: (chunk) => {
         stderrBuf += chunk;
         if (stderrBuf.length > 20000) stderrBuf = stderrBuf.slice(-10000);
@@ -626,17 +612,6 @@ async function runBatch(batch, controlOrFn, onProgress) {
         outcome: 'cancelled'
       });
       break;
-    }
-
-    /* BUG B — the source vanished WHILE this file was encoding. runCmd's source
-       poll killed the child fast (no 60s wait). Mark source-missing and move on
-       to the next file — no fallback (would re-block on the same missing input),
-       no hang. */
-    if (result.sourceGone) {
-      try { await fsp.unlink(tmpPath); } catch {}
-      log(`SOURCE-GONE ${v.file} (source disappeared during encode — encoder terminated fast)`);
-      recordSourceMissing(v, i);
-      continue;
     }
 
     /* BUG 3/B: the primary encode produced no output for the whole stall window
@@ -687,7 +662,6 @@ async function runBatch(batch, controlOrFn, onProgress) {
         stallTimeoutMs: STALL_TIMEOUT_MS,
         isPaused,
         isCancelled,
-        sourceFile: v.file,
         onStderr: (chunk) => {
           stderrBuf2 += chunk;
           if (stderrBuf2.length > 20000) stderrBuf2 = stderrBuf2.slice(-10000);
@@ -702,14 +676,6 @@ async function runBatch(batch, controlOrFn, onProgress) {
           }
         }
       });
-
-      /* Source vanished during the fallback encode → fast source-missing. */
-      if (r2.sourceGone) {
-        try { await fsp.unlink(tmpPath); } catch {}
-        log(`SOURCE-GONE ${v.file} (source disappeared during fallback encode — terminated fast)`);
-        recordSourceMissing(v, i);
-        continue;
-      }
 
       /* Cancel wins (runCmd resolved immediately on the flag). */
       if (isCancelled()) {
