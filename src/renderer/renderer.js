@@ -122,6 +122,10 @@ function resetEtaModel() {
    time. Operator-skipped files are not part of the run's work. */
 function computeQueueWork() {
   let totalBytes = 0, doneBytes = 0, remainMs = 0, hasRemaining = false;
+  // Whole-queue counters OBSERVED from per-file state (not consumed from the
+  // event stream) — so the progress-card Completed/Reclaimed match the sum of
+  // finished work across ALL batches, and agree with the bar/ETA above.
+  let completed = 0, failedCount = 0, reclaimedBytes = 0;
   for (const b of queue) {
     const bpms = bpmsFor(b.tier);
     for (const f of b.files) {
@@ -139,22 +143,41 @@ function computeQueueWork() {
         remainMs += size / bpms;
         hasRemaining = true;
       }
+      if (f.status === 'done' || f.status === 'existed') {
+        completed++;
+        if (Number.isFinite(f.outputSize) && Number.isFinite(f.size) && f.size > f.outputSize) {
+          reclaimedBytes += f.size - f.outputSize;
+        }
+      } else if (f.status === 'failed') {
+        failedCount++;
+      }
     }
   }
-  return { totalBytes, doneBytes, remainMs, hasRemaining };
+  return { totalBytes, doneBytes, remainMs, hasRemaining, completed, failedCount, reclaimedBytes };
 }
 
-/* Paint the overall bar + the ETA strip from current queue state. */
+/* Paint the overall bar, the ETA strip, AND the whole-queue stat counters from
+   current queue state. Pure observation — it reads per-file state, never
+   consumes or mutates the progress events (FIX: keeps the throughput model from
+   intercepting the file-done state). */
 function updateOverallProgressEta() {
-  const { totalBytes, doneBytes, remainMs, hasRemaining } = computeQueueWork();
+  const w = computeQueueWork();
   if (progressFill) {
-    const frac = totalBytes > 0 ? Math.max(0, Math.min(1, doneBytes / totalBytes)) : 0;
+    const frac = w.totalBytes > 0 ? Math.max(0, Math.min(1, w.doneBytes / w.totalBytes)) : 0;
     progressFill.style.width = `${(frac * 100).toFixed(1)}%`;
   }
-  if (!hasRemaining) { hideEta(); return; }
+  // Whole-queue counters (match the sum of finished batches, not the current one).
+  if (statCompleted) statCompleted.textContent = String(w.completed);
+  if (statFailed) {
+    statFailed.textContent = String(w.failedCount);
+    statFailed.classList.toggle('has-failures', w.failedCount > 0);
+  }
+  if (reclaimedEl) reclaimedEl.textContent = humanBytes(w.reclaimedBytes);
+
+  if (!w.hasRemaining) { hideEta(); return; }
   if (!etaHasSignal) { showEta('Estimating…'); return; }
   // Floor so it never reads 0:00 while work remains; fmtEta buckets the rest.
-  showEta(fmtEta(remainMs) || '~10s left');
+  showEta(fmtEta(w.remainMs) || '~10s left');
 }
 
 /* A file row in a settled state — done/failed/cancelled/already-present/
@@ -1408,11 +1431,7 @@ window.api.onProgress((d) => {
     }
     updateOverallProgressEta();   // FIX 3: whole-queue bar + FIX 2: ETA
   } else if (d.type === 'file-done') {
-    statCompleted.textContent = String(d.processed + d.alreadyDone);
-    statFailed.textContent = String(d.failed);
-    if (d.failed > 0) statFailed.classList.add('has-failures');
-    reclaimedEl.textContent = humanBytes(d.reclaimed);
-
+    const overall = d.index / d.total;   // per-BATCH progress (for this batch's row bar)
     if (batch) {
       batchPrevReclaimed = d.reclaimed || 0;
       batch.progress = overall * 100;
