@@ -377,6 +377,7 @@ body::before {
 
 .safety-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .safety-mode {
+  display: inline-flex; align-items: center; gap: 8px;
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 600;
@@ -384,7 +385,18 @@ body::before {
   letter-spacing: 0.10em;
   color: var(--fg);
 }
+/* Status dot — a supplementary glance cue; the mode word + the swapped icon
+   carry the meaning, so state is never conveyed by colour alone. */
+.safety-mode::before {
+  content: ''; flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--cyan-dim);
+  box-shadow: 0 0 6px oklch(0.76 0.115 215 / 0.45);
+}
 .safety-bar[data-mode="preview"] .safety-mode { color: var(--amber); }
+.safety-bar[data-mode="preview"] .safety-mode::before {
+  background: var(--amber);
+  box-shadow: 0 0 6px var(--amber-dim);
+}
 .safety-sub {
   font-size: 12.5px;
   color: var(--fg-2);     /* AA-compliant body on the bar surface */
@@ -409,6 +421,22 @@ body::before {
 .safety-toggle[aria-pressed="true"] {
   background: var(--amber-tint);
   border-color: var(--amber-line);
+  color: var(--amber);
+}
+/* Explicit On/Off word so the toggle's own state is unmistakable at a glance
+   (paired with the switch position — not signalled by colour alone). */
+.safety-toggle-state {
+  min-width: 22px; text-align: center;
+  padding: 1px 6px; border-radius: 5px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-1);
+  font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--fg-2);
+}
+.safety-toggle[aria-pressed="true"] .safety-toggle-state {
+  border-color: var(--amber-line);
+  background: var(--amber-tint);
   color: var(--amber);
 }
 .dest-picker {
@@ -542,7 +570,10 @@ body::before {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
-  max-width: 720px;   /* constrain so right-side empty space is intentional */
+  max-width: 720px;     /* cards keep their size … */
+  margin-inline: auto;  /* … and the pair is centred in the tier row, balancing
+                           the empty space on both sides. Horizontal only —
+                           scoped to this row, nothing else shifts. */
 }
 
 /* Add-to-queue commits the staging batch with its frozen tier. */
@@ -1220,12 +1251,6 @@ svg { display: block; }
   border-color: var(--border);
   background: var(--bg-2);
 }
-.lt-reset.confirming {
-  color: var(--amber);
-  border-color: var(--amber-line);
-  background: var(--amber-tint);
-}
-.lt-reset.confirming:hover { background: oklch(0.80 0.110 78 / 0.18); }
 
 /* ============================================================
    Trust reassurance — "originals are never changed". Muted /
@@ -1241,6 +1266,29 @@ svg { display: block; }
   font-size: 11px;
 }
 .dz-reassure svg { width: 13px; height: 13px; flex: 0 0 13px; color: var(--fg-3); }
+
+/* First-run teaching hint — quiet starter content, no box. Numbered steps in
+   secondary text; gives way to the normal UI once there's queue content. */
+.dz-steps {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: 7px 11px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--fg-2);          /* AA on the dropzone surface */
+  letter-spacing: -0.003em;
+}
+.dz-steps .dz-step { display: inline-flex; align-items: center; gap: 7px; }
+.dz-steps .n {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 17px; height: 17px; flex: 0 0 17px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-3);
+  font-family: var(--font-mono);
+  font-size: 10px; font-weight: 600;
+  color: var(--fg);
+}
+.dz-steps .dz-arrow { color: var(--fg-4); font-size: 13px; }
 .summary-trust {
   display: flex; align-items: center; gap: 7px;
   margin-top: 12px;

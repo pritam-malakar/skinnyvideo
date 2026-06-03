@@ -40,6 +40,15 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
             Your originals are never moved, changed, or deleted.
           </div>
+          <!-- First-run teaching hint: quiet, empty-state only. The renderer
+               hides it once the queue has content or a run has completed. -->
+          <div class="dz-steps" id="dz-steps" aria-label="How it works">
+            <span class="dz-step"><span class="n">1</span>Drop footage</span>
+            <span class="dz-arrow" aria-hidden="true">→</span>
+            <span class="dz-step"><span class="n">2</span>Pick a quality</span>
+            <span class="dz-arrow" aria-hidden="true">→</span>
+            <span class="dz-step"><span class="n">3</span>Add to queue, then Start</span>
+          </div>
         </div>
       </div>
       <div id="drop-status" class="dz-loaded hidden">
@@ -89,6 +98,7 @@
       <button id="dry-run" class="safety-toggle" type="button" aria-pressed="false" aria-label="Toggle preview-only mode">
         <span class="safety-toggle-label">Preview only</span>
         <span class="sw"></span>
+        <span class="safety-toggle-state" id="dry-state">Off</span>
       </button>
     </div>
 
@@ -107,7 +117,7 @@
         </div>
         <span class="badge">Recommended</span>
         <div class="name">Who Cares…</div>
-        <div class="desc">Keeps quality and resolution. Fast.</div>
+        <div class="desc">Smaller files, fast — great for most footage.</div>
       </label>
 
       <label class="tier archival" data-tier="preserve">
@@ -120,7 +130,7 @@
         </div>
         <span class="badge">Archival</span>
         <div class="name">Probably Need It Later</div>
-        <div class="desc">Highest quality retention. Much slower.</div>
+        <div class="desc">Best possible quality, larger files, much slower.</div>
       </label>
     </div>
 

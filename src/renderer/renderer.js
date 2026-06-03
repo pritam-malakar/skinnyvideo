@@ -10,6 +10,8 @@ const dryRunBtn = document.getElementById('dry-run');
 const safetyBar = document.getElementById('safety-bar');
 const safetyModeEl = document.getElementById('safety-mode');
 const safetySubEl = document.getElementById('safety-sub');
+const dryStateEl = document.getElementById('dry-state');
+const dzStepsEl = document.getElementById('dz-steps');
 const outputRow = document.querySelector('.output-row');
 const tierHead = document.getElementById('tier-head');
 const tiersEl = document.querySelector('.tiers');
@@ -774,6 +776,9 @@ dryRunBtn.addEventListener('click', () => {
   safetySubEl.textContent = next
     ? 'No files will be written — videos are scanned and totals reported only'
     : 'Encoded videos will be saved to the output folder';
+  // Make the toggle's own on/off state explicit (text paired with the switch
+  // position, never colour alone) so the active mode is unmistakable.
+  if (dryStateEl) dryStateEl.textContent = next ? 'On' : 'Off';
 });
 
 /* Commit the staging area as a new batch. Tier is FROZEN at this moment.
@@ -1086,7 +1091,18 @@ function buildFileRow(file, i) {
   return li;
 }
 
+/* First-run teaching hint lives in the empty state only. CSS already hides
+   the whole drop prompt once a source is staged (.dropzone.has-source); this
+   additionally retires the hint the moment there's queue content or a run has
+   finished — so it never reappears over the "Drop another…" prompt. */
+function updateOnboarding() {
+  if (!dzStepsEl) return;
+  const showHint = queue.length === 0 && !hasCompletedRun;
+  dzStepsEl.classList.toggle('hidden', !showHint);
+}
+
 function renderQueue() {
+  updateOnboarding();
   queueEl.innerHTML = '';
   queue.forEach((batch, idx) => queueEl.appendChild(buildBatchGroup(batch, idx)));
 
@@ -1724,41 +1740,25 @@ function renderLifetime(drives) {
     amt.textContent = humanBytes(d.totalReclaimed);
     li.appendChild(amt);
 
-    /* Two-step Reset: first click swaps the label to a confirmation
-       prompt; second click commits; clicking outside or pressing Esc
-       cancels. Confirm copy names the drive so it's unambiguous. */
+    /* Reset wipes a long-term total and is irreversible, so it gets an
+       explicit confirmation modal. Cancel, Esc, or backdrop all abort;
+       the reset only proceeds on a deliberate confirm. */
     const reset = document.createElement('button');
     reset.className = 'lt-reset';
     reset.type = 'button';
     reset.textContent = 'Reset';
-    let confirming = false;
-    let cancelHandler = null;
-    const cancel = () => {
-      confirming = false;
-      reset.textContent = 'Reset';
-      reset.classList.remove('confirming');
-      if (cancelHandler) {
-        document.removeEventListener('click', cancelHandler, true);
-        document.removeEventListener('keydown', escHandler);
-        cancelHandler = null;
-      }
-    };
-    const escHandler = (e) => { if (e.key === 'Escape') cancel(); };
     reset.addEventListener('click', async (e) => {
       e.stopPropagation();
-      if (!confirming) {
-        confirming = true;
-        reset.textContent = `Confirm reset for ${d.label}?`;
-        reset.classList.add('confirming');
-        cancelHandler = (ev) => { if (!reset.contains(ev.target)) cancel(); };
-        setTimeout(() => {
-          document.addEventListener('click', cancelHandler, true);
-          document.addEventListener('keydown', escHandler);
-        }, 0);
-        return;
-      }
-      // Confirmed
-      cancel();
+      const ok = await showModal({
+        title: 'Reset lifetime reclaimed stats?',
+        body: `<p>This clears the saved lifetime total for <strong>${escapeHtml(d.label)}</strong>. This can’t be undone.</p>`,
+        tone: 'warn',
+        actions: [
+          { label: 'Cancel', value: false, kind: 'ghost' },
+          { label: 'Reset stats', value: true, kind: 'primary' },
+        ],
+      });
+      if (!ok) return;
       try { await window.api.resetDrive(d.driveKey); } catch {}
       await refreshLifetime();
     });
