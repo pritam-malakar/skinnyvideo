@@ -77,11 +77,85 @@ let perFileTimes = [];
 let lastFileStartTs = 0;
 let hasCompletedRun = false;     // P7: first-time vs subsequent drops
 let batchPrevReclaimed = 0;      // delta tracker for per-file output size
-/* E: total-queue ETA — source bytes finished since the current run began,
-   divided by elapsed time, applied to the remaining bytes in the queue. */
-let runStartTs = 0;
-let runDoneBytes = 0;
 let runActive = false;           // true while a queue run is in progress (gates the flow's Start cue)
+
+/* ───── FIX 2: always-on whole-queue ETA (per-tier throughput model) ─────
+   Throughput is modelled PER TIER in bytes-of-source per millisecond, because
+   x265 ("preserve") is far slower than VideoToolbox HEVC ("regular"). Seeded
+   with rough rates so a number can show almost immediately, then refined live
+   by an EWMA as files report progress and complete. The remaining-time sum is
+   computed from queue state every tick, so it's continuous and present for the
+   whole run — and pause-safe (it uses progress, not wall-clock, so a paused
+   file's estimate simply freezes). */
+const TIER_SEED_BPMS = {
+  regular:  16 * 1024 * 1024 / 1000,   // ~16 MB/s of source (HW HEVC, fast)
+  preserve: 2  * 1024 * 1024 / 1000    // ~2 MB/s of source  (x265 medium, slow)
+};
+let tierBpms = { ...TIER_SEED_BPMS };
+let etaHasSignal = false;        // have we observed ANY live throughput yet?
+let etaTimer = null;             // 1s ticker that keeps the ETA/bar alive
+const EWMA_DONE = 0.4;           // weight for a completed-file measurement
+const EWMA_PROG = 0.15;          // weight for a mid-file progress measurement
+
+function bpmsFor(tier) {
+  const v = tierBpms[tier];
+  return (Number.isFinite(v) && v > 0) ? v : TIER_SEED_BPMS.regular;
+}
+/* Fold a fresh throughput sample (bytes/ms) into the tier's EWMA. Caps upward
+   jumps so one fast sample can't make the ETA lurch down then back up. */
+function refineBpms(tier, instBpms, alpha) {
+  if (!(instBpms > 0) || !Number.isFinite(instBpms)) return;
+  const prev = bpmsFor(tier);
+  const sample = Math.min(instBpms, prev * 8);
+  tierBpms[tier] = alpha * sample + (1 - alpha) * prev;
+  etaHasSignal = true;
+}
+function resetEtaModel() {
+  tierBpms = { ...TIER_SEED_BPMS };
+  etaHasSignal = false;
+}
+
+/* Whole-queue work accounting (by SOURCE SIZE), used by BOTH the overall
+   progress bar (FIX 3) and the ETA (FIX 2) so they always agree. Terminal
+   files (done/existed/failed/cancelled) count as fully-worked; the running
+   file counts its fraction; queued files contribute their full remaining
+   time. Operator-skipped files are not part of the run's work. */
+function computeQueueWork() {
+  let totalBytes = 0, doneBytes = 0, remainMs = 0, hasRemaining = false;
+  for (const b of queue) {
+    const bpms = bpmsFor(b.tier);
+    for (const f of b.files) {
+      if (f.status === 'skipped') continue;
+      const size = (Number.isFinite(f.size) && f.size > 0) ? f.size : 0;
+      totalBytes += size;
+      if (f.status === 'done' || f.status === 'existed' || f.status === 'failed' || f.status === 'cancelled') {
+        doneBytes += size;
+      } else if (f.status === 'running') {
+        const prog = Math.max(0, Math.min(1, (f.progress || 0) / 100));
+        doneBytes += size * prog;
+        remainMs += (size * (1 - prog)) / bpms;
+        hasRemaining = true;
+      } else { // queued
+        remainMs += size / bpms;
+        hasRemaining = true;
+      }
+    }
+  }
+  return { totalBytes, doneBytes, remainMs, hasRemaining };
+}
+
+/* Paint the overall bar + the ETA strip from current queue state. */
+function updateOverallProgressEta() {
+  const { totalBytes, doneBytes, remainMs, hasRemaining } = computeQueueWork();
+  if (progressFill) {
+    const frac = totalBytes > 0 ? Math.max(0, Math.min(1, doneBytes / totalBytes)) : 0;
+    progressFill.style.width = `${(frac * 100).toFixed(1)}%`;
+  }
+  if (!hasRemaining) { hideEta(); return; }
+  if (!etaHasSignal) { showEta('Estimating…'); return; }
+  // Floor so it never reads 0:00 while work remains; fmtEta buckets the rest.
+  showEta(fmtEta(remainMs) || '~10s left');
+}
 
 /* A file row in a settled state — done/failed/cancelled/already-present/
    operator-skipped. Used to resolve file-done events to the right row and to
@@ -298,19 +372,6 @@ function hideEta() {
   statEta.classList.add('hidden');
 }
 
-/* Sum source bytes still to do across the queue — for ETA's denominator. */
-function remainingQueueBytes() {
-  let bytes = 0;
-  for (const b of queue) {
-    if (b.status === 'done' || b.status === 'failed' || b.status === 'cancelled') continue;
-    for (const f of b.files) {
-      if (f.status === 'queued' || f.status === 'running') {
-        if (Number.isFinite(f.size) && f.size > 0) bytes += f.size;
-      }
-    }
-  }
-  return bytes;
-}
 
 /* Item 2: end-of-run tally, built from queue file state. Every file lands
    in exactly one bucket. "skipped" folds operator-skips and already-present
@@ -1178,12 +1239,14 @@ startBtn.addEventListener('click', async () => {
   runActive = true;
   updateFlowState();   // run in progress → clear the orange cue
   if (topProgress) topProgress.classList.add('active');
-  /* E: throughput tracking starts now. ETA stays hidden until at least one
-     file finishes so we don't show a garbage estimate. */
-  runStartTs = Date.now();
-  runDoneBytes = 0;
-  hideEta();
+  /* FIX 2: throughput model starts now. Show a calm "Estimating…" until the
+     first live signal, then a continuous whole-queue countdown. A 1s ticker
+     keeps the ETA/bar alive even between encoder progress events. */
+  resetEtaModel();
   resetProgressUI();
+  updateOverallProgressEta();      // paints "Estimating…" + 0% bar immediately
+  if (etaTimer) clearInterval(etaTimer);
+  etaTimer = setInterval(updateOverallProgressEta, 1000);
   /* C: per-file skips honored at start time. A batch with at least one
      skipped file is emitted as kind:'files' carrying only the non-skipped
      paths — main.js's symlink stage then never sees the skipped ones. The
@@ -1316,9 +1379,9 @@ window.api.onProgress((d) => {
       }
       renderQueue();
     }
+    updateOverallProgressEta();   // FIX 2/3: refresh whole-queue bar + ETA
   } else if (d.type === 'file-progress') {
-    const overall = ((d.index - 1) + d.fileProgress) / d.total;
-    progressFill.style.width = `${(overall * 100).toFixed(1)}%`;
+    const overall = ((d.index - 1) + d.fileProgress) / d.total;   // per-BATCH progress
     if (batch) {
       batch.progress = overall * 100;
       const root = queueEl.querySelector(`[data-id="${batch.id}"]`);
@@ -1334,11 +1397,17 @@ window.api.onProgress((d) => {
           const fbar = fileRow ? fileRow.querySelector('.status .progressbar > i') : null;
           if (fbar) fbar.style.width = `${batch.files[idx].progress.toFixed(1)}%`;
         }
+        /* FIX 2: refine this tier's throughput from the file's live rate
+           (skip the noisy first/last few %). */
+        const sz = batch.files[idx].size;
+        if (sz > 0 && lastFileStartTs > 0 && d.fileProgress > 0.1 && d.fileProgress < 0.98) {
+          const elapsed = Date.now() - lastFileStartTs;
+          if (elapsed > 0) refineBpms(batch.tier, (sz * d.fileProgress) / elapsed, EWMA_PROG);
+        }
       }
     }
+    updateOverallProgressEta();   // FIX 3: whole-queue bar + FIX 2: ETA
   } else if (d.type === 'file-done') {
-    const overall = d.index / d.total;
-    progressFill.style.width = `${(overall * 100).toFixed(1)}%`;
     statCompleted.textContent = String(d.processed + d.alreadyDone);
     statFailed.textContent = String(d.failed);
     if (d.failed > 0) statFailed.classList.add('has-failures');
@@ -1382,7 +1451,11 @@ window.api.onProgress((d) => {
         } else {
           f.status = 'done';
           f.outputSize = realOut;
-          if (Number.isFinite(f.size) && f.size > 0) runDoneBytes += f.size;
+          /* FIX 2: a completed encode is the most reliable throughput sample —
+             refine this tier's model from in-bytes ÷ this file's encode time. */
+          const inBytes = Number.isFinite(d.inBytes) && d.inBytes > 0 ? d.inBytes : f.size;
+          const encodeMs = lastFileStartTs > 0 ? (Date.now() - lastFileStartTs) : 0;
+          if (inBytes > 0 && encodeMs > 0) refineBpms(batch.tier, inBytes / encodeMs, EWMA_DONE);
         }
         f.progress = 100;
       }
@@ -1390,25 +1463,7 @@ window.api.onProgress((d) => {
       renderQueue();
     }
 
-    /* E: ETA based on observed throughput. Honest about timing — held back
-       until at least one file has completed successfully (runDoneBytes > 0)
-       so we never show a divide-by-tiny estimate. Lives on the headline
-       stat card now; hides itself when there's no more queue to estimate. */
-    if (runStartTs > 0 && runDoneBytes > 0) {
-      const elapsed = Date.now() - runStartTs;
-      if (elapsed > 0) {
-        const bytesPerMs = runDoneBytes / elapsed;
-        if (bytesPerMs > 0) {
-          const remaining = remainingQueueBytes();
-          if (remaining > 0) {
-            const text = fmtEta(remaining / bytesPerMs);
-            if (text) showEta(text); else hideEta();
-          } else {
-            hideEta();
-          }
-        }
-      }
-    }
+    updateOverallProgressEta();   // FIX 3: whole-queue bar + FIX 2: ETA (continuous)
   } else if (d.type === 'dry-summary') {
     currentFileEl.textContent = `[dry run] ${d.videos} videos · ${d.ignored} ignored`;
     progressCounts.textContent = `Est. reclaim: ${humanBytes(d.estReclaim)}`;
@@ -1419,6 +1474,7 @@ window.api.onProgress((d) => {
 
 window.api.onQueueFinished(({ totals, stopped }) => {
   runActive = false;   // run over → flow can re-cue Start if work remains
+  if (etaTimer) { clearInterval(etaTimer); etaTimer = null; }
   progressCard.classList.add('hidden');
   stopBtn.classList.add('hidden');
   stopBtn.disabled = false;

@@ -301,6 +301,14 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
         }
       };
 
+      /* FIX 1 — AUTO-ADVANCE: a single batch's failure (for ANY reason) must
+         never halt the queue. The whole per-batch body is wrapped: on any
+         unexpected throw we fail THIS batch and the loop continues to the next,
+         exactly as it continues past a failed file within a batch. (Staging and
+         runBatch already have their own handling; this is the backstop that
+         also covers e.g. a flatten error.) */
+      try {
+
       /* File-list staging (file-pick / multi-file-drop, or a folder batch with
          skips → kind:'files'). Hardlink/copy each original into a temp dir so
          the encoder reads a stable path (this is what makes a STARTED job
@@ -390,14 +398,18 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
          from two different source subfolders within one batch) get an
          "_2" / "_3" suffix — no output is silently lost. */
       if (!isDry && result && result.runDir && fs.existsSync(result.runDir)) {
-        const lifted = await flattenRunDir(result.runDir);
+        // Flatten failure is non-fatal — the encode already succeeded; never
+        // let it throw and abort the queue (FIX 1).
         try {
-          fs.appendFileSync(
-            path.join(result.runDir, 'compress.log'),
-            `# Flatten: lifted=${lifted} — canonical layout is`
-            + ` <chosen output>/Compressed_<run>/<files> (flat, no subfolders)\n`
-          );
-        } catch {}
+          const lifted = await flattenRunDir(result.runDir);
+          try {
+            fs.appendFileSync(
+              path.join(result.runDir, 'compress.log'),
+              `# Flatten: lifted=${lifted} — canonical layout is`
+              + ` <chosen output>/Compressed_<run>/<files> (flat, no subfolders)\n`
+            );
+          } catch {}
+        } catch (e) { /* non-fatal */ }
       }
 
       totals.processed += result.processed || 0;
@@ -419,6 +431,19 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
 
       send('batch-status', { id: batch.id, status: finalStatus, result });
       state.resolved = true;   // the batch reported a terminal status — cancel watchdog stands down
+
+      } catch (e) {
+        /* FIX 1 backstop: any unexpected error in this batch must not halt the
+           queue. If we haven't already reported a terminal status, fail this
+           batch and carry on to the next one. */
+        if (!state.resolved) {
+          send('batch-status', {
+            id: batch.id, status: 'Failed',
+            result: { runDir: null, processed: 0, failed: 1, failedCopied: 0, failedNoCopy: 1, failedDestLost: 0, destLost: false, reclaimed: 0, error: e && e.message }
+          });
+          state.resolved = true;
+        }
+      }
 
       state.child = null;
       if (stopRequested) break;

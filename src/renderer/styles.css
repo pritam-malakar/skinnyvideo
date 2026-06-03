@@ -1398,6 +1398,15 @@ svg { display: block; }
 }
 @media (prefers-reduced-motion: reduce) {
   .next-action::after { animation: none; opacity: 1; }
+  /* Stop continuous motion: the orange cue is static (above), the moving sheen
+     on the overall progress bar / top strip is removed, and the pulsing status
+     dots hold steady. State is still conveyed by colour + the always-present
+     text/icon labels, so nothing is lost. */
+  .top-progress.active { animation: none; }
+  .progress-fill::after { animation: none; display: none; }
+  .tl-tag.running::before,
+  .qbatch-status.running .pill .dot,
+  .qrow .status.running .pill .dot { animation: none; }
 }
 
 /* Orange repaint for the two REQUIRED-action buttons (Select location, Add).
