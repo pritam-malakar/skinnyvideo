@@ -1,17 +1,21 @@
-/* Repro + regression for the v2.1.14 skip/removal/auto-advance bugs, driven on
+/* Repro + regression for the skip / removal / size / auto-advance bugs, driven on
    the REAL GUI path: real renderer + real preload + real IPC + real stage.js +
-   real pipeline encodes. The start-queue handler is a faithful mirror of
-   src/main/main.js (staging + per-batch loop + auto-advance).
+   real pipeline encodes, AND the REAL src/main/queue-runner.js loop (the exact
+   code main.js ships — NOT a mirror, so a real-loop bug can't hide behind a
+   simplified copy).
 
-   MODE=skip    → 2-batch queue; skip one file in batch 1.
-                  Asserts the skipped file is NEVER encoded (BUG 1) AND the queue
-                  auto-advances to batch 2 which also completes (BUG 3).
-   MODE=remove  → 1 batch with 2 sources; delete ONE source from disk before
-                  Start. Asserts ONLY that file fails and the other still encodes,
-                  batch completes with partial success (BUG 2).
+   MODE=skip        file-pick: skip a file → never encoded; queue advances.
+   MODE=skipfolder  same via the real folder-drop path.
+   MODE=remove      delete one of two sources before Start → only that file fails.
+   MODE=sizes       byte-for-byte: stored size === fsp.stat() (source AND output).
+   MODE=skiplive    skip a file in a LATER batch AFTER Start.
+   MODE=skipadvance 4 batches, skip the MIDDLE batch (03) → queue auto-advances
+                    to batch 04 (the live "halts after a skip batch" report).
+   MODE=skipthree   batch 03 ends done+failed+skipped → still auto-advances.
+   MODE=allskipped  a MIDDLE all-skipped batch shows Done (not stuck Queued) and
+                    the queue advances past it.
 
-   Run:  MODE=skip   ./node_modules/.bin/electron test/skip_remove_test.js
-         MODE=remove ./node_modules/.bin/electron test/skip_remove_test.js
+   Run:  MODE=<mode> ./node_modules/.bin/electron test/skip_remove_test.js
    Skips cleanly if the fixture clip or bundled ffmpeg is missing. */
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
@@ -70,85 +74,19 @@ ipcMain.handle('delete-orphans', async () => ({ deleted: 0 }));
 ipcMain.handle('stop-queue', async () => { stopRequested = true; return { ok: true }; });
 ipcMain.handle('set-batch-skips', async (_e, { batchId, skipped }) => { rt(batchId).skips = new Set(Array.isArray(skipped) ? skipped : []); return { ok: true }; });
 
-// ---- start-queue: FAITHFUL mirror of src/main/main.js (loop + staging + advance) ----
+// ---- start-queue: drives the REAL src/main/queue-runner.js (NOT a mirror) so
+//      the loop/auto-advance under test is the exact code main.js ships. ----
+const { runQueue } = require(path.join(ROOT, 'src/main/queue-runner'));
 ipcMain.handle('start-queue', async (_evt, batches) => {
   if (queueRunning) return { ok: false };
   queueRunning = true; stopRequested = false;
-  const totals = { processed: 0, failed: 0, failedNoCopy: 0, reclaimed: 0 };
+  let totals;
   try {
-    for (let i = 0; i < batches.length; i++) {
-      if (stopRequested) break;
-      const batch = batches[i];
-      send('batch-status', { id: batch.id, status: 'Running' });
-      const state = rt(batch.id); state.resolved = false; state.cancelled = false;
-      const control = { shouldStop: () => stopRequested, isCancelled: () => false, isPaused: () => false, onSpawn: () => {} };
-      try {
-        // Faithful mirror of main.js v2.1.15 turn-time skip filter.
-        const skipSet = (state.skips instanceof Set) ? state.skips
-          : new Set(Array.isArray(batch.skipped) ? batch.skipped : []);
-        const effSources = (Array.isArray(batch.fileSources) ? batch.fileSources : []).filter((p) => !skipSet.has(p));
-        batch.skip = [...skipSet];
-        if (batch.kind === 'files' && (batch.fileSources || []).length > 0 && effSources.length === 0) {
-          send('batch-status', { id: batch.id, status: 'Done', result: { runDir: null, processed: 0, failed: 0, reclaimed: 0, totalFiles: 0 } });
-          state.resolved = true; continue;
-        }
-        let runSrc = batch.src, tmpCleanup = null, stageMap = new Map(), stageError = null, stageMissing = [];
-        if (batch.kind === 'files' && effSources.length > 0) {
-          try {
-            const staged = await stageFileList(batch.id, effSources);
-            runSrc = staged.stageDir; tmpCleanup = staged.tmpRoot; stageMap = staged.stageMap;
-            stageMissing = staged.missing || [];
-          } catch (e) { stageError = e; }
-        }
-        if (stageError) {
-          const n = Math.max(1, effSources.length);
-          const result = { runDir: null, processed: 0, failed: n, failedNoCopy: n, reclaimed: 0, totalFiles: n, sourceMissing: true, error: stageError.message };
-          totals.failed += n; totals.failedNoCopy += n;
-          send('batch-status', { id: batch.id, status: 'Failed', result });
-          state.resolved = true; continue;
-        }
-        const wrappedBatch = (runSrc === batch.src) ? batch : { ...batch, src: runSrc };
-        const forward = (progress) => {
-          let p = progress;
-          if (stageMap.size && p && typeof p.file === 'string' && stageMap.has(p.file)) {
-            const orig = stageMap.get(p.file); p = { ...p, file: orig, basename: path.basename(orig) };
-          }
-          send('progress', { batchId: batch.id, ...p });
-        };
-        let result;
-        try { result = await runBatch(wrappedBatch, control, forward); }
-        catch (e) { result = { runDir: null, processed: 0, failed: 0, destLost: true, reclaimed: 0, totalFiles: 0, error: e.message }; }
-        finally { if (tmpCleanup) { try { await fsp.rm(tmpCleanup, { recursive: true, force: true }); } catch {} } }
-
-        // Fold any staging-skipped (missing) sources into the batch result as
-        // per-file source-missing failures (faithful mirror of main.js).
-        if (stageMissing.length) {
-          result.failed = (result.failed || 0) + stageMissing.length;
-          result.failedNoCopy = (result.failedNoCopy || 0) + stageMissing.length;
-          result.totalFiles = (result.totalFiles || 0) + stageMissing.length;
-          const tot = result.totalFiles || stageMissing.length;
-          for (const mp of stageMissing) forward({
-            type: 'file-done', index: tot, total: tot, file: mp, basename: path.basename(mp),
-            outcome: 'fail', failKind: 'source-missing', outBytes: -1,
-            processed: result.processed || 0, failed: result.failed || 0
-          });
-        }
-
-        if (result && result.runDir && fs.existsSync(result.runDir)) { try { await flattenRunDir(result.runDir); } catch {} }
-        totals.processed += result.processed || 0; totals.failed += result.failed || 0; totals.reclaimed += result.reclaimed || 0;
-        let finalStatus;
-        if (state.cancelled) finalStatus = 'Cancelled';
-        else if (result.destLost && (result.processed || 0) === 0) finalStatus = 'Failed';
-        else if ((result.failed || 0) > 0) finalStatus = 'Done (with failures)';
-        else finalStatus = 'Done';
-        send('batch-status', { id: batch.id, status: finalStatus, result });
-        state.resolved = true;
-      } catch (e) {
-        if (!state.resolved) { send('batch-status', { id: batch.id, status: 'Failed', result: { processed: 0, failed: 1, error: e.message } }); state.resolved = true; }
-      }
-      if (stopRequested) break;
-    }
-  } finally { queueRunning = false; send('queue-finished', { totals, stopped: stopRequested }); }
+    totals = await runQueue(batches, { send, isStopRequested: () => stopRequested, rt });
+  } finally {
+    queueRunning = false;
+    send('queue-finished', { totals: totals || { processed: 0, failed: 0 }, stopped: stopRequested });
+  }
   return { ok: true };
 });
 
@@ -321,6 +259,104 @@ app.whenReady().then(async () => {
     check(outs.some((f) => /b1only/i.test(f)) && outs.some((f) => /b2only/i.test(f)), 'earlier batches encoded');
     const term3 = batchStatuses.filter((s) => s.id === 3 || /3/.test(String(s.id))).slice(-1)[0];
     check(batchStatuses.some((s) => /Done/.test(s.status)), `batch 3 completed Done (statuses seen)`);
+  } else if (MODE === 'skipadvance' || MODE === 'skipthree') {
+    // LIVE auto-advance repro: a MIDDLE batch (03) contains a skipped file; the
+    // queue must AUTO-ADVANCE to batch 04 with no user action.
+    //   skipadvance — 4 FOLDER batches, skip a file in batch 03 (matches the
+    //                 IMG_0238 live report).
+    //   skipthree   — batch 03 ends with done + failed + skipped files (file-list:
+    //                 keep3 done, ghost3 source-removed → failed, skip3 skipped).
+    let skip3path;
+    if (MODE === 'skipadvance') {
+      const dirs = ['B1', 'B2', 'B3', 'B4'].map((d) => path.join(SRCDIR, d));
+      for (const d of dirs) await fsp.mkdir(d, { recursive: true });
+      await fsp.copyFile(SMALL_CLIP, path.join(dirs[0], 'b1only.mov'));
+      await fsp.copyFile(SMALL_CLIP, path.join(dirs[1], 'b2only.mov'));
+      await fsp.copyFile(SMALL_CLIP, path.join(dirs[2], 'keep3.mov'));
+      await fsp.copyFile(SMALL_CLIP, path.join(dirs[2], 'skip3.mov'));
+      await fsp.copyFile(SMALL_CLIP, path.join(dirs[3], 'b4only.mov'));
+      skip3path = path.join(dirs[2], 'skip3.mov');
+      await run(`stageSource(${JSON.stringify(dirs[0])})`); await wait(600);
+      await run(`document.getElementById('choose-dest').click(); true;`); await wait(200);
+      await run(`addCurrentToQueue(); true;`); await wait(200);
+      for (const d of dirs.slice(1)) { await run(`stageSource(${JSON.stringify(d)})`); await wait(600); await run(`addCurrentToQueue(); true;`); await wait(200); }
+    } else {
+      // file-list batches; batch 03 = keep3 + skip3 + ghost3(removed before start)
+      const a1 = await mk('adv_a1.mov'), a2 = await mk('adv_a2.mov');
+      const keep3 = await mk('keep3.mov'); skip3path = await mk('skip3.mov'); const ghost3 = await mk('ghost3.mov');
+      const a4 = await mk('adv_a4.mov');
+      BATCH_FILES = [[a1], [a2], [keep3, skip3path, ghost3], [a4]];
+      for (let bi = 0; bi < 4; bi++) {
+        await run(`document.getElementById('dz-browse').click(); true;`); await wait(700);
+        if (bi === 0) { await run(`document.getElementById('choose-dest').click(); true;`); await wait(200); }
+        await run(`document.getElementById('add-to-queue').click(); true;`); await wait(250);
+      }
+      await fsp.rm(ghost3, { force: true });   // batch 03 will end done+failed+skipped
+    }
+    // Start, THEN skip skip3 in batch 03 while earlier batches run.
+    await run(`document.getElementById('start').click(); true;`);
+    await wait(140);
+    const clicked = await run(`(() => {
+      const b3 = document.querySelectorAll('.qbatch')[2];
+      const row = b3 && [...b3.querySelectorAll('.qrow')].find(r => /skip3/.test(r.textContent));
+      const btn = row && row.querySelector('.qrow-skip-btn');
+      if (btn) { btn.click(); return true; } return false;
+    })()`);
+    check(clicked === true, 'skip3 toggled AFTER Start in the MIDDLE batch (03), earlier batches running');
+    for (let k = 0; k < 150 && !lastFinished; k++) await wait(700);
+
+    const outs = outFiles();
+    const ran4 = progressEvents.some((p) => p.type === 'file-start' && /b4only|adv_a4/.test(p.file || ''));
+    const b4out = outs.some((f) => /b4only|adv_a4/i.test(f));
+    const order = batchStatuses.filter((s) => /Running/.test(s.status)).map((s) => s.id);
+    // Renderer DOM end-state: pills + whether Start is showing (a display halt
+    // would leave batch 04 "Queued" + Start visible even though main ran it).
+    const dom = await run(`(() => ({
+      pills: [...document.querySelectorAll('.qbatch')].map(b => b.querySelector('.qbatch-status .pill')?.textContent.trim()),
+      startShown: !document.getElementById('start').classList.contains('hidden'),
+      b3rows: [...(document.querySelectorAll('.qbatch')[2]?.querySelectorAll('.qrow') || [])].map(r => ({ n: r.textContent.replace(/\\s+/g,' ').slice(0,18), s: r.querySelector('.status .pill')?.textContent.trim() }))
+    }))()`);
+    console.log('  RESULT', JSON.stringify({ outs, ran4, b4out, dom, statuses: batchStatuses.map((s) => ({ id: s.id, st: s.status })) }));
+    check(!outs.some((f) => /skip3/i.test(f)), `skipped middle-batch file produced NO output — outputs: [${outs.join(', ')}]`);
+    // THE BUG: queue must auto-advance PAST the skip batch to batch 04.
+    check(b4out && ran4, 'queue AUTO-ADVANCED past the skip batch — batch 04 ran unattended (THE BUG)');
+    check(order.length === 4, `all four batches went Running in order (got Running ids: [${order.join(',')}])`);
+    check(lastFinished != null, 'queue-finished fired (run reached a clean end)');
+    // Renderer must SHOW batch 04 as finished (not stuck Queued) — display-halt guard.
+    check(dom.pills.length === 4 && /Done/i.test(dom.pills[3] || ''),
+      `renderer shows batch 04 finished, not stuck Queued (pills: ${JSON.stringify(dom.pills)})`);
+    check(/Done/i.test(dom.pills[2] || ''), `renderer shows batch 03 (the skip batch) Done (pill: ${dom.pills[2]})`);
+    if (MODE === 'skipthree') {
+      const term3 = batchStatuses.filter((s) => s.id === 3).slice(-1)[0];
+      check(term3 && /with failures/.test(term3.status || ''), `batch 03 ended done+failed+skipped (got ${term3 && term3.status})`);
+      check(outs.some((f) => /keep3/i.test(f)) && !outs.some((f) => /ghost3/i.test(f)), 'batch 03: kept file done, removed file failed (no output)');
+    }
+  } else if (MODE === 'allskipped') {
+    // A MIDDLE batch with ALL files skipped must not get silently dropped + left
+    // stuck Queued — it must show Done and the queue must advance to batch 3.
+    BATCH_FILES = [[await mk('as_a1.mov')], [await mk('only2.mov')], [await mk('as_a3.mov')]];
+    for (let bi = 0; bi < 3; bi++) {
+      await run(`document.getElementById('dz-browse').click(); true;`); await wait(700);
+      if (bi === 0) { await run(`document.getElementById('choose-dest').click(); true;`); await wait(200); }
+      await run(`document.getElementById('add-to-queue').click(); true;`); await wait(250);
+    }
+    // Skip the ONLY file in batch 02 → batch 02 is all-skipped.
+    const sk = await run(`(() => {
+      const b2 = document.querySelectorAll('.qbatch')[1];
+      const btn = b2 && b2.querySelector('.qrow-skip-btn');
+      if (btn) { btn.click(); return true; } return false;
+    })()`); await wait(250);
+    check(sk === true, 'batch 02 single file skipped → batch is all-skipped');
+    await run(`document.getElementById('start').click(); true;`);
+    for (let k = 0; k < 120 && !lastFinished; k++) await wait(700);
+
+    const outs = outFiles();
+    const pills = await run(`[...document.querySelectorAll('.qbatch')].map(b => b.querySelector('.qbatch-status .pill')?.textContent.trim())`);
+    console.log('  RESULT', JSON.stringify({ outs, pills, statuses: batchStatuses.map((s) => ({ id: s.id, st: s.status })) }));
+    check(!outs.some((f) => /only2/i.test(f)), 'all-skipped batch produced NO output');
+    check(pills.length === 3 && /Done/i.test(pills[1] || ''), `all-skipped batch 02 shows Done, not stuck Queued (pills: ${JSON.stringify(pills)})`);
+    check(outs.some((f) => /as_a3/i.test(f)) && /Done/i.test(pills[2] || ''), 'queue advanced to batch 03 after the all-skipped batch');
+    check(lastFinished != null, 'queue-finished fired');
   }
 
   check(errs.length === 0, 'no renderer console errors: ' + (errs[0] || 'none'));

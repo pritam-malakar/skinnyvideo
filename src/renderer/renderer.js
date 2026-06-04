@@ -1252,10 +1252,11 @@ function diskShortageModal(shortages) {
 }
 
 startBtn.addEventListener('click', async () => {
-  /* Skip all-skipped batches and any other non-runnable. */
-  const toRun = queue.filter(
-    (q) => q.status === 'queued' && q.files.some((f) => f.status !== 'skipped')
-  );
+  /* Every queued batch runs — INCLUDING an all-skipped one. (Previously an
+     all-skipped batch was filtered out here and then sat stuck "Queued" forever,
+     since main never gave it a terminal status — a real "queue halts after a
+     skip" cause.) main marks an all-skipped batch Done and the loop advances. */
+  const toRun = queue.filter((q) => q.status === 'queued');
   if (toRun.length === 0) return;
 
   /* Disk pre-flight, with a relocate→recheck loop. Dismissing the warning
@@ -1294,40 +1295,20 @@ startBtn.addEventListener('click', async () => {
   updateOverallProgressEta();      // paints "Estimating…" + 0% bar immediately
   if (etaTimer) clearInterval(etaTimer);
   etaTimer = setInterval(updateOverallProgressEta, 1000);
-  /* C: per-file skips honored at start time. A batch with at least one
-     skipped file is emitted as kind:'files' carrying only the non-skipped
-     paths — main.js's symlink stage then never sees the skipped ones. The
-     same applies whether the batch was originally a folder or a file
-     list; the conversion is purely how we describe the work to run. */
-  const payload = toRun.map((b) => {
-    const activeFiles = b.files.filter((f) => f.status !== 'skipped');
-    const hasSkips = activeFiles.length !== b.files.length;
-    /* `skipped` is the frozen seed of skipped ORIGINAL paths; main also takes
-       live updates via set-batch-skips so post-Start skips are honored too.
-       For a folder batch we keep kind:'folder' + the full skipped list so main
-       filters at run time; for a file-list batch we still pre-filter here AND
-       carry skipped[] (idempotent with main's turn-time filter). */
-    const skipped = b.files.filter((f) => f.status === 'skipped').map((f) => f.path);
-    if (!hasSkips) {
-      return {
-        id: b.id, src: b.src, dest: b.dest, tier: b.tier, dryRun: b.dryRun,
-        kind: b.kind, fileSources: b.fileSources, skipped
-      };
-    }
-    if (b.kind === 'folder') {
-      // Folder batch with skips: leave it a folder; main drops skipped paths at
-      // run time (scan.videos[].file is the original path). No conversion needed.
-      return {
-        id: b.id, src: b.src, dest: b.dest, tier: b.tier, dryRun: b.dryRun,
-        kind: 'folder', fileSources: [], skipped
-      };
-    }
-    return {
-      id: b.id, src: null, dest: b.dest, tier: b.tier, dryRun: b.dryRun,
-      kind: 'files',
-      fileSources: activeFiles.map((f) => f.path), skipped
-    };
-  });
+  /* Skip handling lives in ONE place: main, at each batch's turn. The payload
+     carries the FULL file list + the skipped ORIGINAL paths (frozen seed); main
+     also takes live `set-batch-skips` updates so a skip toggled after Start is
+     honored too. A file-list batch sends its full fileSources (so main can
+     short-circuit an all-skipped one to a clean Done); a folder batch sends
+     kind:'folder' + skipped, and runBatch drops the skipped originals at scan.
+     No pre-filtering / kind-conversion here — that's what let an all-skipped
+     batch fall through the cracks and stall. */
+  const payload = toRun.map((b) => ({
+    id: b.id, src: b.src, dest: b.dest, tier: b.tier, dryRun: b.dryRun,
+    kind: b.kind,
+    fileSources: b.kind === 'files' ? (b.fileSources || []) : [],
+    skipped: b.files.filter((f) => f.status === 'skipped').map((f) => f.path)
+  }));
   await window.api.startQueue(payload);
 });
 
