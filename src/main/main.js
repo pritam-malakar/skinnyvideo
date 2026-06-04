@@ -322,6 +322,7 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
       let runSrc = batch.src;
       let tmpCleanup = null;
       let stageMap = new Map();
+      let stageMissing = [];
       let stageError = null;
       if (batch.kind === 'files' && Array.isArray(batch.fileSources) && batch.fileSources.length > 0) {
         try {
@@ -329,6 +330,12 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
           runSrc = staged.stageDir;
           tmpCleanup = staged.tmpRoot;
           stageMap = staged.stageMap;
+          /* v2.1.14 BUG 2: per-file staging isolation. stageFileList no longer
+             throws when ONE source is missing — it stages what it can and lists
+             the rest in `missing`. We run the staged files, then fold the missing
+             ones in as per-file source-missing failures below. stageFileList only
+             throws now if it couldn't create the staging area at all. */
+          stageMissing = staged.missing || [];
         } catch (e) {
           stageError = e;
         }
@@ -381,6 +388,30 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
       } finally {
         if (tmpCleanup) {
           try { await fsp.rm(tmpCleanup, { recursive: true, force: true }); } catch { /* non-fatal */ }
+        }
+      }
+
+      /* Per-file staging isolation (v2.1.14 BUG 2): sources that could not be
+         staged (deleted/moved before their turn) fail INDIVIDUALLY — the rest
+         of the batch already encoded above. Fold them in as source-missing
+         failures and emit a per-file event so each missing row resolves to
+         "failed" by exact path (the batch's reconcile would catch them too, but
+         this keeps the counts and rows precise). The batch then finishes with
+         partial success instead of the whole batch being sunk by one bad file. */
+      if (stageMissing.length) {
+        result.failed = (result.failed || 0) + stageMissing.length;
+        result.failedNoCopy = (result.failedNoCopy || 0) + stageMissing.length;
+        result.totalFiles = (result.totalFiles || 0) + stageMissing.length;
+        result.sourceMissing = true;
+        const tot = result.totalFiles || stageMissing.length;
+        for (const mp of stageMissing) {
+          forward({
+            type: 'file-done', index: tot, total: tot,
+            file: mp, basename: path.basename(mp),
+            outcome: 'fail', failKind: 'source-missing', outBytes: -1,
+            processed: result.processed || 0, failed: result.failed || 0,
+            alreadyDone: result.alreadyDone || 0
+          });
         }
       }
 

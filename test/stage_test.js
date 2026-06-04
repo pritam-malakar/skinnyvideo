@@ -1,6 +1,7 @@
-// Unit test for file-list staging (src/encoder/stage.js) — FIX 1's detection:
-// present sources stage fine; a missing source THROWS (so main can fail the
-// batch cleanly and continue the queue instead of hanging on Running).
+// Unit test for file-list staging (src/encoder/stage.js).
+// v2.1.14 PER-FILE ISOLATION (BUG 2): present sources stage fine; a missing
+// source is RECORDED in `missing` (not thrown) and the rest still stage — so
+// main encodes what it can and fails only the missing file, never the batch.
 const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
@@ -35,18 +36,22 @@ const check = (c, l) => { (c ? PASS : FAIL).push(l); console.log((c ? 'PASS' : '
     'both duplicate-basename originals mapped');
   await fsp.rm(dup.tmpRoot, { recursive: true, force: true });
 
-  // A MISSING source → throws (this is what main catches to fail the batch).
-  let threw = false, tmpLeak = false;
-  const before = fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith('squeeze-fl-')).length;
-  try {
-    await stageFileList(9, [a, path.join(sandbox, 'gone.mov')]);
-  } catch (e) {
-    threw = true;
-    check(e && (e.code === 'ENOENT' || /ENOENT|no such file/i.test(e.message)), 'throws ENOENT for the missing source');
-  }
-  check(threw, 'missing source makes stageFileList throw (caller fails batch cleanly)');
-  const after = fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith('squeeze-fl-')).length;
-  check(after <= before, 'temp dir self-cleaned on failure (no leak)');
+  // PER-FILE ISOLATION: one missing source among present ones → the present
+  // ones still stage; the missing one is reported in `missing`; NO throw.
+  const gone = path.join(sandbox, 'gone.mov');
+  const mixed = await stageFileList(9, [a, gone, b]);
+  check(Array.isArray(mixed.missing) && mixed.missing.length === 1 && mixed.missing[0] === gone,
+    'missing source recorded in `missing` (not thrown)');
+  check(fs.readdirSync(mixed.stageDir).length === 2, 'the two present sources still staged around the missing one');
+  check(mixed.stageMap.size === 2 && [...mixed.stageMap.values()].includes(a) && [...mixed.stageMap.values()].includes(b),
+    'staged map covers exactly the present sources');
+  await fsp.rm(mixed.tmpRoot, { recursive: true, force: true });
+
+  // ALL sources missing → empty stage, every source listed in `missing`, no throw.
+  const allGone = await stageFileList(10, [path.join(sandbox, 'x.mov'), path.join(sandbox, 'y.mov')]);
+  check(allGone.missing.length === 2 && allGone.stageMap.size === 0 && fs.readdirSync(allGone.stageDir).length === 0,
+    'all-missing → empty stage + both in `missing`, still no throw');
+  await fsp.rm(allGone.tmpRoot, { recursive: true, force: true });
 
   await fsp.rm(sandbox, { recursive: true, force: true });
   console.log('\nPASS:', PASS.length, 'FAIL:', FAIL.length);
