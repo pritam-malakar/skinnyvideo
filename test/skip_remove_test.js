@@ -38,11 +38,13 @@ let browseCall = 0;
 let queueRunning = false, stopRequested = false;
 let lastFinished = null;
 const batchStatuses = [];  // {id, status, result}
+const progressEvents = []; // every forwarded progress event (for file-start spawn proxy)
 const rtm = new Map();
 const rt = (id) => { if (!rtm.has(id)) rtm.set(id, {}); return rtm.get(id); };
 const send = (ch, p) => {
   if (ch === 'batch-status') batchStatuses.push(p);
   if (ch === 'queue-finished') lastFinished = p;
+  if (ch === 'progress') progressEvents.push(p);
   if (win && !win.isDestroyed()) win.webContents.send(ch, p);
 };
 
@@ -59,12 +61,14 @@ ipcMain.handle('choose-destination', async () => DEST);
 ipcMain.handle('stat-path', async (_e, p) => { try { const s = await fsp.stat(p); return { isFile: s.isFile(), isDirectory: s.isDirectory() }; } catch { return null; } });
 ipcMain.handle('save-last-src', async () => {});
 ipcMain.handle('get-lifetime-drives', async () => []);
-ipcMain.handle('add-reclaimed', async () => null);
+let lifetimeCredit = null;
+ipcMain.handle('add-reclaimed', async (_e, payload) => { lifetimeCredit = payload; return null; });
 ipcMain.handle('free-space', async () => ({ free: 9e15 }));
 ipcMain.handle('delete-orphans', async () => ({ deleted: 0 }));
 ['open-path', 'reveal-path', 'reset-drive', 'pause-batch', 'resume-batch', 'cancel-batch']
   .forEach((ch) => ipcMain.handle(ch, async () => ({ ok: true })));
 ipcMain.handle('stop-queue', async () => { stopRequested = true; return { ok: true }; });
+ipcMain.handle('set-batch-skips', async (_e, { batchId, skipped }) => { rt(batchId).skips = new Set(Array.isArray(skipped) ? skipped : []); return { ok: true }; });
 
 // ---- start-queue: FAITHFUL mirror of src/main/main.js (loop + staging + advance) ----
 ipcMain.handle('start-queue', async (_evt, batches) => {
@@ -79,16 +83,25 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
       const state = rt(batch.id); state.resolved = false; state.cancelled = false;
       const control = { shouldStop: () => stopRequested, isCancelled: () => false, isPaused: () => false, onSpawn: () => {} };
       try {
+        // Faithful mirror of main.js v2.1.15 turn-time skip filter.
+        const skipSet = (state.skips instanceof Set) ? state.skips
+          : new Set(Array.isArray(batch.skipped) ? batch.skipped : []);
+        const effSources = (Array.isArray(batch.fileSources) ? batch.fileSources : []).filter((p) => !skipSet.has(p));
+        batch.skip = [...skipSet];
+        if (batch.kind === 'files' && (batch.fileSources || []).length > 0 && effSources.length === 0) {
+          send('batch-status', { id: batch.id, status: 'Done', result: { runDir: null, processed: 0, failed: 0, reclaimed: 0, totalFiles: 0 } });
+          state.resolved = true; continue;
+        }
         let runSrc = batch.src, tmpCleanup = null, stageMap = new Map(), stageError = null, stageMissing = [];
-        if (batch.kind === 'files' && Array.isArray(batch.fileSources) && batch.fileSources.length > 0) {
+        if (batch.kind === 'files' && effSources.length > 0) {
           try {
-            const staged = await stageFileList(batch.id, batch.fileSources);
+            const staged = await stageFileList(batch.id, effSources);
             runSrc = staged.stageDir; tmpCleanup = staged.tmpRoot; stageMap = staged.stageMap;
             stageMissing = staged.missing || [];
           } catch (e) { stageError = e; }
         }
         if (stageError) {
-          const n = Math.max(1, (batch.fileSources || []).length);
+          const n = Math.max(1, effSources.length);
           const result = { runDir: null, processed: 0, failed: n, failedNoCopy: n, reclaimed: 0, totalFiles: n, sourceMissing: true, error: stageError.message };
           totals.failed += n; totals.failedNoCopy += n;
           send('batch-status', { id: batch.id, status: 'Failed', result });
@@ -237,6 +250,77 @@ app.whenReady().then(async () => {
     const presentRow = rows.find((r) => /present/i.test(r.name));
     check(presentRow && /done|✓/i.test(presentRow.status || ''), `present row shows Done (got ${presentRow && presentRow.status})`);
     check(ghostRow && /fail/i.test(ghostRow.status || ''), `removed (ghost) row shows Failed, not stuck queued (got ${ghostRow && ghostRow.status})`);
+  } else if (MODE === 'sizes') {
+    // BUG 1 — every displayed/stored size must equal fsp.stat() of the real file,
+    // byte-for-byte, for BOTH source and output. Real 3-file encode.
+    const srcs = [await mk('sz_a.mov'), await mk('sz_b.mov'), await mk('sz_c.mov')];
+    BATCH_FILES = [srcs];
+    await run(`document.getElementById('dz-browse').click(); true;`); await wait(900);
+    await run(`document.getElementById('choose-dest').click(); true;`); await wait(300);
+    await run(`document.getElementById('add-to-queue').click(); true;`); await wait(350);
+    await run(`document.getElementById('start').click(); true;`);
+    for (let k = 0; k < 120 && !lastFinished; k++) await wait(700);
+
+    // Pull the renderer's STORED per-file sizes straight from its queue state.
+    const stored = await run(`(typeof queue!=='undefined'?queue:[]).flatMap(b => b.files.map(f => ({ name: f.name, size: f.size, outputSize: f.outputSize, status: f.status })))`);
+    const realOut = {};
+    if (fs.existsSync(DEST)) for (const f of fs.readdirSync(DEST, { recursive: true })) {
+      if (/\.mp4$/i.test(f)) realOut[path.basename(f, '.mp4')] = (await fsp.stat(path.join(DEST, f))).size;
+    }
+    let sumSrcStat = 0, sumOutStat = 0, sumReclaim = 0, allMatch = true;
+    console.log('  file                stored-src   stat-src     stored-out   stat-out');
+    for (const r of stored) {
+      const statSrc = (await fsp.stat(path.join(SRCDIR, r.name))).size;
+      const stem = r.name.replace(/\.[^.]+$/, '');
+      const statOut = realOut[stem];
+      console.log(`  ${r.name.padEnd(18)} ${String(r.size).padEnd(12)} ${String(statSrc).padEnd(12)} ${String(r.outputSize).padEnd(12)} ${String(statOut)}`);
+      check(r.size === statSrc, `${r.name}: STORED source size === fsp.stat (${r.size} vs ${statSrc})`);
+      check(r.outputSize === statOut, `${r.name}: STORED output size === fsp.stat of real output (${r.outputSize} vs ${statOut})`);
+      sumSrcStat += statSrc; sumOutStat += statOut; sumReclaim += (statSrc - statOut);
+    }
+    check(stored.length === 3 && stored.every((r) => r.status === 'done'), `all 3 files done (got ${stored.map((r) => r.status).join(',')})`);
+    // Lifetime/run aggregate must equal the summed REAL stat reclaim.
+    check(lifetimeCredit && lifetimeCredit.addedBytes === sumReclaim,
+      `lifetime reclaimed === Σ(real source stat − real output stat) (${lifetimeCredit && lifetimeCredit.addedBytes} vs ${sumReclaim})`);
+    console.log(`  AGGREGATE  Σsrc=${sumSrcStat}  Σout=${sumOutStat}  Σreclaim=${sumReclaim}  lifetimeCredit=${lifetimeCredit && lifetimeCredit.addedBytes}`);
+  } else if (MODE === 'skiplive') {
+    // BUG 2 LIVE — skip a file in a LATER batch AFTER Start, while earlier batches run.
+    const f1 = path.join(SRCDIR, 'B1'); const f2 = path.join(SRCDIR, 'B2'); const f3 = path.join(SRCDIR, 'B3');
+    for (const d of [f1, f2, f3]) await fsp.mkdir(d, { recursive: true });
+    await fsp.copyFile(SMALL_CLIP, path.join(f1, 'b1only.mov'));
+    await fsp.copyFile(SMALL_CLIP, path.join(f2, 'b2only.mov'));
+    await fsp.copyFile(SMALL_CLIP, path.join(f3, 'keep3.mov'));
+    await fsp.copyFile(SMALL_CLIP, path.join(f3, 'skip3.mov'));
+    const skip3path = path.join(f3, 'skip3.mov');
+    await run(`stageSource(${JSON.stringify(f1)})`); await wait(700);
+    await run(`document.getElementById('choose-dest').click(); true;`); await wait(250);
+    await run(`addCurrentToQueue(); true;`); await wait(250);
+    await run(`stageSource(${JSON.stringify(f2)})`); await wait(700);
+    await run(`addCurrentToQueue(); true;`); await wait(250);
+    await run(`stageSource(${JSON.stringify(f3)})`); await wait(700);
+    await run(`addCurrentToQueue(); true;`); await wait(250);
+    // Start, THEN skip skip3 in batch 3 while batch 1 is encoding.
+    await run(`document.getElementById('start').click(); true;`);
+    await wait(120);
+    const clicked = await run(`(() => {
+      const b3 = document.querySelectorAll('.qbatch')[2];
+      const row = b3 && [...b3.querySelectorAll('.qrow')].find(r => /skip3/.test(r.textContent));
+      const btn = row && row.querySelector('.qrow-skip-btn');
+      if (btn) { btn.click(); return true; } return false;
+    })()`);
+    check(clicked === true, 'skip3 was toggled AFTER Start, while batch 1 ran');
+    for (let k = 0; k < 120 && !lastFinished; k++) await wait(700);
+
+    const outs = outFiles();
+    const startedSkip3 = progressEvents.some((p) => p.type === 'file-start' && p.file === skip3path);
+    const anySkip3 = progressEvents.some((p) => p.file === skip3path);
+    console.log('  RESULT', JSON.stringify({ outs, startedSkip3, anySkip3, statuses: batchStatuses.map(s => ({ id: s.id, st: s.status })) }));
+    check(!outs.some((f) => /skip3/i.test(f)), `skipped-after-start file produced NO output (BUG 2) — outputs: [${outs.join(', ')}]`);
+    check(!startedSkip3 && !anySkip3, 'skipped file spawned NO encoder (no file-start / no progress event for it)');
+    check(outs.some((f) => /keep3/i.test(f)), 'the kept file in batch 3 still encoded');
+    check(outs.some((f) => /b1only/i.test(f)) && outs.some((f) => /b2only/i.test(f)), 'earlier batches encoded');
+    const term3 = batchStatuses.filter((s) => s.id === 3 || /3/.test(String(s.id))).slice(-1)[0];
+    check(batchStatuses.some((s) => /Done/.test(s.status)), `batch 3 completed Done (statuses seen)`);
   }
 
   check(errs.length === 0, 'no renderer console errors: ' + (errs[0] || 'none'));

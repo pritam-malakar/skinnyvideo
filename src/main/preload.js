@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('api', {
   scanSource: (srcPath) => ipcRenderer.invoke('scan-source', srcPath),
   startQueue: (batches) => ipcRenderer.invoke('start-queue', batches),
   stopQueue: () => ipcRenderer.invoke('stop-queue'),
+  setBatchSkips: (batchId, skipped) => ipcRenderer.invoke('set-batch-skips', { batchId, skipped }),
   pauseBatch: (id) => ipcRenderer.invoke('pause-batch', id),
   resumeBatch: (id) => ipcRenderer.invoke('resume-batch', id),
   cancelBatch: (id) => ipcRenderer.invoke('cancel-batch', id),

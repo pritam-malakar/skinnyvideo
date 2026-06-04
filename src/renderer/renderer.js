@@ -211,7 +211,8 @@ function humanBytes(n) {
   n = Math.abs(n);
   const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
   let i = 0;
-  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+  // Base 1000 (decimal) so displayed sizes match macOS Finder + the real bytes.
+  while (n >= 1000 && i < units.length - 1) { n /= 1000; i++; }
   return sign + n.toFixed(n >= 10 || i === 0 ? 0 : 1) + ' ' + units[i];
 }
 
@@ -962,7 +963,7 @@ function buildBatchGroup(batch, idx) {
   const filesUl = document.createElement('ul');
   filesUl.className = 'qbatch-files';
   batch.files.forEach((file, i) => {
-    filesUl.appendChild(buildFileRow(file, i));
+    filesUl.appendChild(buildFileRow(file, i, batch.id));
   });
   li.appendChild(filesUl);
 
@@ -992,7 +993,7 @@ function buildBatchGroup(batch, idx) {
   return li;
 }
 
-function buildFileRow(file, i) {
+function buildFileRow(file, i, batchId) {
   const li = document.createElement('li');
   li.className = `qrow status-${file.status}`;
   li.dataset.fpath = file.path;
@@ -1082,6 +1083,13 @@ function buildFileRow(file, i) {
       e.stopPropagation();
       if (file.status !== 'queued') return;
       file.status = 'skipped';
+      /* BUG 2 (v2.1.15): push this batch's live skipped set to main so a skip
+         toggled AFTER Start (on a batch not yet at its turn) is still honored —
+         the start-of-queue payload is a frozen snapshot. */
+      try {
+        const b = queue.find((q) => q.id === batchId);
+        if (b) window.api.setBatchSkips(batchId, b.files.filter((f) => f.status === 'skipped').map((f) => f.path));
+      } catch {}
       renderQueue();
     });
     skipCell.appendChild(sk);
@@ -1294,16 +1302,30 @@ startBtn.addEventListener('click', async () => {
   const payload = toRun.map((b) => {
     const activeFiles = b.files.filter((f) => f.status !== 'skipped');
     const hasSkips = activeFiles.length !== b.files.length;
+    /* `skipped` is the frozen seed of skipped ORIGINAL paths; main also takes
+       live updates via set-batch-skips so post-Start skips are honored too.
+       For a folder batch we keep kind:'folder' + the full skipped list so main
+       filters at run time; for a file-list batch we still pre-filter here AND
+       carry skipped[] (idempotent with main's turn-time filter). */
+    const skipped = b.files.filter((f) => f.status === 'skipped').map((f) => f.path);
     if (!hasSkips) {
       return {
         id: b.id, src: b.src, dest: b.dest, tier: b.tier, dryRun: b.dryRun,
-        kind: b.kind, fileSources: b.fileSources
+        kind: b.kind, fileSources: b.fileSources, skipped
+      };
+    }
+    if (b.kind === 'folder') {
+      // Folder batch with skips: leave it a folder; main drops skipped paths at
+      // run time (scan.videos[].file is the original path). No conversion needed.
+      return {
+        id: b.id, src: b.src, dest: b.dest, tier: b.tier, dryRun: b.dryRun,
+        kind: 'folder', fileSources: [], skipped
       };
     }
     return {
       id: b.id, src: null, dest: b.dest, tier: b.tier, dryRun: b.dryRun,
       kind: 'files',
-      fileSources: activeFiles.map((f) => f.path)
+      fileSources: activeFiles.map((f) => f.path), skipped
     };
   });
   await window.api.startQueue(payload);

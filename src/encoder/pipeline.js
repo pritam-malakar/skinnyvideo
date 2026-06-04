@@ -219,9 +219,16 @@ async function scanFolder(srcPath) {
     if (!probe) { ignored++; continue; }
     const vs = pickVideoStream(probe.streams);
     if (!vs) { ignored++; continue; }
+    /* BUG 1 (v2.1.15): source size is the REAL byte count from fsp.stat() of
+       the actual file — NOT ffprobe's format.size (container-reported, can
+       differ from disk). Every downstream number (row size, batch/run totals,
+       reclaimed, lifetime) derives from this, so it must match disk exactly. */
+    let realSize;
+    try { realSize = (await fsp.stat(f)).size; }
+    catch { realSize = Number(probe.format?.size || 0); }
     videos.push({
       file: f,
-      size: Number(probe.format?.size || 0),
+      size: realSize,
       codec: vs.codec_name,
       width: vs.width,
       height: vs.height,
@@ -261,7 +268,8 @@ function humanBytes(n) {
   n = Math.abs(n);
   const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
   let i = 0;
-  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+  // Base 1000 (decimal MB/GB) so displayed sizes match macOS Finder + disk.
+  while (n >= 1000 && i < units.length - 1) { n /= 1000; i++; }
   return sign + n.toFixed(n >= 10 || i === 0 ? 0 : 1) + ' ' + units[i];
 }
 
@@ -421,6 +429,17 @@ async function runBatch(batch, controlOrFn, onProgress) {
   log(`# Tier: ${tier}`);
 
   const scan = await scanFolder(src);
+  /* BUG 2 (v2.1.15): drop user-skipped sources AT RUN TIME. batch.skip carries
+     the live set of skipped ORIGINAL paths (set by main at this batch's turn).
+     For a folder batch scan.videos[].file IS the original path, so this is the
+     authoritative exclusion. For a staged file-list batch the skipped sources
+     were already removed from fileSources before staging → harmless no-op. */
+  if (Array.isArray(batch.skip) && batch.skip.length) {
+    const sk = new Set(batch.skip);
+    const before = scan.videos.length;
+    scan.videos = scan.videos.filter((v) => !sk.has(v.file));
+    if (scan.videos.length !== before) log(`# Skipped ${before - scan.videos.length} file(s) by user request`);
+  }
   log(`# Found ${scan.videos.length} video file(s); ${scan.ignored} ignored (non-video)`);
 
   const totalFiles = scan.videos.length;

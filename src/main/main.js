@@ -309,6 +309,33 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
          also covers e.g. a flatten error.) */
       try {
 
+      /* BUG 2 (v2.1.15): AUTHORITATIVE skip filter at THIS batch's turn. The
+         renderer pre-filters skipped files only into the start-of-queue payload
+         snapshot; a file skipped AFTER Start (e.g. in batch 03 while batch 01
+         runs) never reached this frozen payload, so it used to get staged/
+         encoded anyway. rt().skips is kept live by the 'set-batch-skips' IPC;
+         fall back to the payload's frozen skipped[] if no live update arrived.
+         Skipped ORIGINAL paths are removed from fileSources before staging, and
+         passed to runBatch as batch.skip for folder batches (scan.videos[].file
+         is the original path there). A skipped file is therefore never staged
+         nor encoded, whenever the skip was toggled. */
+      const skipSet = (state.skips instanceof Set)
+        ? state.skips
+        : new Set(Array.isArray(batch.skipped) ? batch.skipped : []);
+      const effSources = (Array.isArray(batch.fileSources) ? batch.fileSources : [])
+        .filter((p) => !skipSet.has(p));
+      batch.skip = [...skipSet];   // consumed by runBatch for folder batches
+
+      // All files in a file-list batch skipped → nothing to do; clean Done.
+      if (batch.kind === 'files' && (batch.fileSources || []).length > 0 && effSources.length === 0) {
+        send('batch-status', { id: batch.id, status: 'Done', result: {
+          runDir: null, processed: 0, failed: 0, failedCopied: 0, failedNoCopy: 0, failedDestLost: 0,
+          destLost: false, alreadyDone: 0, skippedNonVideo: 0, reclaimed: 0, totalFiles: 0
+        } });
+        state.resolved = true; state.child = null;
+        continue;
+      }
+
       /* File-list staging (file-pick / multi-file-drop, or a folder batch with
          skips → kind:'files'). Hardlink/copy each original into a temp dir so
          the encoder reads a stable path (this is what makes a STARTED job
@@ -324,9 +351,9 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
       let stageMap = new Map();
       let stageMissing = [];
       let stageError = null;
-      if (batch.kind === 'files' && Array.isArray(batch.fileSources) && batch.fileSources.length > 0) {
+      if (batch.kind === 'files' && effSources.length > 0) {
         try {
-          const staged = await stageFileList(batch.id, batch.fileSources);
+          const staged = await stageFileList(batch.id, effSources);
           runSrc = staged.stageDir;
           tmpCleanup = staged.tmpRoot;
           stageMap = staged.stageMap;
@@ -342,7 +369,7 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
       }
 
       if (stageError) {
-        const n = Math.max(1, (batch.fileSources || []).length);
+        const n = Math.max(1, effSources.length);
         const result = {
           runDir: null, logPath: null,
           processed: 0, failed: n, failedCopied: 0, failedNoCopy: n, failedDestLost: 0,
@@ -490,6 +517,16 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
 
 ipcMain.handle('stop-queue', async () => {
   stopRequested = true;
+  return { ok: true };
+});
+
+/* BUG 2 (v2.1.15): the renderer pushes a batch's current skipped ORIGINAL paths
+   here every time the user toggles skip — including AFTER Start, for batches not
+   yet at their turn. start-queue reads rt(id).skips at each batch's turn so the
+   filter reflects the latest skip state, not the frozen start-of-queue payload. */
+ipcMain.handle('set-batch-skips', async (_evt, { batchId, skipped }) => {
+  const state = rt(batchId);
+  state.skips = new Set(Array.isArray(skipped) ? skipped : []);
   return { ok: true };
 });
 
