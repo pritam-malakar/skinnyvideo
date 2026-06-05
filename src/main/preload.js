@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('api', {
   resetDrive: (driveKey) => ipcRenderer.invoke('reset-drive', driveKey),
   openPath: (p) => ipcRenderer.invoke('open-path', p),
   revealPath: (p) => ipcRenderer.invoke('reveal-path', p),
+  revealInFinder: (p) => ipcRenderer.invoke('reveal-in-finder', p),
   freeSpace: (p) => ipcRenderer.invoke('free-space', p),
   deleteOrphans: (paths) => ipcRenderer.invoke('delete-orphans', paths),
   onProgress: (cb) => ipcRenderer.on('progress', (_e, d) => cb(d)),

@@ -8,6 +8,7 @@ const { flattenRunDir } = require('../encoder/flatten');
 const { findOrphanPartials, deletePartials } = require('../encoder/orphans');
 const { stageFileList } = require('../encoder/stage');
 const { runQueue } = require('./queue-runner');
+const { revealInFinder } = require('./reveal');
 
 let mainWindow = null;
 let stopRequested = false;
@@ -489,3 +490,9 @@ ipcMain.handle('open-path', async (_evt, p) => {
 ipcMain.handle('reveal-path', async (_evt, p) => {
   if (p && fs.existsSync(p)) shell.showItemInFolder(p);
 });
+
+/* Reveal an ORIGINAL source file in Finder, clicked from a queue file row.
+   Stat-gated in ../main/reveal so a moved/deleted original never reaches
+   showItemInFolder; returns {ok} so the renderer can show a non-blocking
+   "may have moved" notice on failure. */
+ipcMain.handle('reveal-in-finder', async (_evt, p) => revealInFinder(p));

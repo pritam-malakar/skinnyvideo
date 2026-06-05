@@ -80,6 +80,7 @@ let lastFileStartTs = 0;
 let hasCompletedRun = false;     // P7: first-time vs subsequent drops
 let batchPrevReclaimed = 0;      // delta tracker for per-file output size
 let runActive = false;           // true while a queue run is in progress (gates the flow's Start cue)
+let editingBatchId = null;       // batch id whose name is being inline-renamed (null = none)
 
 /* ───── FIX 2: always-on whole-queue ETA (per-tier throughput model) ─────
    Throughput is modelled PER TIER in bytes-of-source per millisecond, because
@@ -287,6 +288,28 @@ function showModal({ title, body, tone = 'warn', actions = [] }) {
     const primary = actionsEl.querySelector('.btn.cta') || actionsEl.lastElementChild;
     if (primary) primary.focus();
   });
+}
+
+/* ───── Non-blocking transient notice ─────
+   A brief, auto-dismissing toast for informational failures (e.g. a file row
+   whose original has moved). Deliberately NOT a modal: no backdrop, no focus
+   trap, never blocks the operator. One notice at a time; a new message resets
+   the dismissal timer. */
+let noticeTimer = null;
+function showNotice(text) {
+  let el = document.getElementById('app-notice');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'app-notice';
+    el.className = 'app-notice';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    document.body.appendChild(el);
+  }
+  el.textContent = text;
+  el.classList.add('show');
+  if (noticeTimer) clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => el.classList.remove('show'), 3600);
 }
 
 // ----- Row action popover ---------------------------------------
@@ -843,6 +866,41 @@ const PILL_LABEL = {
   existed: 'Existing'    // pipeline resumability: output already present
 };
 
+/* Inline batch rename. Replaces the name node with a text field; Enter or
+   blur commits (whitespace trimmed; empty/whitespace-only rejected → previous
+   name kept), Esc cancels. While editing, renderQueue() is suppressed so a
+   mid-run progress repaint can't clobber the input; endRename repaints once. */
+function beginRenameBatch(batch, nameEl) {
+  if (editingBatchId != null) return;     // one rename at a time
+  editingBatchId = batch.id;
+  const prev = batch.srcName;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'qbatch-name-edit';
+  input.value = prev;
+  input.setAttribute('aria-label', 'Batch name');
+  let settled = false;
+  const finish = (commit) => {
+    if (settled) return;
+    settled = true;
+    if (commit) {
+      const trimmed = input.value.trim();
+      if (trimmed) batch.srcName = trimmed;   // reject empty/whitespace → keep prev
+    }
+    editingBatchId = null;
+    renderQueue();                            // single fresh repaint
+  };
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();                      // don't trip global Esc handlers
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(true));
+  nameEl.replaceWith(input);
+  input.focus();
+  input.select();
+}
+
 function buildBatchGroup(batch, idx) {
   const li = document.createElement('li');
   li.className = `qbatch status-${batch.status}`;
@@ -865,6 +923,17 @@ function buildBatchGroup(batch, idx) {
   const name = document.createElement('div');
   name.className = 'qbatch-name';
   name.textContent = batch.srcName + (batch.dryRun ? '  (preview)' : '');
+  /* Double-click the BATCH name → inline rename. Purely cosmetic: srcName is a
+     display label only — it is NOT sent to main (the start-queue payload omits
+     it) and never feeds an on-disk path (output is dest/Compressed_<ts>/;
+     staging dirs are id-based: "Selected files (<id>)"). So renaming — even a
+     running batch — is label-only and cannot alter output paths, staging dirs,
+     or encode behavior. In-session only (no persistence; run history deferred). */
+  name.title = 'Double-click to rename';
+  name.addEventListener('dblclick', (e) => {
+    e.stopPropagation();
+    beginRenameBatch(batch, name);
+  });
   const meta = document.createElement('div');
   meta.className = 'qbatch-meta';
   const sizeStr = batch.totalSize > 0 ? ` · ${humanBytes(batch.totalSize)}` : '';
@@ -1013,8 +1082,26 @@ function buildFileRow(file, i, batchId) {
   const fileMeta = document.createElement('div');
   fileMeta.className = 'meta';
   const fname = document.createElement('div');
-  fname.className = 'name';
+  fname.className = 'name revealable';
   fname.textContent = file.name;
+  fname.title = 'Reveal original in Finder';
+  /* Click the file NAME (not the batch name) → reveal the ORIGINAL source in
+     Finder. file.path is the original source path for BOTH batch kinds: a
+     folder batch's scan and a file-list batch's scan both store v.file (the
+     original). The run-time temp hardlink (squeeze-fl-XXXX/Selected files…)
+     never lands in file.path — progress events are mapped back to originals —
+     so we always reveal the original, never the temp link. The main side
+     stat-gates: a moved/deleted original returns {ok:false} and we surface a
+     non-blocking notice instead of opening the wrong/no window. */
+  fname.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    try {
+      const res = await window.api.revealInFinder(file.path);
+      if (!res || !res.ok) showNotice('This file may have moved or been deleted.');
+    } catch {
+      showNotice('This file may have moved or been deleted.');
+    }
+  });
   fileMeta.appendChild(fname);
   fileCol.appendChild(glyph);
   fileCol.appendChild(fileMeta);
@@ -1110,6 +1197,9 @@ function updateOnboarding() {
 }
 
 function renderQueue() {
+  // An inline batch rename owns the DOM until it commits/cancels — a wholesale
+  // rebuild here would destroy the focused input mid-edit. endRename repaints.
+  if (editingBatchId != null) return;
   updateOnboarding();
   queueEl.innerHTML = '';
   queue.forEach((batch, idx) => queueEl.appendChild(buildBatchGroup(batch, idx)));
@@ -1191,6 +1281,16 @@ function updateTlTag({ running, paused, failed }) {
     tlTag.classList.add('hidden');
     tlTag.textContent = '';
   }
+
+  /* Top activity line: the cyan shimmer means "encoding now". A paused queue
+     must STOP moving and read static amber (the established paused token — see
+     .tl-tag.paused / .qbatch-status.paused). Bound to the REAL pause state: a
+     batch is 'paused' only after main SIGSTOPs its encode and emits 'Paused',
+     so paused>0 here is the same state that stopped the encoder. On resume the
+     batch returns to 'running' (paused→0) and the shimmer comes back. The
+     .active class (run in progress) is owned by start/finish — we only toggle
+     the paused modifier on top of it. */
+  if (topProgress) topProgress.classList.toggle('paused', paused > 0);
 }
 
 /* Drive label for plain-language disk messages: a /Volumes/<name>/… path

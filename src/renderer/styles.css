@@ -158,6 +158,15 @@ body::before {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
+/* Paused queue: the top line STOPS moving and reads static amber (the same
+   paused token as .tl-tag.paused / the paused pills). Overrides the cyan
+   shimmer of .active — two classes, so it wins regardless of source order.
+   Uses var(--amber), never a hardcoded hex, so a future re-skin swaps it. */
+.top-progress.active.paused {
+  background: var(--amber);
+  background-size: auto;
+  animation: none;
+}
 
 /* ============================================================
    App container
@@ -727,6 +736,21 @@ body::before {
   letter-spacing: -0.012em;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* Inline rename field — matches .qbatch-name weight/size so the row doesn't
+   jump when editing begins. */
+.qbatch-name-edit {
+  font-family: var(--font-sans);
+  font-weight: 600; font-size: 14.5px;
+  letter-spacing: -0.012em;
+  color: var(--fg);
+  background: var(--bg-3);
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  padding: 1px 6px;
+  outline: none;
+  min-width: 140px; max-width: 100%;
+}
+.qbatch-name-edit:focus { border-color: var(--cyan-line); }
 .qbatch-meta {
   margin-top: 2px;
   font-family: var(--font-mono); font-size: 11.5px;
@@ -884,6 +908,9 @@ body::before {
   color: var(--fg); font-weight: 500; font-size: 13px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* Clickable file name → reveal original in Finder. Cursor affordance only;
+   no other visual change (per scope). */
+.qrow .file .name.revealable { cursor: pointer; }
 .qrow .mono { font-family: var(--font-mono); font-size: 11.5px; color: var(--fg-2); }
 .qrow .mono.muted { color: var(--fg-4); }
 .qrow .mono.green { color: var(--green); }
@@ -1483,4 +1510,32 @@ svg { display: block; }
 .dest-picker .change.next-action::after { border-radius: 9px; }
 .btn.add-batch.next-action::after { border-radius: 12px; }
 .btn.cta.next-action::after { border-radius: 13px; }
+
+/* ============================================================
+   Non-blocking transient notice (toast)
+   ============================================================
+   Informational, auto-dismissing. No backdrop, no focus trap — never blocks
+   the operator (unlike .modal-backdrop). Used for soft failures like a file
+   row whose original has moved. Amber accent = the warning token. */
+.app-notice {
+  position: fixed;
+  top: 48px; left: 50%;
+  transform: translateX(-50%) translateY(-8px);
+  z-index: 120;
+  max-width: 440px;
+  padding: 9px 14px;
+  border-radius: 8px;
+  background: var(--bg-2);
+  border: 1px solid var(--amber-line);
+  color: var(--fg);
+  font-size: 13px;
+  box-shadow: 0 8px 24px oklch(0 0 0 / 0.38);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .18s ease, transform .18s ease;
+}
+.app-notice.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
 
