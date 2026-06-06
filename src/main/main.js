@@ -13,6 +13,12 @@ const { revealInFinder } = require('./reveal');
 let mainWindow = null;
 let stopRequested = false;
 let queueRunning = false;
+/* The LIVE batch list the running queue is draining (the same array object
+   passed to runQueue). Mid-run drops are appended here via 'enqueue-batch', and
+   runQueue's loop re-reads `.length` each turn so it absorbs them in the SAME
+   run. Null whenever no run is active — an enqueue then is a fresh-run drop, not
+   a resurrection of the finished run. */
+let liveBatches = null;
 
 // ----- Lightweight per-user preferences (no external dep) -------------------
 // Persists the last-used source folder so the browse picker defaults there.
@@ -288,8 +294,11 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
   let totals;
   try {
     // Per-batch loop + auto-advance live in the shared, test-covered runner.
+    // `batches` is the SAME array 'enqueue-batch' appends to → mid-run drops drain.
+    liveBatches = batches;
     totals = await runQueue(batches, { send, isStopRequested: () => stopRequested, rt });
   } finally {
+    liveBatches = null;   // run over → further drops start a fresh run
     queueRunning = false;
     // Run reached a clean end — no orphaned partials to recover next launch.
     try { prefs.pendingDests = []; savePrefs(); } catch { /* non-fatal */ }
@@ -304,6 +313,32 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
 ipcMain.handle('stop-queue', async () => {
   stopRequested = true;
   return { ok: true };
+});
+
+/* OPTION A — a running queue drains ALL queued batches, including ones dropped
+   WHILE it runs. The renderer calls this when a batch is added during a live run;
+   we append it to the SAME array runQueue is iterating, so the loop picks it up at
+   its turn (re-reading `.length`) and stages it normally (hardlink→symlink→copy).
+   ABSORBED ONLY while a run is live: if the run has already ended (liveBatches is
+   null / queueRunning false), the drop is NOT folded into the finished run — the
+   renderer leaves it Queued for the next Start, which is a fresh run with its own
+   summary. (The check is synchronous w.r.t. the loop's turn boundary, so there is
+   no window where an absorbed batch is stranded unrun.) Honors stop the same way
+   the loop does: a stopped run won't reach an appended batch. */
+ipcMain.handle('enqueue-batch', async (_evt, batch) => {
+  if (!queueRunning || !liveBatches || !batch) return { ok: true, absorbed: false };
+  liveBatches.push(batch);
+  /* Keep orphan-recovery bookkeeping honest for the new destination too. */
+  if (!batch.dryRun && batch.dest) {
+    try {
+      const pend = new Set(Array.isArray(prefs.pendingDests) ? prefs.pendingDests : []);
+      pend.add(batch.dest); prefs.pendingDests = [...pend];
+      const roots = new Set(Array.isArray(prefs.outputRoots) ? prefs.outputRoots : []);
+      roots.add(batch.dest); prefs.outputRoots = [...roots];
+      savePrefs();
+    } catch { /* non-fatal */ }
+  }
+  return { ok: true, absorbed: true };
 });
 
 /* BUG 2 (v2.1.15): the renderer pushes a batch's current skipped ORIGINAL paths

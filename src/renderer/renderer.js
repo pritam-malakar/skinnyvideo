@@ -805,6 +805,19 @@ dryRunBtn.addEventListener('click', () => {
   if (dryStateEl) dryStateEl.textContent = next ? 'On' : 'Off';
 });
 
+/* The minimal batch shape main needs to RUN a batch — used by BOTH the Start
+   payload and a mid-run enqueue, so the two paths can never drift. Display-only
+   fields (srcName, rename label) are deliberately omitted: they cannot affect
+   output paths or staging dirs. */
+function batchToPayload(b) {
+  return {
+    id: b.id, src: b.src, dest: b.dest, tier: b.tier, dryRun: b.dryRun,
+    kind: b.kind,
+    fileSources: b.kind === 'files' ? (b.fileSources || []) : [],
+    skipped: b.files.filter((f) => f.status === 'skipped').map((f) => f.path)
+  };
+}
+
 /* Commit the staging area as a new batch. Tier is FROZEN at this moment.
    Subsequent tier changes affect only the next batch (or the editable
    batches on the queue header). */
@@ -839,6 +852,13 @@ function addCurrentToQueue() {
     lastResult: null
   };
   queue.push(batch);
+  /* OPTION A: if a run is LIVE, fold this batch into it so the queue keeps
+     draining with NO second Start press. main absorbs it into the array its loop
+     is iterating; if the run has already ended it reports absorbed:false and the
+     batch simply waits Queued for the next Start (a fresh run, its own summary). */
+  if (runActive) {
+    try { window.api.enqueueBatch(batchToPayload(batch)); } catch { /* runs on next Start */ }
+  }
   /* A: a fresh queued batch means there is runnable work again. If the
      "Run complete" panel is up from a previous run, retire it and bring
      back the Start action bar. */
@@ -1427,12 +1447,7 @@ startBtn.addEventListener('click', async () => {
      kind:'folder' + skipped, and runBatch drops the skipped originals at scan.
      No pre-filtering / kind-conversion here — that's what let an all-skipped
      batch fall through the cracks and stall. */
-  const payload = toRun.map((b) => ({
-    id: b.id, src: b.src, dest: b.dest, tier: b.tier, dryRun: b.dryRun,
-    kind: b.kind,
-    fileSources: b.kind === 'files' ? (b.fileSources || []) : [],
-    skipped: b.files.filter((f) => f.status === 'skipped').map((f) => f.path)
-  }));
+  const payload = toRun.map(batchToPayload);
   await window.api.startQueue(payload);
 });
 

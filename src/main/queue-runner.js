@@ -18,6 +18,15 @@ const { stageFileList } = require('../encoder/stage');
 async function runQueue(batches, { send, isStopRequested, rt }) {
   const totals = { processed: 0, failed: 0, failedCopied: 0, failedNoCopy: 0, failedDestLost: 0, destLost: false, skippedNonVideo: 0, reclaimed: 0, alreadyDone: 0 };
 
+  /* OPTION A — DRAIN THE LIVE QUEUE: `batches` is a LIVE array. main appends
+     mid-run drops to this same object (via 'enqueue-batch'), so the condition
+     `i < batches.length` is RE-EVALUATED each turn and absorbs them in this same
+     run. Do NOT cache `batches.length` into a const — that would re-freeze the
+     queue and strand mid-run drops. The loop ends only when, AT a turn boundary,
+     no further batch exists (or stop was requested) — that boundary is synchronous
+     between awaits, so a drop either lands before it (drained) or after the run is
+     already torn down (a fresh run). Pause parks the loop inside `await runBatch`
+     on the SIGSTOP'd child, so no next batch is pulled until resume. */
   for (let i = 0; i < batches.length; i++) {
     if (isStopRequested()) break;
     const batch = batches[i];
