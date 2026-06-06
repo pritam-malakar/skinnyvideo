@@ -71,6 +71,7 @@ ipcMain.handle('free-space', async () => ({ free: 9e15 }));
 ipcMain.handle('delete-orphans', async () => ({ deleted: 0 }));
 ['open-path', 'reveal-path', 'reset-drive', 'pause-batch', 'resume-batch', 'cancel-batch']
   .forEach((ch) => ipcMain.handle(ch, async () => ({ ok: true })));
+ipcMain.handle('check-engine', async () => ({ ok: true }));   // engine present in tests
 ipcMain.handle('stop-queue', async () => { stopRequested = true; return { ok: true }; });
 ipcMain.handle('set-batch-skips', async (_e, { batchId, skipped }) => { rt(batchId).skips = new Set(Array.isArray(skipped) ? skipped : []); return { ok: true }; });
 

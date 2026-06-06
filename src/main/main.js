@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
 const os = require('os');
-const { runBatch, dryRunBatch, scanFolder, isVideoFile, getBinaries, VIDEO_EXTS } = require('../encoder/pipeline');
+const { runBatch, dryRunBatch, scanFolder, isVideoFile, getBinaries, ffmpegStatus, ENGINE_MISSING_MESSAGE, VIDEO_EXTS } = require('../encoder/pipeline');
 const { flattenRunDir } = require('../encoder/flatten');
 const { findOrphanPartials, deletePartials } = require('../encoder/orphans');
 const { stageFileList } = require('../encoder/stage');
@@ -108,12 +108,12 @@ function createWindow() {
 
 app.whenReady().then(() => {
   loadPrefs();
-  const bins = getBinaries();
-  if (!fs.existsSync(bins.ffmpeg) || !fs.existsSync(bins.ffprobe)) {
-    dialog.showErrorBox(
-      'Missing bundled tools',
-      `Expected ffmpeg at:\n${bins.ffmpeg}\nand ffprobe at:\n${bins.ffprobe}\n\nThe app cannot run without them.`
-    );
+  /* Self-contained engine: verify the BUNDLED ffmpeg/ffprobe exist and are
+     executable at launch. No fallback to any other binary — if it's gone the
+     app cannot encode, so fail fast with plain-language wording. */
+  const engine = ffmpegStatus();
+  if (!engine.ok) {
+    dialog.showErrorBox('Squeeze', ENGINE_MISSING_MESSAGE);
     app.quit();
     return;
   }
@@ -166,6 +166,14 @@ app.on('window-all-closed', () => {
    In dev this falls through to package.json; in a packaged .app it returns
    CFBundleShortVersionString. The renderer fetches it once at startup. */
 ipcMain.handle('app-version', async () => app.getVersion());
+
+/* Engine pre-flight for the renderer's Start handler: returns {ok} plus the
+   plain-language message on failure, so the run can be blocked BEFORE any UI
+   flips to "running" and before a single ffmpeg is spawned. */
+ipcMain.handle('check-engine', async () => {
+  const s = ffmpegStatus();
+  return { ok: s.ok, message: s.ok ? null : ENGINE_MISSING_MESSAGE };
+});
 
 ipcMain.handle('choose-destination', async (_evt, defaultPath) => {
   const opts = { properties: ['openDirectory', 'createDirectory'] };
@@ -247,6 +255,11 @@ ipcMain.handle('scan-files', async (_evt, srcPaths) => {
 
 ipcMain.handle('start-queue', async (_evt, batches) => {
   if (queueRunning) return { ok: false, error: 'Already running' };
+  /* NO SILENT FALLBACK: refuse to start — and never reach runQueue/spawn — if
+     the bundled engine is gone. Returned to the renderer as engineMissing so it
+     surfaces the plain-language message. queueRunning stays false (no run). */
+  const engine = ffmpegStatus();
+  if (!engine.ok) return { ok: false, engineMissing: true, error: ENGINE_MISSING_MESSAGE };
   queueRunning = true;
   stopRequested = false;
 

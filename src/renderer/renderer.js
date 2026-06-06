@@ -1359,6 +1359,30 @@ startBtn.addEventListener('click', async () => {
   const toRun = queue.filter((q) => q.status === 'queued');
   if (toRun.length === 0) return;
 
+  /* Engine pre-flight FIRST — before any UI flips to "running" and before a
+     single ffmpeg is spawned. If the bundled engine is missing, block the run
+     with the plain-language message and abort (the safe default). No fallback
+     to any other binary ever happens. */
+  try {
+    const eng = await window.api.checkEngine();
+    if (!eng || !eng.ok) {
+      await showModal({
+        title: 'Squeeze',
+        tone: 'warn',
+        body: `<p>${escapeHtml((eng && eng.message) || "Squeeze's video engine is missing — please reinstall the app.")}</p>`,
+        actions: [{ label: 'OK', value: true, kind: 'primary' }]
+      });
+      return;                                 // do NOT start the run
+    }
+  } catch {
+    await showModal({
+      title: 'Squeeze', tone: 'warn',
+      body: `<p>Squeeze's video engine is missing — please reinstall the app.</p>`,
+      actions: [{ label: 'OK', value: true, kind: 'primary' }]
+    });
+    return;
+  }
+
   /* Disk pre-flight, with a relocate→recheck loop. Dismissing the warning
      (Esc / backdrop) aborts the start — the safe default. */
   while (true) {

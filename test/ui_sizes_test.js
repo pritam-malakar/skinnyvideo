@@ -36,6 +36,7 @@ const send = (ch, p) => { if (win && !win.isDestroyed()) win.webContents.send(ch
 
 // ---- IPC: real handlers, only the native dialogs are stubbed ----
 ipcMain.handle('app-version', async () => '2.1.12-test');
+ipcMain.handle('check-engine', async () => ({ ok: true }));   // engine present in tests
 ipcMain.handle('scan-files', async (_e, paths) => {
   const { scanFolder } = require(path.join(ROOT, 'src/encoder/pipeline'));
   const videos = []; let ignored = 0, totalSize = 0;

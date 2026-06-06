@@ -16,17 +16,65 @@ const TIER_CONSTANTS = {
   preserve: { crf: 20, preset: 'medium' }
 };
 
+/* ─── ffmpeg/ffprobe resolution — ONE path, no fallback ──────────────────
+   The encoder is fully self-contained: Squeeze only EVER runs the ffmpeg it
+   ships in its own bundle. There is deliberately NO PATH lookup, no system
+   ffmpeg, no ffmpeg-static, no env override, no hardcoded /usr or /opt path —
+   any of those would let a different (possibly broken/missing) binary run, and
+   "resolves a binary some other way per machine" was the whole failure class
+   this guards against. resolveBinDir has exactly two branches and both point
+   inside the app:
+     • packaged → <Squeeze.app>/Contents/Resources/bin
+     • dev      → <repo>/resources/bin
+   Both are absolute and 'bin'-suffixed; neither can yield a bare name or a
+   system path. Pure (no electron/process refs) so it is unit-testable. */
+function resolveBinDir(isPackaged, resourcesPath, dirname) {
+  return isPackaged
+    ? path.join(resourcesPath, 'bin')
+    : path.join(dirname, '..', '..', 'resources', 'bin');
+}
+
 function getBinaries() {
-  let base;
-  if (_electronApp && _electronApp.isPackaged) {
-    base = path.join(process.resourcesPath, 'bin');
-  } else {
-    base = path.join(__dirname, '..', '..', 'resources', 'bin');
-  }
+  const isPackaged = !!(_electronApp && _electronApp.isPackaged);
+  const base = resolveBinDir(isPackaged, process.resourcesPath, __dirname);
   return {
     ffmpeg: path.join(base, 'ffmpeg'),
     ffprobe: path.join(base, 'ffprobe')
   };
+}
+
+/* Plain-language wording for a non-technical operator when the bundled engine
+   is absent. Shown at startup and as the run-block reason — never a stack
+   trace, never an ffmpeg path. */
+const ENGINE_MISSING_MESSAGE = "Squeeze's video engine is missing — please reinstall the app.";
+
+/* Hard gate: the bundled ffmpeg AND ffprobe must exist and be executable.
+   Returns {ok:true, ffmpeg, ffprobe} or {ok:false, missing, reason, …}. NEVER
+   falls back to another binary — a false result means the run must be blocked,
+   not retried elsewhere. Synchronous fs.accessSync(X_OK) is the ground-truth
+   executable check (existsSync alone would pass a non-executable file). */
+function ffmpegStatus(bins) {
+  const b = bins || getBinaries();
+  for (const key of ['ffmpeg', 'ffprobe']) {
+    try {
+      fs.accessSync(b[key], fs.constants.X_OK);
+    } catch {
+      return { ok: false, ffmpeg: b.ffmpeg, ffprobe: b.ffprobe, missing: key,
+        reason: `${key} missing or not executable at ${b[key]}`,
+        message: ENGINE_MISSING_MESSAGE };
+    }
+  }
+  return { ok: true, ffmpeg: b.ffmpeg, ffprobe: b.ffprobe };
+}
+
+/* Provenance for the run-log header: the first line of `ffmpeg -version`
+   (e.g. "ffmpeg version 8.1 …"). Bounded so a wedged binary can't hang the
+   header. Returns 'unknown' on any failure rather than throwing. */
+async function ffmpegVersionLine(ffmpegPath) {
+  try {
+    const r = await runCmd(ffmpegPath, ['-hide_banner', '-version'], { stallTimeoutMs: 5000 });
+    return ((r && r.stdout) || '').split('\n')[0].trim() || 'unknown';
+  } catch { return 'unknown'; }
 }
 
 /* BUG 3 — anti-hang on a vanished destination.
@@ -404,6 +452,22 @@ async function runBatch(batch, controlOrFn, onProgress) {
   const { src, dest, tier } = batch;
   const runDir = path.join(dest, tsRunFolder());
 
+  /* NO SILENT FALLBACK: verify the bundled engine before doing anything. If the
+     bundled ffmpeg/ffprobe is missing or not executable we FAIL the batch with
+     the plain-language reason and NEVER spawn — there is no other binary to try.
+     (main also pre-flights this before the run even starts; this is the
+     last-resort guarantee that a spawn can't happen with no engine.) */
+  const bins = getBinaries();
+  const engine = ffmpegStatus(bins);
+  if (!engine.ok) {
+    return {
+      runDir: null, logPath: null,
+      processed: 0, failed: 0, failedCopied: 0, failedNoCopy: 0, failedDestLost: 0,
+      alreadyDone: 0, skippedNonVideo: 0, reclaimed: 0, totalFiles: 0,
+      destLost: false, engineMissing: true, error: engine.message, reason: engine.reason
+    };
+  }
+
   /* BUG 3 — fail fast if the destination is unreachable before we write a
      single byte (drive never mounted / already ejected). Bail with a
      destLost result instead of hanging on mkdir to a dead path. */
@@ -427,6 +491,11 @@ async function runBatch(batch, controlOrFn, onProgress) {
   log(`# Source: ${src}`);
   log(`# Destination: ${runDir}`);
   log(`# Tier: ${tier}`);
+  /* Provenance — which engine actually ran. The absolute bundled path proves no
+     PATH/system ffmpeg slipped in; the version line lets a per-machine failure
+     be diagnosed from the log alone (mini vs Studio). */
+  log(`# ffmpeg: ${bins.ffmpeg}`);
+  log(`# ffmpeg version: ${await ffmpegVersionLine(bins.ffmpeg)}`);
 
   const scan = await scanFolder(src);
   /* BUG 2 (v2.1.15): drop user-skipped sources AT RUN TIME. batch.skip carries
@@ -454,7 +523,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
   let reclaimed = 0;
   const startTs = Date.now();
 
-  const { ffmpeg } = getBinaries();
+  const ffmpeg = bins.ffmpeg;   // resolved + verified above (single bundled engine)
 
   /* Record an ordinary file failure (corrupt/undecodable, or a stuck encode
      on a HEALTHY dest): try to preserve the source to _FAILED/ and classify
@@ -817,6 +886,10 @@ async function dryRunBatch(batch, onProgress) {
 
 module.exports = {
   getBinaries,
+  resolveBinDir,
+  ffmpegStatus,
+  ffmpegVersionLine,
+  ENGINE_MISSING_MESSAGE,
   scanFolder,
   runBatch,
   dryRunBatch,

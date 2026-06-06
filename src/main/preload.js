@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('api', {
   getAppVersion: () => ipcRenderer.invoke('app-version'),
   chooseDestination: (defaultPath) => ipcRenderer.invoke('choose-destination', defaultPath),
   scanSource: (srcPath) => ipcRenderer.invoke('scan-source', srcPath),
+  checkEngine: () => ipcRenderer.invoke('check-engine'),
   startQueue: (batches) => ipcRenderer.invoke('start-queue', batches),
   stopQueue: () => ipcRenderer.invoke('stop-queue'),
   setBatchSkips: (batchId, skipped) => ipcRenderer.invoke('set-batch-skips', { batchId, skipped }),

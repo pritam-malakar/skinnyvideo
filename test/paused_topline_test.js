@@ -91,6 +91,7 @@ ipcMain.handle('choose-destination', async () => TEST_DEST);
 ipcMain.handle('app-version', async () => '2.1.17-test');
 ipcMain.handle('get-lifetime-drives', async () => []);
 ipcMain.handle('stat-path', async (_e, p) => { try { const s = await fsp.stat(p); return { isFile: s.isFile(), isDirectory: s.isDirectory() }; } catch { return null; } });
+ipcMain.handle('check-engine', async () => ({ ok: true }));   // engine present in tests
 ['save-last-src','add-reclaimed','free-space','delete-orphans','open-path','reveal-path',
  'reveal-in-finder','reset-drive','browse-source','browse-source-files']
   .forEach((ch) => ipcMain.handle(ch, async () => ({ ok: true })));
