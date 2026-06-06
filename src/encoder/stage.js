@@ -32,6 +32,11 @@ async function stageFileList(batchId, fileSources) {
     const stageMap = new Map();
     const missing = [];
     const used = new Set();
+    /* Per-batch tally of HOW each source was staged, surfaced to the run log so
+       the SMB zero-copy fix is observable in the field: a NAS batch should read
+       symlinked=N, copied=0 (a non-zero `copied` means a source FS supported
+       neither hardlink nor symlink and we fell back to a full copy). */
+    const methods = { linked: 0, symlinked: 0, copied: 0 };
     for (const fp of fileSources) {
       const base = path.basename(fp);
       let safe = base;
@@ -43,22 +48,54 @@ async function stageFileList(batchId, fileSources) {
         n++;
       }
       const linkPath = path.join(stageDir, safe);
-      /* Hardlink so the entry shows up as a regular file to pipeline's
-         readdir({withFileTypes:true}) walker. On a different filesystem
-         (EXDEV — e.g. an external /Volumes/… source) fall back to a copy
-         that uses APFS clonefile when available. ANY per-file failure
-         (missing source, permission, failed cross-FS copy) is isolated to
-         THIS file: record it and keep staging the rest. */
+      /* Stage each source as a stable entry the pipeline walker can read, in
+         strict zero-copy-first order:
+           1. HARDLINK — shares the original's inode, so deleting/moving the
+              original mid-encode stays safe. Works only when the temp dir and
+              the source share a hardlink-capable filesystem (internal APFS,
+              same-volume HFS+). Strongest guarantee → always tried first.
+           2. SYMLINK — when the source FS can't hardlink: a different volume
+              (EXDEV) or a filesystem with no hardlink support at all
+              (ENOTSUP/EOPNOTSUPP/EPERM — e.g. an SMB/NAS share, exFAT). A COPY
+              here would move the WHOLE file to internal temp before encoding —
+              that is exactly the size-proportional batch-start stall. A symlink
+              is instant and zero-copy; the encoder reads the original through
+              it. Trade-off vs a hardlink: deleting the original mid-encode is no
+              longer insulated by the staged entry — the pipeline's pre-encode
+              isSourceReadable guard + inactivity watchdog cover a vanished
+              source. (Branch B / option iii, chosen for SMB sources where
+              hardlinks are physically impossible — link() → ENOTSUP.)
+           3. COPY — last resort ONLY if symlink ALSO fails (a source FS that
+              supports neither): the file still stages, at the cost of the copy.
+              Never reached for SMB (symlink succeeds there).
+         symlink() would happily create a DANGLING link to a missing target,
+         masking a genuinely missing source (which must land in `missing`, not be
+         silently "staged"), so the fallback runs only for hardlink-unsupported
+         error codes AND only when the source actually exists. Any OTHER per-file
+         error (ENOENT/EACCES — missing/unreadable source) leaves staged=false →
+         recorded in `missing`, isolated to THIS file (v2.1.14). */
       let staged = false;
       try {
         await fsp.link(fp, linkPath);
-        staged = true;
+        staged = true; methods.linked++;
       } catch (e) {
-        if (e && e.code === 'EXDEV') {
+        const code = e && e.code;
+        const cantHardlink = code === 'EXDEV' || code === 'ENOTSUP'
+          || code === 'EOPNOTSUPP' || code === 'EPERM';
+        let srcExists = false;
+        if (cantHardlink) {
+          try { await fsp.access(fp); srcExists = true; } catch { /* missing → record */ }
+        }
+        if (srcExists) {
           try {
-            await fsp.copyFile(fp, linkPath, fs.constants.COPYFILE_FICLONE);
-            staged = true;
-          } catch { /* falls through to missing */ }
+            await fsp.symlink(fp, linkPath);
+            staged = true; methods.symlinked++;
+          } catch {
+            try {
+              await fsp.copyFile(fp, linkPath, fs.constants.COPYFILE_FICLONE);
+              staged = true; methods.copied++;
+            } catch { /* falls through to missing */ }
+          }
         }
       }
       if (staged) {
@@ -68,7 +105,7 @@ async function stageFileList(batchId, fileSources) {
         missing.push(fp);          // per-file failure — does not sink the batch
       }
     }
-    return { tmpRoot, stageDir, stageMap, missing };
+    return { tmpRoot, stageDir, stageMap, missing, methods };
   } catch (e) {
     // Could not even create the staging area — nothing staged. Don't leak temp.
     try { await fsp.rm(tmpRoot, { recursive: true, force: true }); } catch { /* ignore */ }

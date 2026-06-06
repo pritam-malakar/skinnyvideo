@@ -74,6 +74,7 @@ async function runQueue(batches, { send, isStopRequested, rt }) {
     let tmpCleanup = null;
     let stageMap = new Map();
     let stageMissing = [];
+    let stageMethods = null;
     let stageError = null;
     if (batch.kind === 'files' && effSources.length > 0) {
       try {
@@ -82,6 +83,7 @@ async function runQueue(batches, { send, isStopRequested, rt }) {
         tmpCleanup = staged.tmpRoot;
         stageMap = staged.stageMap;
         stageMissing = staged.missing || [];
+        stageMethods = staged.methods || null;
       } catch (e) {
         stageError = e;
       }
@@ -159,6 +161,14 @@ async function runQueue(batches, { send, isStopRequested, rt }) {
       try {
         const lifted = await flattenRunDir(result.runDir);
         try {
+          if (stageMethods) {
+            fs.appendFileSync(
+              path.join(result.runDir, 'compress.log'),
+              `# Staging: hardlinked=${stageMethods.linked} symlinked=${stageMethods.symlinked}`
+              + ` copied=${stageMethods.copied} — symlinked = zero-copy stage of a source the`
+              + ` temp FS can't hardlink (e.g. SMB); copied>0 means a full pre-encode copy occurred\n`
+            );
+          }
           fs.appendFileSync(
             path.join(result.runDir, 'compress.log'),
             `# Flatten: lifted=${lifted} — canonical layout is`

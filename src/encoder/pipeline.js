@@ -240,8 +240,21 @@ async function walkAll(dir, out) {
   for (const e of entries) {
     if (e.name.startsWith('.')) continue;
     const full = path.join(dir, e.name);
-    if (e.isDirectory()) await walkAll(full, out);
-    else if (e.isFile()) out.push(full);
+    if (e.isDirectory()) { await walkAll(full, out); continue; }
+    if (e.isFile()) { out.push(full); continue; }
+    /* A staged file-list entry can be a SYMLINK to the original source — that is
+       how staging stays zero-copy when the source FS can't hardlink (e.g. an SMB
+       share; see stage.js). A symlink dirent reports isFile()===false, so resolve
+       it with stat() (follows the link) and treat the target as a file/dir. A
+       dangling link (original vanished after staging) is skipped here and handled
+       as source-missing downstream by the pre-encode readable guard. */
+    if (e.isSymbolicLink()) {
+      try {
+        const st = await fsp.stat(full);
+        if (st.isDirectory()) await walkAll(full, out);
+        else if (st.isFile()) out.push(full);
+      } catch { /* dangling symlink — skip; downstream guard reports it */ }
+    }
   }
 }
 
