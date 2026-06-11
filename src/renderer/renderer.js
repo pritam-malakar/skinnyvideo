@@ -1046,6 +1046,13 @@ function buildBatchGroup(batch, idx) {
       e.stopPropagation();
       // View-only removal — never deletes outputs/originals, never re-credits
       // or decrements lifetime stats.
+      /* PHANTOM FREEZE: a QUEUED batch must also be tombstoned main-side —
+         during a live run it still sits in liveBatches, and without this the
+         engine encodes it invisibly (no row, Start hidden → looks frozen).
+         Fire-and-forget, like enqueueBatch; harmless with no run live (Start
+         rebuilds its payload from this queue array). Completed statuses
+         (done/failed/cancelled) stay view-only. */
+      if (batch.status === 'queued') window.api.removeBatch(batch.id);
       queue = queue.filter((x) => x.id !== batch.id);
       renderQueue();
     });

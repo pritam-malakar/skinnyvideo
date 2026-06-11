@@ -30,6 +30,14 @@ async function runQueue(batches, { send, isStopRequested, rt }) {
   for (let i = 0; i < batches.length; i++) {
     if (isStopRequested()) break;
     const batch = batches[i];
+
+    /* PHANTOM FREEZE: a queued batch the operator removed mid-run is
+       tombstoned via the 'remove-batch' IPC (rt(id).removed). Skip it BEFORE
+       any status/staging/encode — the renderer no longer has its row, so any
+       work here would be invisible (the run would look frozen). Checked only
+       at the turn boundary: a batch already running is never affected. */
+    if (rt(batch.id).removed) continue;
+
     send('batch-status', { id: batch.id, status: 'Running' });
 
     const isDry = !!batch.dryRun;

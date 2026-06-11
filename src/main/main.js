@@ -348,6 +348,22 @@ ipcMain.handle('enqueue-batch', async (_evt, batch) => {
   return { ok: true, absorbed: true };
 });
 
+/* PHANTOM FREEZE: removing a QUEUED batch in the renderer mid-run previously
+   only filtered the renderer's view — liveBatches still held the batch, so the
+   engine encoded it with no visible row (Start hidden, nothing Running → the
+   app read as frozen until queue-finished). The renderer now reports the
+   removal here; the tombstone makes runQueue skip the batch at its turn.
+   Tombstone (not splice): liveBatches is being iterated by index — splicing
+   would shift the loop. A batch already past its turn (running/finished) is
+   unaffected: the flag is only consulted at the turn boundary. Ids are
+   session-monotonic (renderer nextId++), so a tombstone can never collide
+   with a later batch. Safe to set with no run live (pre-Start removals never
+   reach the Start payload anyway — it's rebuilt from the renderer queue). */
+ipcMain.handle('remove-batch', async (_evt, batchId) => {
+  rt(batchId).removed = true;
+  return { ok: true };
+});
+
 /* BUG 2 (v2.1.15): the renderer pushes a batch's current skipped ORIGINAL paths
    here every time the user toggles skip — including AFTER Start, for batches not
    yet at their turn. start-queue reads rt(id).skips at each batch's turn so the
