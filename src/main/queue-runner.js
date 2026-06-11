@@ -16,7 +16,7 @@ const { stageFileList } = require('../encoder/stage');
      rt(batchId)             — per-batch runtime state (skips, child, cancelled, …)
    Returns the accumulated totals. */
 async function runQueue(batches, { send, isStopRequested, rt }) {
-  const totals = { processed: 0, failed: 0, failedCopied: 0, failedNoCopy: 0, failedDestLost: 0, destLost: false, skippedNonVideo: 0, reclaimed: 0, alreadyDone: 0 };
+  const totals = { processed: 0, failed: 0, failedCopied: 0, failedNoCopy: 0, failedDestLost: 0, destLost: false, skippedNonVideo: 0, reclaimed: 0, alreadyDone: 0, hdrMetaDropped: 0 };
 
   /* OPTION A — DRAIN THE LIVE QUEUE: `batches` is a LIVE array. main appends
      mid-run drops to this same object (via 'enqueue-batch'), so the condition
@@ -196,6 +196,7 @@ async function runQueue(batches, { send, isStopRequested, rt }) {
     totals.skippedNonVideo += result.skippedNonVideo || 0;
     totals.reclaimed += result.reclaimed || 0;
     totals.alreadyDone += result.alreadyDone || 0;
+    totals.hdrMetaDropped += result.hdrMetaDropped || 0;
 
     let finalStatus;
     if (state.cancelled)                                 finalStatus = 'Cancelled';

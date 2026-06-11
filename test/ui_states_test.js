@@ -82,7 +82,7 @@ app.whenReady().then(async () => {
     `toggled state unmistakable: Preview only / toggle On (got ${JSON.stringify(tog1)})`);
   await run(`document.getElementById('dry-run').click(); true;`); await wait(120); // back to write for the screenshot
 
-  // ---------- Item 5: tiers centered; nothing else shifted ----------
+  // ---------- Item 5: tiers full-width; nothing else shifted ----------
   const geo = await run(`(() => {
     const r = (sel) => { const e = document.querySelector(sel); const b = e.getBoundingClientRect(); return { l: Math.round(b.left), rt: Math.round(b.right) }; };
     return { dropzone: r('.dropzone'), output: r('.output-row'), safety: r('.safety-bar'),
@@ -92,12 +92,13 @@ app.whenReady().then(async () => {
   const sameBox = (g) => Math.abs(g.l - box.l) <= 1 && Math.abs(g.rt - box.rt) <= 1;
   check(sameBox(geo.dropzone) && sameBox(geo.output) && sameBox(geo.tierHead),
     `non-tier sections share one content box (drop/output/tier-head all = [${box.l},${box.rt}])`);
-  const leftGap = geo.tiers.l - box.l;
-  const rightGap = box.rt - geo.tiers.rt;
-  check(leftGap > 4 && Math.abs(leftGap - rightGap) <= 2,
-    `tier cards centered in the row (left gap ${leftGap}px ≈ right gap ${rightGap}px)`);
+  // Pass 5 (Issue 2): the tier pair now spans the FULL content width — the
+  // 720px centered cap (max-width + margin-inline:auto) was dropped so the cards
+  // fill the row like every other panel, no dead space.
+  check(sameBox(geo.tiers),
+    `tier pair spans the full content width (tiers [${geo.tiers.l},${geo.tiers.rt}] = box [${box.l},${box.rt}])`);
   const tierWidth = geo.tiers.rt - geo.tiers.l;
-  check(tierWidth <= 722 && tierWidth >= 600, `tier pair kept its size (~720px max; got ${tierWidth}px)`);
+  check(tierWidth >= 900, `tier pair fills the row, no 720px cap (got ${tierWidth}px)`);
 
 
   // ---------- Item 1 (cont): hint gives way once content is added ----------

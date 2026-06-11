@@ -344,19 +344,156 @@ function shortEdge(w, h) {
   return Math.min(w, h);
 }
 
-function buildArgs({ input, tmpOut, tier, videoStream, audioStream }) {
+/* ─── Color-tag vocabulary bridge ──────────────────────────────────
+   ffprobe reports color values using av_color_*_name() DISPLAY names; the
+   encoder's -color_primaries/-color_trc/-colorspace/-color_range options
+   accept a DIFFERENT (overlapping) constant vocabulary. Passing a display
+   name the option table doesn't know — e.g. probe "bt470m" where the option
+   spells it "gamma22" — makes avcodec_open2 reject the options with EINVAL
+   ("Error applying encoder options: Invalid argument", exit 234) and kills
+   the encode on BOTH encoders. So every probe value is mapped where the two
+   vocabularies are known to diverge, then validated against the constants
+   the BUNDLED binary actually accepts (dumped from resources/bin/ffmpeg
+   -h full — not a generic reference). A value that survives neither is
+   DROPPED: a missing cosmetic color tag is invisible; a rejected one is a
+   dead job. */
+const COLOR_OPT_ACCEPTED = {
+  color_primaries: new Set(['bt2020', 'bt470bg', 'bt470m', 'bt709', 'ebu3213',
+    'film', 'jedec-p22', 'smpte170m', 'smpte240m', 'smpte428', 'smpte428_1',
+    'smpte431', 'smpte432']),
+  color_trc: new Set(['arib-std-b67', 'bt1361', 'bt1361e', 'bt2020-10',
+    'bt2020-12', 'bt2020_10bit', 'bt2020_12bit', 'bt709', 'gamma22', 'gamma28',
+    'iec61966-2-1', 'iec61966-2-4', 'iec61966_2_1', 'iec61966_2_4', 'linear',
+    'log', 'log100', 'log316', 'log_sqrt', 'smpte170m', 'smpte2084',
+    'smpte240m', 'smpte428', 'smpte428_1']),
+  colorspace: new Set(['bt2020_cl', 'bt2020_ncl', 'bt2020c', 'bt2020nc',
+    'bt470bg', 'bt709', 'chroma-derived-c', 'chroma-derived-nc', 'fcc',
+    'ictcp', 'ipt-c2', 'rgb', 'smpte170m', 'smpte2085', 'smpte240m', 'ycgco',
+    'ycgco-re', 'ycgco-ro', 'ycocg']),
+  color_range: new Set(['full', 'jpeg', 'limited', 'mpeg', 'pc', 'tv'])
+};
+/* Probe display name → option constant, where the tables diverge. */
+const COLOR_NAME_TO_OPT = {
+  color_trc: { bt470m: 'gamma22', bt470bg: 'gamma28' },
+  colorspace: { gbr: 'rgb' }
+};
+function encoderColorValue(opt, probeName) {
+  if (!probeName || probeName === 'unknown') return null;
+  const mapped = (COLOR_NAME_TO_OPT[opt] && COLOR_NAME_TO_OPT[opt][probeName]) || probeName;
+  return COLOR_OPT_ACCEPTED[opt].has(mapped) ? mapped : null;
+}
+
+/* ─── Color carry (v2.2.6): faithful pass-through of DECLARED color ──
+   ffmpeg 8 encoders take output color from decoded FRAME metadata; sources
+   that declare color only in the CONTAINER (e.g. a QuickTime colr atom
+   tagging gamma 2.2, standard on graded NLE exports) reach the encoder with
+   untagged frames and come out color_transfer=unknown — a silent gamma shift
+   in strict players. Bridge: stamp the container-declared value onto the
+   frames with the metadata-only `setparams` filter (zero pixel transform; it
+   uses the same display-name vocabulary ffprobe reports, so no translation).
+   MINIMAL INTERVENTION, load-bearing: stamp ONLY fields where the frames are
+   unknown AND the stream declares a value — frames already tagged are NEVER
+   overwritten, and a fully-tagged source gets NO -vf at all (args identical
+   to before). Untagged-everywhere stays untagged: we never invent color.
+   Values are validated against the bundled binary's setparams table
+   (ffmpeg -h filter=setparams) so a weird probe name can't crash the filter
+   graph the way bt470m crashed the encoder options. */
+const SETPARAMS_ACCEPTED = {
+  color_primaries: new Set(['bt709', 'bt470m', 'bt470bg', 'smpte170m',
+    'smpte240m', 'film', 'bt2020', 'smpte428', 'smpte431', 'smpte432',
+    'jedec-p22', 'ebu3213', 'vgamut']),
+  color_trc: new Set(['bt709', 'bt470m', 'bt470bg', 'smpte170m', 'smpte240m',
+    'linear', 'log100', 'log316', 'iec61966-2-4', 'bt1361e', 'iec61966-2-1',
+    'bt2020-10', 'bt2020-12', 'smpte2084', 'smpte428', 'arib-std-b67', 'vlog']),
+  colorspace: new Set(['gbr', 'bt709', 'fcc', 'bt470bg', 'smpte170m',
+    'smpte240m', 'ycgco', 'ycgco-re', 'ycgco-ro', 'bt2020nc', 'bt2020c',
+    'smpte2085', 'chroma-derived-nc', 'chroma-derived-c', 'ictcp', 'ipt-c2']),
+  range: new Set(['limited', 'tv', 'mpeg', 'full', 'pc', 'jpeg'])
+};
+const knownColor = (v) => !!v && v !== 'unknown' && v !== 'unspecified' && v !== 'reserved';
+
+/* First-frame color metadata + side data = what the encoder will actually
+   see (the bitstream truth), vs the stream-level declaration ffprobeJson
+   already returns (which folds in container atoms). */
+async function ffprobeFrameColor(file) {
+  const { ffprobe } = getBinaries();
+  const args = ['-v', 'error', '-select_streams', 'v:0', '-read_intervals', '%+#1',
+    '-show_entries', 'frame=color_primaries,color_transfer,color_space,color_range:frame_side_data=side_data_type',
+    '-print_format', 'json', file];
+  const { code, stdout } = await runCmd(ffprobe, args, { stallTimeoutMs: PROBE_TIMEOUT_MS });
+  if (code !== 0) return null;
+  try { return (JSON.parse(stdout).frames || [])[0] || null; } catch { return null; }
+}
+
+/* Per-field: frame value wins where present (never overwrite bitstream-
+   declared color); stream-declared value fills the gap. Returns null when
+   nothing needs stamping — the no-op path MUST stay byte-identical. */
+function resolveColorStamp(frameColor, videoStream) {
+  const fields = [
+    ['color_primaries', 'color_primaries', 'color_primaries'],
+    ['color_trc', 'color_transfer', 'color_transfer'],
+    ['colorspace', 'color_space', 'color_space'],
+    ['range', 'color_range', 'color_range']
+  ]; // [setparams key, frame key, stream key]
+  const stamp = {};
+  for (const [sp, fk, sk] of fields) {
+    const f = frameColor ? frameColor[fk] : null;
+    const s = videoStream ? videoStream[sk] : null;
+    if (!knownColor(f) && knownColor(s) && SETPARAMS_ACCEPTED[sp].has(s)) stamp[sp] = s;
+  }
+  return Object.keys(stamp).length ? stamp : null;
+}
+
+function setparamsArg(stamp) {
+  return 'setparams=' + Object.keys(stamp).map((k) => `${k}=${stamp[k]}`).join(':');
+}
+
+/* HDR metadata a re-encode does NOT carry (mastering display, content light,
+   Dolby Vision). Transfer/primaries TAGS carry fine; this is the brightness/
+   volume metadata layered on top. Detection only — preservation is a
+   deferred, separate task — but the operator must SEE the drop, so runBatch
+   logs it, the file-done event carries it, and the UI surfaces it. */
+function detectDroppedHdrMeta(probeStreams, frameColor) {
+  const labels = new Set();
+  const scan = (sdl) => {
+    for (const sd of sdl || []) {
+      const t = String(sd.side_data_type || '');
+      if (/Mastering display/i.test(t)) labels.add('mastering display');
+      if (/Content light/i.test(t)) labels.add('content light level');
+      if (/DOVI|Dolby Vision/i.test(t)) labels.add('Dolby Vision');
+    }
+  };
+  for (const st of probeStreams || []) {
+    if (st.codec_type === 'video') scan(st.side_data_list);
+  }
+  scan(frameColor ? frameColor.side_data_list : null);
+  return [...labels];
+}
+function buildColorArgs(videoStream, { withRange }) {
+  const colorArgs = [];
+  const prim = encoderColorValue('color_primaries', videoStream?.color_primaries);
+  if (prim) colorArgs.push('-color_primaries', prim);
+  const trc = encoderColorValue('color_trc', videoStream?.color_transfer);
+  if (trc) colorArgs.push('-color_trc', trc);
+  const csp = encoderColorValue('colorspace', videoStream?.color_space);
+  if (csp) colorArgs.push('-colorspace', csp);
+  if (withRange) {
+    const range = encoderColorValue('color_range', videoStream?.color_range);
+    if (range) colorArgs.push('-color_range', range);
+  }
+  return colorArgs;
+}
+
+function buildArgs({ input, tmpOut, tier, videoStream, audioStream, dropColorTags, colorStamp }) {
   const args = ['-y', '-nostdin', '-hide_banner', '-loglevel', 'error', '-stats', '-i', input];
   const tenBit = is10Bit(videoStream?.pix_fmt);
 
-  const colorArgs = [];
-  if (videoStream?.color_primaries && videoStream.color_primaries !== 'unknown')
-    colorArgs.push('-color_primaries', videoStream.color_primaries);
-  if (videoStream?.color_transfer && videoStream.color_transfer !== 'unknown')
-    colorArgs.push('-color_trc', videoStream.color_transfer);
-  if (videoStream?.color_space && videoStream.color_space !== 'unknown')
-    colorArgs.push('-colorspace', videoStream.color_space);
-  if (videoStream?.color_range && videoStream.color_range !== 'unknown')
-    colorArgs.push('-color_range', videoStream.color_range);
+  /* Color carry: stamp container-declared color onto untagged frames.
+     colorStamp is null for fully-tagged (and fully-untagged) sources — in
+     which case NO -vf is injected and the args are identical to before. */
+  if (colorStamp && !dropColorTags) args.push('-vf', setparamsArg(colorStamp));
+
+  const colorArgs = dropColorTags ? [] : buildColorArgs(videoStream, { withRange: true });
 
   if (tier === 'regular') {
     args.push('-c:v', 'hevc_videotoolbox', '-q:v', String(TIER_CONSTANTS.regular.qv), '-tag:v', 'hvc1');
@@ -385,20 +522,14 @@ function buildArgs({ input, tmpOut, tier, videoStream, audioStream }) {
   return args;
 }
 
-function buildFallbackArgs({ input, tmpOut, tier, videoStream, audioStream }) {
+function buildFallbackArgs({ input, tmpOut, tier, videoStream, audioStream, dropColorTags, colorStamp }) {
   const args = ['-y', '-nostdin', '-hide_banner', '-loglevel', 'error', '-stats', '-i', input];
   const tenBit = is10Bit(videoStream?.pix_fmt);
+  if (colorStamp && !dropColorTags) args.push('-vf', setparamsArg(colorStamp));
   args.push('-c:v', 'libx265', '-crf', '22', '-preset', 'medium', '-tag:v', 'hvc1');
   if (tenBit) args.push('-pix_fmt', 'yuv420p10le');
 
-  const colorArgs = [];
-  if (videoStream?.color_primaries && videoStream.color_primaries !== 'unknown')
-    colorArgs.push('-color_primaries', videoStream.color_primaries);
-  if (videoStream?.color_transfer && videoStream.color_transfer !== 'unknown')
-    colorArgs.push('-color_trc', videoStream.color_transfer);
-  if (videoStream?.color_space && videoStream.color_space !== 'unknown')
-    colorArgs.push('-colorspace', videoStream.color_space);
-  args.push(...colorArgs);
+  args.push(...(dropColorTags ? [] : buildColorArgs(videoStream, { withRange: false })));
 
   if (audioStream) {
     const aCodec = (audioStream.codec_name || '').toLowerCase();
@@ -534,6 +665,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
   let destLost = false;     // sticky once the destination is confirmed gone
   let alreadyDone = 0;
   let reclaimed = 0;
+  let hdrMetaDropped = 0;   // files whose HDR side data (mastering/CLL/DV) can't survive re-encode
   const startTs = Date.now();
 
   const ffmpeg = bins.ffmpeg;   // resolved + verified above (single bundled engine)
@@ -668,7 +800,21 @@ async function runBatch(batch, controlOrFn, onProgress) {
     const as = pickAudioStream(probe?.streams);
     const durationSec = Number(probe?.format?.duration || 0) || v.duration || 0;
 
-    const args = buildArgs({ input: v.file, tmpOut: tmpPath, tier, videoStream: vs, audioStream: as });
+    /* Color carry: compare bitstream truth (first frame) against the
+       stream-level declaration; stamp only the gap. HDR side data that a
+       re-encode can't carry is detected here so the drop is VISIBLE. */
+    const frameColor = await ffprobeFrameColor(v.file);
+    const colorStamp = resolveColorStamp(frameColor, vs);
+    if (colorStamp) {
+      log(`COLOR-STAMP ${v.file} :: ${setparamsArg(colorStamp).slice('setparams='.length)} (declared by source but missing on frames — carried onto output)`);
+    }
+    const hdrMeta = detectDroppedHdrMeta(probe?.streams, frameColor);
+    if (hdrMeta.length) {
+      hdrMetaDropped++;
+      log(`HDR-METADATA ${v.file} :: ${hdrMeta.join(', ')} — re-encoding does not carry this metadata (color tags are preserved; HDR brightness metadata is dropped)`);
+    }
+
+    const args = buildArgs({ input: v.file, tmpOut: tmpPath, tier, videoStream: vs, audioStream: as, colorStamp });
 
     let stderrBuf = '';
     const result = await runCmd(ffmpeg, args, {
@@ -730,6 +876,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
 
     let success = result.code === 0 && fs.existsSync(tmpPath);
     let usedFallback = false;
+    let usedColorStrip = false;
 
     if (!success) {
       try { await fsp.unlink(tmpPath); } catch {}
@@ -756,7 +903,71 @@ async function runBatch(batch, controlOrFn, onProgress) {
         continue;
       }
 
-      const fallbackArgs = buildFallbackArgs({ input: v.file, tmpOut: tmpPath, tier, videoStream: vs, audioStream: as });
+      /* BACKSTOP for the color-tag vocabulary gap: "Error applying encoder
+         options" + EINVAL means the option VOCABULARY was rejected (in
+         practice a color tag the whitelist above didn't anticipate), not a
+         media problem — so retry this file ONCE on the SAME encoder with all
+         color tags stripped before falling back. A cosmetic tag is never
+         worth a dead job. */
+      const optRejected = /Error applying encoder options|Error applying option .* to filter 'setparams'/.test(stderrBuf);
+      if (optRejected) {
+        const bareArgs = buildArgs({ input: v.file, tmpOut: tmpPath, tier, videoStream: vs, audioStream: as, dropColorTags: true });
+        let stderrBuf3 = '';
+        const r3 = await runCmd(ffmpeg, bareArgs, {
+          onSpawn,
+          stallTimeoutMs: STALL_TIMEOUT_MS,
+          isPaused,
+          isCancelled,
+          onStderr: (chunk) => {
+            stderrBuf3 += chunk;
+            if (stderrBuf3.length > 20000) stderrBuf3 = stderrBuf3.slice(-10000);
+            const t = parseFFmpegTime(chunk);
+            if (t != null && durationSec > 0) {
+              onProgress && onProgress({
+                type: 'file-progress',
+                index: i + 1,
+                total: totalFiles,
+                fileProgress: Math.max(0, Math.min(1, t / durationSec))
+              });
+            }
+          }
+        });
+        if (isCancelled()) {
+          try { await fsp.unlink(tmpPath); } catch {}
+          log(`CANCELLED ${v.file} (operator cancel — no-color retry terminated)`);
+          onProgress && onProgress({
+            type: 'file-done',
+            index: i + 1, total: totalFiles,
+            file: v.file, basename: path.basename(v.file),
+            reclaimed, processed, failed, alreadyDone,
+            elapsedMs: Date.now() - startTs,
+            outcome: 'cancelled'
+          });
+          break;
+        }
+        if (r3.stalled) {
+          try { await fsp.unlink(tmpPath); } catch {}
+          log(`STALL ${v.file} (no-color retry produced no output for ${Math.round(STALL_TIMEOUT_MS / 1000)}s; terminated)`);
+          if (!(await isDestWritable(runDir))) { recordDestLost(v, i); break; }
+          if (!(await isSourceReadable(v.file))) { recordSourceMissing(v, i); continue; }
+          await recordPlainFailure(v, i);
+          continue;
+        }
+        success = r3.code === 0 && fs.existsSync(tmpPath);
+        if (success) {
+          usedColorStrip = true;
+          log(`RETRY-OK ${v.file} (encoder rejected a color tag; re-encoded without color tags)`);
+        } else {
+          try { await fsp.unlink(tmpPath); } catch {}
+          log(`RETRY-FAIL ${v.file} :: code=${r3.code} :: ${stderrBuf3.trim().split('\n').slice(-3).join(' | ')}`);
+        }
+      }
+
+      if (!success) {
+      /* The fallback inherits dropColorTags when the primary's options were
+         rejected — its color args share the same vocabulary, so re-sending
+         them would fail identically. */
+      const fallbackArgs = buildFallbackArgs({ input: v.file, tmpOut: tmpPath, tier, videoStream: vs, audioStream: as, dropColorTags: optRejected, colorStamp });
       let stderrBuf2 = '';
       const r2 = await runCmd(ffmpeg, fallbackArgs, {
         onSpawn,
@@ -807,6 +1018,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
         try { await fsp.unlink(tmpPath); } catch {}
         log(`FALLBACK-FAIL ${v.file} :: code=${r2.code} :: ${stderrBuf2.trim().split('\n').slice(-3).join(' | ')}`);
       }
+      }
     }
 
     if (success) {
@@ -817,7 +1029,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
       reclaimed += saved;
       processed++;
       done++;
-      log(`OK${usedFallback ? '-FALLBACK' : ''} ${v.file} -> ${finalPath} :: in=${humanBytes(v.size)} out=${humanBytes(outStat.size)} saved=${humanBytes(saved)}`);
+      log(`OK${usedFallback ? '-FALLBACK' : usedColorStrip ? '-NOCOLOR' : ''} ${v.file} -> ${finalPath} :: in=${humanBytes(v.size)} out=${humanBytes(outStat.size)} saved=${humanBytes(saved)}`);
       onProgress && onProgress({
         type: 'file-done',
         index: i + 1,
@@ -833,7 +1045,9 @@ async function runBatch(batch, controlOrFn, onProgress) {
         failed,
         alreadyDone,
         elapsedMs: Date.now() - startTs,
-        outcome: usedFallback ? 'ok-fallback' : 'ok'
+        outcome: usedFallback ? 'ok-fallback' : 'ok',
+        // HDR side data the re-encode could not carry — surfaced on the row.
+        hdrMeta: hdrMeta.length ? hdrMeta : undefined
       });
     } else {
       /* Preserve the original next to the run for forensics. Correct for a
@@ -847,6 +1061,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
 
   log(`# Run finished ${new Date().toISOString()}`);
   log(`# Totals: processed=${processed} failed=${failed} (copied-to-_FAILED=${failedCopied}, source-unreadable=${failedNoCopy}, dest-lost=${failedDestLost}) already-done=${alreadyDone} ignored-non-video=${scan.ignored} reclaimed=${humanBytes(reclaimed)}`);
+  if (hdrMetaDropped > 0) log(`# HDR: ${hdrMetaDropped} file(s) carried HDR metadata (mastering display / content light / Dolby Vision) that re-encoding drops — color tags preserved, HDR brightness metadata not carried`);
   if (destLost) log(`# Destination became unavailable during the run — remaining files were not attempted. Originals untouched.`);
   logStream.end();
 
@@ -862,7 +1077,8 @@ async function runBatch(batch, controlOrFn, onProgress) {
     alreadyDone,
     skippedNonVideo: scan.ignored,
     reclaimed,
-    totalFiles
+    totalFiles,
+    hdrMetaDropped
   };
 }
 
@@ -913,5 +1129,16 @@ module.exports = {
   isDestWritable,
   isSourceReadable,
   VIDEO_EXTS,
-  TIER_CONSTANTS
+  TIER_CONSTANTS,
+  buildArgs,
+  buildFallbackArgs,
+  buildColorArgs,
+  encoderColorValue,
+  COLOR_OPT_ACCEPTED,
+  COLOR_NAME_TO_OPT,
+  ffprobeFrameColor,
+  resolveColorStamp,
+  setparamsArg,
+  detectDroppedHdrMeta,
+  SETPARAMS_ACCEPTED
 };

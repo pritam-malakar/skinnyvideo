@@ -98,8 +98,15 @@ function createWindow() {
     height: 900,
     minWidth: 1080,
     minHeight: 760,
-    backgroundColor: '#1a1d22',
+    /* Pass 7 — REVERSES Pass 3's OS vibrancy. The window is now OPAQUE and the
+       renderer paints its own atmospheric backdrop (the mockup's gradient stack),
+       exactly like the mockup .html. Real OS vibrancy is dropped: it required a
+       transparent window over a near-black desktop, which made the frosted panels
+       sample a dark backdrop and read flat/sunken. An opaque painted backdrop is
+       what gives the milky floating panels. backgroundColor = the mockup canvas. */
+    backgroundColor: '#05070a',
     titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 16, y: 18 },
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

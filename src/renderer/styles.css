@@ -22,64 +22,211 @@
    Tokens
    ============================================================ */
 :root {
-  --bg-0: oklch(0.155 0.008 248);
-  --bg-1: oklch(0.185 0.008 248);
-  --bg-2: oklch(0.215 0.009 248);
-  --bg-3: oklch(0.245 0.010 248);
-  --bg-hover: oklch(0.265 0.011 248);
+  /* ============================================================
+     PALETTE — canonical color-token layer (Pass 1 re-skin: oklch→hex,
+     toward the frosted-glass dark aesthetic). RAW color values live
+     ONLY here; the body reads tokens. Color SEMANTICS are unchanged —
+     only the literal values move. Legacy --bg/--fg/--cyan/etc. names
+     are kept as ALIASES at the bottom so existing rules need no rename.
+     Pass 2 brings glass material, motion, vibrancy — not here.
+     ============================================================ */
 
-  --border-subtle: oklch(0.285 0.011 248);
-  --border: oklch(0.325 0.013 248);
-  --border-strong: oklch(0.395 0.015 248);
+  /* operational / brand (cyan) — active / selection / Start */
+  --operational:#34D6F0;
+  --operational-tint:rgba(52,214,240,.10);
+  --operational-pill:rgba(52,214,240,.16);
+  --operational-line:rgba(52,214,240,.42);
+  --operational-glow:rgba(52,214,240,.45);
+  --operational-sheen:rgba(52,214,240,.30);       /* accent inset highlight */
+  --operational-sheen-soft:rgba(52,214,240,.20);
+  --operational-dim:oklch(0.66 0.14 211);         /* darker end of bar fills */
+  --operational-edge:oklch(0.60 0.14 211);        /* CTA border */
+  --on-operational:oklch(0.22 0.04 230);          /* dark text ON cyan fill */
+  --operational-surf-1:oklch(0.22 0.03 211);      /* dropzone dragover grad */
+  --operational-surf-2:oklch(0.185 0.02 211);
+  --operational-wash-1:oklch(0.22 0.03 211 / 0.4);/* has-source overlay */
+  --operational-wash-2:oklch(0.185 0.02 211 / 0.4);
 
-  --raise: oklch(0.42 0.014 248 / 0.55);
-  --raise-soft: oklch(0.38 0.013 248 / 0.4);
+  /* recommended tier "Who Cares…" — deep cobalt (was cyan) */
+  --tier-fast:#4C6EF5;
+  --tier-fast-glass:rgba(76,110,245,.07);
+  --tier-fast-pill:rgba(76,110,245,.16);
+  --tier-fast-sel:#6F8BF8;
+  --tier-fast-line:rgba(76,110,245,.42);
+  --tier-fast-glow:rgba(76,110,245,.40);          /* selected/hover glow */
+  --tier-fast-dim:oklch(0.50 0.20 269);
+  --tier-fast-mark:oklch(0.235 0.05 269);         /* dark accent icon plate */
 
-  --fg: oklch(0.97 0.004 248);
-  --fg-2: oklch(0.78 0.008 248);
-  --fg-3: oklch(0.58 0.010 248);
-  --fg-4: oklch(0.46 0.010 248);
+  /* archival tier "Probably Need It Later" — iris violet */
+  --tier-arch:#A78BFA;
+  --tier-arch-glass:rgba(167,139,250,.07);
+  --tier-arch-pill:rgba(167,139,250,.16);
+  --tier-arch-sel:#B9A2FB;
+  --tier-arch-line:rgba(167,139,250,.30);
+  --tier-arch-glow:rgba(167,139,250,.38);         /* selected/hover glow */
+  --tier-arch-dim:oklch(0.56 0.16 293);
+  --tier-arch-mark:oklch(0.235 0.06 293);
 
-  --cyan: oklch(0.76 0.115 215);
-  --cyan-dim: oklch(0.62 0.090 215);
-  --cyan-tint: oklch(0.76 0.115 215 / 0.08);
-  --cyan-tint-strong: oklch(0.76 0.115 215 / 0.16);
-  --cyan-line: oklch(0.76 0.115 215 / 0.42);
+  /* semantic anchors — success GREEN-only; failure RED */
+  --success:#3DDC97;
+  --success-pill:rgba(61,220,151,.14);
+  --success-line:rgba(61,220,151,.40);
+  --failure:#FF5E5E;
+  --failure-pill:rgba(255,94,94,.12);
+  --failure-line:rgba(255,94,94,.50);
 
-  --violet: oklch(0.72 0.115 295);
-  --violet-dim: oklch(0.58 0.105 295);
-  --violet-tint: oklch(0.72 0.115 295 / 0.08);
-  --violet-line: oklch(0.72 0.115 295 / 0.28);
-
-  --amber: oklch(0.80 0.110 78);
-  --amber-dim: oklch(0.68 0.105 78);
-  --amber-tint: oklch(0.80 0.110 78 / 0.08);
-  --amber-line: oklch(0.80 0.110 78 / 0.28);
-
-  --green: oklch(0.76 0.095 148);
-  --green-dim: oklch(0.62 0.090 148);
-  --red:   oklch(0.68 0.140 25);
-  --red-dim: oklch(0.58 0.130 25);
+  /* amber — PAUSED / caution indicator. Refined value, SAME role.
+     SEPARATE token from --orange below; never merge/swap/repurpose. */
+  --amber:#FFB340;
+  --amber-tint:rgba(255,179,64,.10);
+  --amber-line:rgba(255,179,64,.28);
+  --amber-line-strong:rgba(255,179,64,.40);
+  --amber-fill:rgba(255,179,64,.30);              /* switch track / tier line */
+  --amber-wash:rgba(255,179,64,.14);
+  --amber-hatch:rgba(255,179,64,.05);             /* preview diagonal hatch */
+  --amber-dim:oklch(0.70 0.15 73);
+  --amber-soft:oklch(0.85 0.06 73);               /* light warm body text */
+  --amber-mark:oklch(0.245 0.06 73);
+  --amber-surf-1:oklch(0.265 0.07 73 / 0.55);     /* preview-bar gradient */
+  --amber-surf-2:oklch(0.215 0.05 73 / 0.55);
 
   /* Orange = "your next action, act here." Reserved EXCLUSIVELY for the single
      required next step in the guided flow (Select location / Add batch /
-     Start). Light + desaturated (chroma below cyan/violet) for AA on the dark
-     surface and to avoid vibrating against them. Measured contrast on the dark
-     UI: ~9:1 text (≥4.5 AA), ~5:1 translucent border (≥3 AA component). */
+     Start). UNCHANGED value (no collision with the refined amber). Light +
+     desaturated (chroma below cyan/violet) for AA on the dark surface and to
+     avoid vibrating. Measured contrast: ~9:1 text (≥4.5 AA), ~5:1 border. */
   --orange:             oklch(0.78 0.105 58);
-  --orange-dim:         oklch(0.66 0.10 58);
   --orange-tint:        oklch(0.78 0.105 58 / 0.10);
   --orange-tint-strong: oklch(0.78 0.105 58 / 0.18);
   --orange-line:        oklch(0.78 0.105 58 / 0.55);
   --orange-glow:        oklch(0.78 0.105 58 / 0.40);
+
+  /* canvas / surface ramp (cool near-black, hue ~254) */
+  --canvas:#0B0F14;
+  --canvas-wash:rgba(11,15,20,.55);    /* translucent --canvas — body tint over OS vibrancy (Pass 3) */
+  --app-glass:rgba(11,14,20,.66);      /* frosted window-surface on .app — mockup's .window base */
+  /* Pass 7: mockup's atmospheric backdrop, painted OPAQUE on the body (replaces
+     OS vibrancy). Exact values from the mockup CSS. THIS bright backdrop is what
+     makes the frosted panels read milky and lift. */
+  --bd-cool:#16263f;                   /* desktop bloom — cool navy (top-left) */
+  --bd-violet:#2a1f3d;                 /* desktop bloom — violet (bottom-right) */
+  /* desktop base linear — floor lifted off pure black (orig 0a0e15/070a0f/05070a) but
+     held PARTWAY (~+4) so darkest corners read deep-but-not-dead (~L12) while panels still
+     separate clearly (their v3 shadow + the .065 glass fill carry the edge). Cool tint kept. */
+  --bd-1:#0c111b; --bd-2:#0a0e16; --bd-3:#090c13;
+  --surface-1:#14181D;
+  --surface-2:#1B2026;
+  --surface-3:oklch(0.278 0.013 254);
+  --surface-hover:oklch(0.305 0.013 254);
+  --row-divider:oklch(0.242 0.012 254);           /* faint inter-row line */
+  --row-hover:oklch(0.192 0.012 254);
+  --lt-hover:oklch(0.222 0.012 254);
+
+  /* structure — opaque borders kept (material is unchanged in Pass 1);
+     translucent hairlines defined for Pass 2 but NOT yet applied. */
+  --border-subtle:oklch(0.322 0.012 254);
+  --border:oklch(0.362 0.014 254);
+  --border-strong:oklch(0.43 0.016 254);
+  --hairline:rgba(255,255,255,.06);
+  --hairline-strong:rgba(255,255,255,.10);
+  --lit-edge:rgba(255,255,255,.14);
+
+  /* glass material (Pass 2) — tonal-lift gradient + grain. Reuse existing
+     white-alpha tokens; no new color value. */
+  --sheen-hi:rgba(255,255,255,.06);    /* Pass 7: mockup .glass white ~.05 — milky over the bright backdrop */
+  --sheen-lo:rgba(255,255,255,.04);
+  --grain-opacity:0.05;                /* film-grain overlay strength — raised from .035 to break atmosphere banding */
+
+  /* Pass 7 reset — v3 layer-stack tokens, ported verbatim from squeeze_mockup_v3.html.
+     The glow comes from this translucent stack (atmosphere -> window -> bloom -> glass),
+     NOT from fills or OS vibrancy. */
+  --hi-edge:rgba(255,255,255,.08);      /* v3 --hi-edge: glass top highlight */
+  --win-edge:rgba(255,255,255,.09);     /* v3 .window inset top highlight */
+  --glass-bg:rgba(255,255,255,.065);    /* v3 .glass fill, nudged .05->.065 to restore panel/canvas separation after the floor came back down */
+  --glass-tint:rgba(255,255,255,.035);  /* v3 tier idle 2nd gradient stop */
+  --shadow-75:rgba(0,0,0,.75);          /* v3 tier idle drop */
+  --shadow-80:rgba(0,0,0,.8);           /* v3 glass + selected-tier drop */
+  --shadow-92:rgba(0,0,0,.92);          /* v3 .window drop */
+  /* v3 edge recipe + a tighter ALL-SIDES drop so the edge reads on thin rows (output/
+     writes) at wide width — the deep -24px-spread drop alone collapses to a below-only
+     glow on short elements, dissolving the left/right edges against blooms. */
+  --glass-shadow:inset 0 1px 0 var(--hi-edge), 0 2px 14px -4px var(--shadow-70), 0 20px 48px -24px var(--shadow-80);
+  /* solid frosted button chips — a touch more opaque than panels so they read as pressable controls */
+  --btn-glass-hi:rgba(255,255,255,.13);
+  --btn-glass-lo:rgba(255,255,255,.07);
+  --btn-glass:linear-gradient(180deg, var(--btn-glass-hi), var(--btn-glass-lo));
+
+  /* motion grammar (Pass 4) — single source of truth for new micro-interactions.
+     All consuming rules are gated behind @media (prefers-reduced-motion:
+     no-preference); these are time/easing values, not colors. */
+  --dur-micro:140ms;
+  --dur-base:240ms;
+  --dur-page:380ms;
+  --ease-out-quint:cubic-bezier(.32,.72,0,1);
+  --ease-settle:cubic-bezier(.22,1,.36,1);
+
+  /* neutral text ramp */
+  --text-high:#F2F4F7;
+  --text-mid:#A8B0BA;
+  --text-low:#6E7682;
+  --text-lower:oklch(0.50 0.014 254);             /* was --fg-4 */
+
+  /* white sheen / black shadow — color+alpha tokens only; the box-shadow
+     offsets & blur radii stay inline (they belong to Pass 2 material). */
+  --sheen-18:rgba(255,255,255,.18);
+  --sheen-32:rgba(255,255,255,.32);
+  --raise:oklch(0.42 0.014 254 / 0.55);
+  --raise-soft:oklch(0.38 0.013 254 / 0.4);
+  --shadow-35:rgba(0,0,0,.35);
+  --shadow-38:rgba(0,0,0,.38);
+  --shadow-40:rgba(0,0,0,.40);
+  --shadow-45:rgba(0,0,0,.45);
+  --shadow-50:rgba(0,0,0,.50);
+  --shadow-55:rgba(0,0,0,.55);
+  --shadow-60:rgba(0,0,0,.60);
+  --shadow-70:rgba(0,0,0,.70);
+  --shadow-78:rgba(0,0,0,.78);
+
+  /* atmospheric background glows */
+  --atmos-cyan:oklch(0.30 0.03 211 / 0.16);
+  --atmos-violet:oklch(0.30 0.04 293 / 0.08);
+
+  /* ---- legacy aliases → canonical tokens (avoids body-wide rename) ---- */
+  --bg-0:var(--canvas);
+  --bg-1:var(--surface-1);
+  --bg-2:var(--surface-2);
+  --bg-3:var(--surface-3);
+  --bg-hover:var(--surface-hover);
+  --fg:var(--text-high);
+  --fg-2:var(--text-mid);
+  --fg-3:var(--text-low);
+  --fg-4:var(--text-lower);
+  --cyan:var(--operational);
+  --cyan-dim:var(--operational-dim);
+  --cyan-tint:var(--operational-tint);
+  --cyan-tint-strong:var(--operational-pill);
+  --cyan-line:var(--operational-line);
+  --violet:var(--tier-arch);
+  --violet-dim:var(--tier-arch-dim);
+  --violet-tint:var(--tier-arch-glass);
+  --green:var(--success);
+  --red:var(--failure);
 
   --font-sans: "Geist", "General Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "Geist Mono", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; background: var(--bg-0); color: var(--fg); font-family: var(--font-sans); }
+/* Pass 7: opaque window (vibrancy dropped). The body paints the mockup's
+   atmospheric backdrop directly — the bright field the frosted panels lift off. */
+html, body { margin: 0; padding: 0; background: var(--bd-3); color: var(--fg); font-family: var(--font-sans); }
 body {
+  background:
+    /* FIX B (v2.2.0): wider, gentler teal reaching up to the very top edge */
+    radial-gradient(1500px 1000px at 14% -8%, var(--bd-cool), transparent 64%),
+    /* TWEAK 2 (v2.2.0): bottom-right violet atmosphere — smaller + faded so it's a hint, not a glow */
+    radial-gradient(600px 560px at 108% 116%, color-mix(in srgb, var(--bd-violet) 50%, transparent), transparent 55%),
+    linear-gradient(160deg, var(--bd-1) 0%, var(--bd-2) 60%, var(--bd-3) 100%);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -90,14 +237,63 @@ body {
 }
 .mono, code, kbd, .qfoot, .qhead, .qrow .mono { font-family: var(--font-mono); font-feature-settings: "zero", "ss01"; letter-spacing: 0; }
 
+/* Pass 3: real OS vibrancy is now the backdrop, so this simulated atmosphere is
+   reduced to a faint brand-tinted glow riding over the vibrancy (not removed —
+   it keeps the cyan/violet character). Grain (body::after) is unchanged. */
+/* Pass 7 tweak: v3's colored bloom as a FULL-WINDOW fixed layer (not bounded to
+   .app, so no box/seam). With .app's blur44 gone, the panels sample this cleanly
+   for their glow — no wash-out. v3 .window::before intensities (cyan .08,
+   accent-center .05, violet .07); center bloom rose -> cobalt per locked palette. */
 body::before {
   content: "";
   position: fixed; inset: 0;
   pointer-events: none;
-  background:
-    radial-gradient(1200px 600px at 20% -10%, oklch(0.27 0.010 220 / 0.16), transparent 60%),
-    radial-gradient(900px 500px at 100% 0%, oklch(0.26 0.014 295 / 0.08), transparent 60%);
   z-index: 0;
+  background:
+    /* FIX B (v2.2.0): wider/softer cyan bloom, reaches up into the title-bar zone */
+    radial-gradient(1040px 660px at 8% 3%, color-mix(in srgb, var(--operational) 8%, transparent), transparent 72%),
+    radial-gradient(520px 380px at 40% 64%, color-mix(in srgb, var(--tier-fast) 5%, transparent), transparent 58%),
+    /* bottom-right violet bloom — faint hint (v2.2.0 TWEAK 2) */
+    radial-gradient(420px 340px at 94% 98%, color-mix(in srgb, var(--tier-arch) 4%, transparent), transparent 60%),
+    /* v2.2.0 counter-blooms — fill the dead OPPOSITE corners at wide/fullscreen widths so
+       the field reads balanced edge-to-edge. Viewport-relative (this layer is fixed),
+       and clearly SECONDARY: ~half the primaries' alpha, large soft radius, barely-there. */
+    radial-gradient(900px 560px at 3% 97%, color-mix(in srgb, var(--operational) 4%, transparent), transparent 66%),
+    radial-gradient(820px 520px at 97% 3%, color-mix(in srgb, var(--tier-arch) 2%, transparent), transparent 66%);
+}
+
+/* Film grain — external SVG feTurbulence (CSP default-src 'self' blocks a
+   data: URI, so it's a same-origin asset). Sits above the panels; overlay
+   blend + ~3.5% keeps it imperceptible on text and never blocks pointer. */
+body::after {
+  content: "";
+  position: fixed; inset: 0;
+  pointer-events: none;
+  /* z-index 0 (was 200): grain belongs to the CANVAS — it sits over the atmosphere/
+     blooms (anti-banding) but BELOW the panels (.app z1), so it never hazes a panel's
+     lit edge / drop shadow / surface. Panels still pick up faint grain through their
+     own backdrop-filter (frosted atmosphere), which is correct. */
+  z-index: 0;
+  background-image: url("grain.svg");
+  background-size: 160px 160px;
+  opacity: var(--grain-opacity);
+  mix-blend-mode: overlay;
+}
+
+/* TWEAK 2 (v2.2.0 fix): real top BLUR band — content blurs and dissolves into the
+   frosted atmosphere as it scrolls up (no dark vignette). Fixed, masked to fade
+   out, above content (z 4) but below the titlebar (z 5) + grain (z 200). The
+   atmosphere still shows through; nothing is darkened. */
+.top-blur {
+  position: fixed; top: 0; left: 0; right: 0; height: 64px;
+  z-index: 4;
+  pointer-events: none;
+  /* FIX A (v2.2.0): pure blur, NO saturate — the top band must not shift the
+     atmosphere's tone/chroma, so it can't read as a "different" strip. */
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  -webkit-mask-image: linear-gradient(to bottom, black 0, black 28%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 0, black 28%, transparent 100%);
 }
 
 /* ============================================================
@@ -107,8 +303,10 @@ body::before {
   height: 36px;
   display: flex; align-items: center;
   gap: 10px; padding: 0 14px 0 90px; /* leave space for macOS traffic lights */
-  border-bottom: 1px solid var(--border-subtle);
-  background: linear-gradient(to bottom, oklch(0.21 0.008 248), oklch(0.185 0.008 248));
+  /* Pass 3: transparent so OS vibrancy shows in the top strip; keeps the drag
+     region + run-status tag. Faint hairline instead of an opaque divider. */
+  border-bottom: none;   /* Pass 6 (v3): drop the partial full-width seam; borderless window */
+  background: transparent;
   position: sticky; top: 0; z-index: 5;
   -webkit-app-region: drag;
   user-select: none;
@@ -135,37 +333,13 @@ body::before {
 }
 .tl-tag.running { color: var(--cyan); border-color: var(--cyan-line); background: var(--cyan-tint); }
 .tl-tag.running::before { animation: pulse 1.4s ease-in-out infinite; }
-.tl-tag.paused  { color: var(--amber); border-color: oklch(0.80 0.110 78 / 0.40); background: oklch(0.80 0.110 78 / 0.10); }
-.tl-tag.failed  { color: var(--red);  border-color: oklch(0.70 0.19 25 / 0.50); background: oklch(0.70 0.19 25 / 0.10); }
+.tl-tag.paused  { color: var(--amber); border-color: var(--amber-line-strong); background: var(--amber-tint); }
+.tl-tag.failed  { color: var(--red);  border-color: var(--failure-line); background: var(--failure-pill); }
 
-/* top progress strip during runs */
-.top-progress {
-  position: fixed;
-  top: 35px; left: 0; right: 0;
-  height: 2px;
-  z-index: 100;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity .3s ease;
-}
-.top-progress.active {
-  opacity: 1;
-  background: linear-gradient(90deg, transparent 0%, var(--cyan) 30%, var(--cyan-dim) 50%, var(--cyan) 70%, transparent 100%);
-  background-size: 200% 100%;
-  animation: tp-shimmer 1.6s linear infinite;
-}
+/* top progress strip REMOVED entirely — no progress line at the top of the window. */
 @keyframes tp-shimmer {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
-}
-/* Paused queue: the top line STOPS moving and reads static amber (the same
-   paused token as .tl-tag.paused / the paused pills). Overrides the cyan
-   shimmer of .active — two classes, so it wins regardless of source order.
-   Uses var(--amber), never a hardcoded hex, so a future re-skin swaps it. */
-.top-progress.active.paused {
-  background: var(--amber);
-  background-size: auto;
-  animation: none;
 }
 
 /* ============================================================
@@ -174,9 +348,21 @@ body::before {
 .app {
   position: relative;
   z-index: 1;
+  /* Pass 7 tweak: the app IS the OS window, so v3's ".window" box treatment
+     (translucent fill + blur44 frost) read as a redundant box-in-a-box. It's
+     removed — .app is transparent and content sits directly on the body
+     atmosphere. The light layers behind it STAY: the body atmosphere (teal/violet
+     blooms + dark base) and the colored bloom (body::before) — the panels still
+     frost those for their glow + elevation. No fill, no blur, no edge = no box. */
+  background: transparent;
   max-width: 1180px;
   margin: 0 auto;
-  padding: 20px 40px 40px;
+  /* TWEAK 2 (v2.2.0 fix): top spacing so content doesn't butt the top edge */
+  padding: 52px 40px 40px;
+  /* + content fades out as it scrolls up (paired with the .top-blur band) — a
+     soft frosted dissolve, NOT a dark vignette */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 48px);
+  mask-image: linear-gradient(to bottom, transparent 0, black 48px);
   height: calc(100vh - 36px);
   overflow-y: auto;
   scrollbar-width: none;
@@ -188,7 +374,7 @@ body::before {
 }
 /* Keep every section at its natural height — flex must not shrink content to
    fit; let the column scroll instead. */
-.app > * { flex-shrink: 0; }
+.app > * { flex-shrink: 0; position: relative; z-index: 1; }  /* content above the body::before bloom; backdrop-filter still samples it as backdrop */
 .app::-webkit-scrollbar { width: 0; height: 0; display: none; }
 
 /* Footer — app version, right-aligned, pinned to the bottom of the column. */
@@ -231,18 +417,31 @@ body::before {
   position: relative;
   padding: 28px 32px;
   border-radius: 14px;
-  background: linear-gradient(180deg, oklch(0.195 0.008 248), oklch(0.170 0.008 248));
-  border: 1px solid var(--border-subtle);
-  box-shadow:
-    inset 0 1px 0 var(--raise-soft),
-    0 1px 0 oklch(0 0 0 / 0.4),
-    0 16px 36px -28px oklch(0 0 0 / 0.55);
+  background: var(--glass-bg);                 /* v3 .glass: flat translucent fill */
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+  border: none;                                /* v3 .glass has no border */
+  box-shadow: var(--glass-shadow);             /* v3 --glass-shadow */
   overflow: hidden;
   transition: padding .2s ease, border-color .18s ease, background .18s ease;
 }
+/* Pass 5: contained cyan hero glow — a soft, diffuse ambient bloom centred behind
+   the icon/headline (NOT a bright bar on the top edge). Large radius + low peak
+   (--operational-pill .16) + long falloff so there's no hard edge at the lit
+   border. Clipped by the dropzone's overflow:hidden (no bleed); sits above the
+   frost, below content (lifted to z-index:1). Existing operational tokens only. */
+/* Pass 6 (v3 exact): no contained dropzone glow — v3's cyan is purely the ambient
+   window bloom (body::before), which spills across the field and subtly tints the
+   nearby panel frost. The .dz-inner/.dz-loaded z-index:1 below is now moot but
+   harmless. */
+.dropzone .dz-inner,
+.dropzone .dz-loaded { position: relative; z-index: 1; }
 .dropzone.dragover {
   border-color: var(--cyan-line);
-  background: linear-gradient(180deg, oklch(0.215 0.022 215), oklch(0.180 0.014 215));
+  /* translucent accent wash OVER the v3 glass fill so the frost persists */
+  background:
+    linear-gradient(180deg, var(--operational-wash-1), var(--operational-wash-2)),
+    var(--glass-bg);
 }
 .dz-inner { display: flex; align-items: center; gap: 22px; position: relative; }
 /* Drop-zone icon doubles as a click-to-browse button. */
@@ -262,7 +461,7 @@ body::before {
   border-color: var(--cyan-line);
   color: var(--cyan);
 }
-.dz-icon:active { transform: scale(0.96); }
+.dz-icon:active { transform: scale(0.97); }   /* Pass 4: unified press depth */
 .dz-icon svg { width: 22px !important; height: 22px !important; }
 
 .dz-sub {
@@ -284,7 +483,9 @@ body::before {
 /* —— filled state: dropzone holds info, prompt is gone —— */
 .dropzone.has-source {
   padding: 22px 26px;
-  background: linear-gradient(180deg, oklch(0.215 0.018 215 / 0.4), oklch(0.180 0.012 215 / 0.4)), linear-gradient(180deg, oklch(0.195 0.008 248), oklch(0.170 0.008 248));
+  background:
+    linear-gradient(180deg, var(--operational-wash-1), var(--operational-wash-2)),
+    var(--glass-bg);
   border-color: var(--cyan-line);
 }
 .dropzone.has-source .dz-inner { display: none; }
@@ -298,7 +499,7 @@ body::before {
   border-radius: 11px;
   background: var(--cyan-tint);
   border: 1px solid var(--cyan-line);
-  box-shadow: inset 0 1px 0 oklch(0.76 0.115 215 / 0.30);
+  box-shadow: inset 0 1px 0 var(--operational-sheen);
   display: grid; place-items: center;
   color: var(--cyan);
 }
@@ -338,18 +539,21 @@ body::before {
   gap: 14px;
   align-items: center;
   padding: 12px 14px;
-  background: linear-gradient(180deg, var(--bg-2), var(--bg-1));
-  border: 1px solid var(--border);
+  background: var(--glass-bg);                 /* v3 .glass: flat translucent fill */
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+  border: none;                                /* v3 .glass has no border */
   border-radius: 10px;
-  box-shadow: inset 0 1px 0 var(--raise-soft);
+  box-shadow: var(--glass-shadow);             /* v3 --glass-shadow */
   position: relative;
   overflow: hidden;
   transition: background .18s ease, border-color .18s ease;
 }
 .safety-bar[data-mode="preview"] {
+  /* amber wash OVER the glass sheen (keeps frost; backdrop-filter inherited) */
   background:
-    linear-gradient(180deg, oklch(0.265 0.040 78 / 0.55), oklch(0.215 0.028 78 / 0.55)),
-    linear-gradient(180deg, var(--bg-2), var(--bg-1));
+    linear-gradient(180deg, var(--amber-surf-1), var(--amber-surf-2)),
+    var(--glass-bg);
   border-color: var(--amber-line);
 }
 .safety-bar[data-mode="preview"]::before {
@@ -360,8 +564,8 @@ body::before {
     -45deg,
     transparent 0,
     transparent 10px,
-    oklch(0.80 0.110 78 / 0.05) 10px,
-    oklch(0.80 0.110 78 / 0.05) 11px
+    var(--amber-hatch) 10px,
+    var(--amber-hatch) 11px
   );
 }
 .safety-bar > * { position: relative; z-index: 1; }
@@ -399,7 +603,7 @@ body::before {
 .safety-mode::before {
   content: ''; flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%;
   background: var(--cyan-dim);
-  box-shadow: 0 0 6px oklch(0.76 0.115 215 / 0.45);
+  box-shadow: 0 0 6px var(--operational-glow);
 }
 .safety-bar[data-mode="preview"] .safety-mode { color: var(--amber); }
 .safety-bar[data-mode="preview"] .safety-mode::before {
@@ -411,7 +615,7 @@ body::before {
   color: var(--fg-2);     /* AA-compliant body on the bar surface */
   letter-spacing: -0.005em;
 }
-.safety-bar[data-mode="preview"] .safety-sub { color: oklch(0.85 0.045 78); }
+.safety-bar[data-mode="preview"] .safety-sub { color: var(--amber-soft); }
 
 .safety-toggle {
   display: inline-flex; align-items: center; gap: 10px;
@@ -424,7 +628,7 @@ body::before {
   font-size: 11.5px; font-weight: 500;
   text-transform: uppercase; letter-spacing: 0.08em;
   color: var(--fg-2);
-  transition: background .15s ease, border-color .15s ease, color .15s ease;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, transform var(--dur-micro) var(--ease-settle);
 }
 .safety-toggle:hover { background: var(--bg-hover); color: var(--fg); }
 .safety-toggle[aria-pressed="true"] {
@@ -451,9 +655,12 @@ body::before {
 .dest-picker {
   display: flex; align-items: center; gap: 12px;
   padding: 0 14px; height: 46px;
-  background: linear-gradient(180deg, var(--bg-2), var(--bg-1));
-  border: 1px solid var(--border); border-radius: 10px;
-  box-shadow: inset 0 1px 0 var(--raise-soft);
+  background: var(--glass-bg);                 /* v3 .glass: flat translucent fill */
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+  border: none;                                /* v3 .glass has no border */
+  border-radius: 10px;
+  box-shadow: var(--glass-shadow);             /* v3 --glass-shadow */
   min-width: 0;
 }
 .dest-picker .label { font-size: 11px; color: var(--fg-4); text-transform: uppercase; letter-spacing: 0.08em; font-family: var(--font-mono); }
@@ -470,15 +677,20 @@ body::before {
   font-size: 12px;
   font-weight: 500;
   color: var(--cyan);
-  background: var(--cyan-tint);
-  border: 1px solid var(--cyan-line);
+  /* SAME glass material as panels (--glass-bg + blur28 sat170 + --glass-shadow),
+     scaled to button size, + a cyan accent tint in the fill + a cyan own-glow. */
+  background: linear-gradient(180deg, color-mix(in srgb, var(--operational) 16%, transparent), color-mix(in srgb, var(--operational) 10%, transparent)), var(--glass-bg);
+  border: none;
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+  box-shadow: var(--glass-shadow), 0 0 16px -6px color-mix(in srgb, var(--operational) 42%, transparent);
   cursor: pointer;
   padding: 6px 12px;
   border-radius: 7px;
   letter-spacing: -0.005em;
-  transition: background .15s ease, color .15s ease;
+  transition: background .15s ease, color .15s ease, box-shadow .15s ease, transform var(--dur-micro) var(--ease-settle);
 }
-.dest-picker .change:hover:not(:disabled) { background: var(--cyan-tint-strong); color: var(--fg); }
+.dest-picker .change:hover:not(:disabled) { filter: brightness(1.12); }
 .dest-picker .change:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* ─── Generalized switch (used by safety bar) ─── */
@@ -486,7 +698,7 @@ body::before {
   width: 30px; height: 18px; border-radius: 9px;
   background: var(--bg-3); border: 1px solid var(--border);
   position: relative; transition: background .18s ease, border-color .18s ease;
-  box-shadow: inset 0 1px 1px oklch(0 0 0 / 0.4);
+  box-shadow: inset 0 1px 1px var(--shadow-40);
   flex-shrink: 0;
   display: inline-block;
 }
@@ -496,7 +708,7 @@ body::before {
   background: var(--fg-2);
   transition: transform .18s ease, background .18s ease, box-shadow .18s ease;
 }
-[aria-pressed="true"] .sw { background: oklch(0.80 0.110 78 / 0.30); border-color: var(--amber-line); }
+[aria-pressed="true"] .sw { background: var(--amber-fill); border-color: var(--amber-line); }
 [aria-pressed="true"] .sw::after { transform: translateX(12px); background: var(--amber); box-shadow: 0 0 8px var(--amber-dim); }
 
 /* Buttons */
@@ -504,61 +716,65 @@ body::before {
   height: 46px; padding: 0 18px; border-radius: 10px;
   font-family: var(--font-sans); font-size: 13.5px; font-weight: 500;
   cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
-  border: 1px solid var(--border);
-  background: linear-gradient(180deg, var(--bg-3), var(--bg-2));
-  box-shadow: inset 0 1px 0 var(--raise), 0 1px 0 oklch(0 0 0 / 0.4);
+  /* EXACT panel glass material — a button is a small .glass panel: sheen fill +
+     backdrop blur + lit top edge + the panel drop shadow. No bespoke button styling. */
+  border: none;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+  box-shadow: var(--glass-shadow);
   color: var(--fg);
-  transition: background .15s ease, border-color .15s ease, filter .15s ease;
+  transition: background .15s ease, box-shadow .15s ease, filter .15s ease, transform var(--dur-micro) var(--ease-settle);
   white-space: nowrap;
 }
-.btn:hover:not(:disabled) { background: linear-gradient(180deg, var(--bg-hover), var(--bg-3)); }
+.btn:hover:not(:disabled) { filter: brightness(1.14); }
 
 /* Brand CTA — confident cyan, the app's primary action treatment.
    Green is reserved exclusively for success indicators (DONE chip,
    reclaimed total, summary badge), so "go" and "done" no longer
    collide on color. */
 .btn.cta {
-  background: linear-gradient(180deg, var(--cyan) 0%, var(--cyan-dim) 100%);
-  border-color: oklch(0.55 0.110 215);
-  color: oklch(0.16 0.025 215);
+  /* primary: panel glass + strong cyan tint + cyan own-glow */
+  background: linear-gradient(180deg, color-mix(in srgb, var(--operational) 26%, transparent), color-mix(in srgb, var(--operational) 16%, transparent)), var(--glass-bg);
+  border: none;
+  color: var(--cyan);
   font-weight: 600;
-  box-shadow:
-    inset 0 1px 0 oklch(1 0 0 / 0.32),
-    0 1px 0 oklch(0 0 0 / 0.5),
-    0 0 0 1px var(--cyan-line),
-    0 6px 22px -12px var(--cyan-line);
+  box-shadow: var(--glass-shadow), 0 0 22px -6px color-mix(in srgb, var(--operational) 55%, transparent);
 }
-.btn.cta:hover:not(:disabled) { filter: brightness(1.06); }
+.btn.cta:hover:not(:disabled) { filter: brightness(1.08); }
 .btn.cta:disabled {
-  background: linear-gradient(180deg, var(--bg-3), var(--bg-2));
-  border-color: var(--border);
+  /* drop the cyan tint/glow → plain neutral panel glass, dimmed (reads disabled) */
+  background: var(--glass-bg);
   color: var(--fg-3);
-  box-shadow: inset 0 1px 0 var(--raise), 0 1px 0 oklch(0 0 0 / 0.4);
+  box-shadow: var(--glass-shadow);
 }
 /* Add batch — secondary cyan-outline action. Reads clearly as "enabled
    and clickable" (tinted background + cyan border + cyan label), but
    visually subordinate to the filled-cyan Start queue primary CTA. */
+/* Add batch — secondary, NEUTRAL glass (inherits the .btn neutral material);
+   subordinate to the cyan Start primary. */
 .btn.add-batch {
-  background: var(--cyan-tint);
-  border-color: var(--cyan-line);
-  color: var(--cyan);
+  /* CYAN glass like Start/Select location — same panel-glass + cyan tint + cyan
+     own-glow + cyan label; slightly quieter tint than the Start primary. */
   font-weight: 600;
-  box-shadow:
-    inset 0 1px 0 oklch(0.76 0.115 215 / 0.20),
-    0 1px 0 oklch(0 0 0 / 0.35);
+  color: var(--cyan);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--operational) 16%, transparent), color-mix(in srgb, var(--operational) 10%, transparent)), var(--glass-bg);
+  box-shadow: var(--glass-shadow), 0 0 16px -6px color-mix(in srgb, var(--operational) 42%, transparent);
 }
-.btn.add-batch:hover:not(:disabled) {
-  background: var(--cyan-tint-strong);
-  border-color: var(--cyan);
-  color: var(--cyan-2, var(--cyan));
+.btn.add-batch:hover:not(:disabled) { filter: brightness(1.14); }
+.btn.add-batch:disabled { color: var(--fg-4); }
+/* .ghost (Dismiss) now just inherits the neutral .btn panel glass */
+/* Stop after current file — caution: orange GLASS at full weight (matches the cyan
+   buttons), brighter orange label, orange own-glow. */
+#stop {
+  /* orange glass fill + orange glow stay; label is a BRIGHT WARM-WHITE so it pops
+     off the orange (a muted orange/tan label blended into the fill). */
+  background: linear-gradient(180deg, color-mix(in srgb, var(--orange) 72%, transparent), color-mix(in srgb, var(--orange) 50%, transparent));
+  color: color-mix(in srgb, var(--fg) 86%, var(--orange));
+  font-weight: 600;
+  box-shadow: var(--glass-shadow), 0 0 26px -5px var(--orange-glow);
 }
-.btn.add-batch:disabled {
-  background: linear-gradient(180deg, var(--bg-3), var(--bg-2));
-  border-color: var(--border-subtle);
-  color: var(--fg-4);
-  box-shadow: inset 0 1px 0 var(--raise-soft), 0 1px 0 oklch(0 0 0 / 0.4);
-}
-.btn.ghost { background: transparent; }
+#stop:hover:not(:disabled) { filter: brightness(1.1); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ============================================================
@@ -579,10 +795,8 @@ body::before {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
-  max-width: 720px;     /* cards keep their size … */
-  margin-inline: auto;  /* … and the pair is centred in the tier row, balancing
-                           the empty space on both sides. Horizontal only —
-                           scoped to this row, nothing else shifts. */
+  /* Pass 5: full-width pair — dropped max-width:720px + margin-inline:auto so the
+     two cards span the content width like every other panel (no dead space). */
 }
 
 /* Add-to-queue commits the staging batch with its frozen tier. */
@@ -597,14 +811,22 @@ body::before {
   padding: 20px 22px 18px;
   min-height: 0;
   border-radius: 13px;
+  /* Pass 5 (mockup match): faint accent-glass body fill → transparent, neutral
+     --hairline border + lit top edge, mockup drop. Frost kept; the strong global
+     sheen is dropped here so the tiers read like the mockup (accent-tinted, not
+     grey-lifted). Measured unselected fill (17,20,31) vs mockup (20,23,30). */
+  /* Pass 7: tiers are glass panels too — milky sheen base + faint accent tint so
+     they lift off the bright backdrop like the mockup's tier cards. */
+  /* v3 .tier idle: subtle accent-tinted glass (accent .05 -> white .035), no border,
+     hi-edge top highlight + soft drop. Accent = cobalt (recommended) / iris (archival). */
   background:
-    radial-gradient(140% 70% at 50% -30%, var(--accent-tint, transparent), transparent 70%),
-    linear-gradient(180deg, var(--bg-2), var(--bg-1));
-  border: 1px solid var(--border);
+    linear-gradient(160deg, color-mix(in srgb, var(--accent) 5%, transparent), var(--glass-tint));
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+  border: none;
   box-shadow:
-    inset 0 1px 0 var(--raise),
-    0 1px 0 oklch(0 0 0 / 0.4),
-    0 18px 36px -28px oklch(0 0 0 / 0.7);
+    inset 0 1px 0 var(--hi-edge),
+    0 18px 44px -24px var(--shadow-75);
   cursor: pointer;
   text-align: left;
   color: inherit;
@@ -612,7 +834,14 @@ body::before {
   display: flex; flex-direction: column; gap: 10px;
   transition: border-color .18s ease, transform .18s ease, background .18s ease, box-shadow .18s ease;
 }
-.tier:hover { border-color: var(--accent-line, var(--border-strong)); }
+.tier:hover {
+  border-color: var(--accent-line, var(--border-strong));
+  box-shadow:
+    inset 0 1px 0 var(--raise),
+    0 1px 0 var(--shadow-40),
+    0 18px 36px -28px var(--shadow-70),
+    0 0 20px -6px var(--accent-glow, transparent);   /* tier-tinted hover lift */
+}
 .tier input[type="radio"] { position: absolute; opacity: 0; pointer-events: none; }
 
 .tier .tier-mark {
@@ -644,13 +873,25 @@ body::before {
 /* select-pin removed in favor of card-as-selection-indicator */
 .tier .select-pin { display: none; }
 .tier.selected {
-  border-color: var(--accent-line);
-  background:
-    radial-gradient(140% 80% at 50% -20%, var(--accent-wash), transparent 70%),
-    linear-gradient(180deg, var(--bg-2), var(--bg-1));
+  /* Pass 5 (mockup match): selection carried by an inner accent wash + inner
+     glow + a TRANSLUCENT accent border (no solid sticker outline, ~0 luminance
+     step — chromatic). Exact mockup alphas (.14→.03 fill, .35 border, .5 inner
+     glow, .18 ring) derived from --accent via color-mix → no new color tokens,
+     per-tier (cobalt / iris). Measured selected fill (18,23,40) vs mockup
+     (17,24,42). Frost (backdrop-filter) inherited from .tier. */
+  /* Pass 7: mockup's selected recipe verbatim (accent .15→.035 fill + inner glow
+     .55 + ring .18 + drop) over the milky sheen base, so the selected card is
+     lit-from-within and clearly lifts. Cobalt/iris hue via --accent. */
+  /* v3 .tier.sel VERBATIM (rose -> cobalt via --accent): accent .15 -> .035 fill,
+     contained inner top glow (.55), 1px accent ring (.18), drop. No border, no sheen. */
+  border: none;
+  background: linear-gradient(160deg,
+      color-mix(in srgb, var(--accent) 15%, transparent),
+      color-mix(in srgb, var(--accent) 3.5%, transparent));
   box-shadow:
-    0 0 0 1px var(--accent-line),
-    0 18px 36px -28px oklch(0 0 0 / 0.7);
+    inset 0 1px 22px -8px color-mix(in srgb, var(--accent) 55%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent),
+    0 22px 52px -26px var(--shadow-80);
 }
 .tier .select-pin {
   position: absolute; top: 16px; right: 16px;
@@ -660,35 +901,41 @@ body::before {
   display: grid; place-items: center;
 }
 .tier.selected .select-pin {
-  border-color: var(--accent-line);
-  background: var(--accent);
+  border-color: var(--accent-sel, var(--accent-line));
+  background: var(--accent-sel, var(--accent));
   box-shadow: 0 0 0 2px var(--accent-tint);
 }
 .tier.selected .select-pin::after {
   content: ""; width: 6px; height: 6px; border-radius: 50%;
-  background: oklch(0.14 0.02 248);
+  background: var(--canvas);
 }
 
 .tier.regular {
-  --accent: var(--cyan);
-  --accent-line: var(--cyan-line);
-  --accent-tint: oklch(0.76 0.115 215 / 0.06);
-  --accent-wash: oklch(0.76 0.115 215 / 0.16);
-  --mark-bg: oklch(0.225 0.022 215);
+  --accent: var(--tier-fast);
+  --accent-sel: var(--tier-fast-sel);
+  --accent-glow: var(--tier-fast-glow);
+  --accent-line: var(--tier-fast-line);
+  --accent-tint: var(--tier-fast-glass);
+  --accent-wash: var(--tier-fast-pill);
+  --mark-bg: var(--tier-fast-mark);
 }
 .tier.archival {
   --accent: var(--violet);
-  --accent-line: oklch(0.72 0.115 295 / 0.30);
-  --accent-tint: oklch(0.72 0.115 295 / 0.05);
-  --accent-wash: oklch(0.72 0.115 295 / 0.14);
-  --mark-bg: oklch(0.225 0.030 295);
+  --accent-sel: var(--tier-arch-sel);
+  --accent-glow: var(--tier-arch-glow);
+  --accent-line: var(--tier-arch-line);
+  --accent-tint: var(--tier-arch-glass);
+  --accent-wash: var(--tier-arch-pill);
+  --mark-bg: var(--tier-arch-mark);
 }
 .tier.lossy {
   --accent: var(--amber);
-  --accent-line: oklch(0.80 0.110 78 / 0.30);
-  --accent-tint: oklch(0.80 0.110 78 / 0.05);
-  --accent-wash: oklch(0.80 0.110 78 / 0.14);
-  --mark-bg: oklch(0.235 0.030 78);
+  --accent-sel: var(--amber);
+  --accent-glow: var(--amber-line-strong);
+  --accent-line: var(--amber-fill);
+  --accent-tint: var(--amber-hatch);
+  --accent-wash: var(--amber-wash);
+  --mark-bg: var(--amber-mark);
 }
 
 /* ============================================================
@@ -696,30 +943,46 @@ body::before {
    ============================================================ */
 .queue {
   margin-top: 8px;
-  border: 1px solid var(--border);
+  /* TWEAK 3 (v2.2.0): the queue is ONE quiet glass panel (v3 .glass material);
+     batch heads + file rows sit transparently on it, divided by hairlines — glass
+     without frost-on-frost mud. */
+  border: none;
   border-radius: 12px;
-  background: linear-gradient(180deg, var(--bg-1), var(--bg-0));
-  box-shadow: inset 0 1px 0 var(--raise-soft), 0 1px 0 oklch(0 0 0 / 0.4);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+  box-shadow: var(--glass-shadow), 0 24px 60px -12px var(--shadow-55);
   overflow: hidden;
 }
 .qlist { list-style: none; margin: 0; padding: 0; }
 
 /* ─── BATCH GROUP (top level) ─── */
 .qbatch {
-  border-bottom: 1px solid var(--border-subtle);
+  /* v2.2.2: groups are chunked by a vertical gap, not a hairline — each group
+     (head on glass + recessed spined tray) reads as one unit. */
   transition: background .15s ease;
 }
-.qbatch:last-child { border-bottom: 0; }
+.qbatch:not(:last-child) { margin-bottom: 9px; }   /* last batch: no trailing gap */
 .qbatch[draggable="true"] .qbatch-head { cursor: grab; }
 .qbatch.dragging { opacity: 0.4; }
 
+/* Tier-colored spine (v2.2.2): mirrors the .tierchip; feeds --spine to the
+   file tray's border-left. Fallback transparent so a modifier-less batch can
+   never paint a currentColor (text-colored) spine. */
+.qbatch--regular  { --spine: var(--tier-fast); }   /* cobalt */
+.qbatch--archival { --spine: var(--tier-arch); }   /* iris   */
+
 .qbatch-head {
   display: grid;
-  grid-template-columns: 1.6fr auto auto 28px;
+  /* TWEAK 3 (v2.2.0): fixed tier column so the status/progress column starts at the
+     same x on every batch row (was `auto`, which varied with the tier label width
+     — "Who Cares…" vs "Probably Need It Later" — misaligning the bars). */
+  grid-template-columns: minmax(0, 1.6fr) 210px minmax(0, 1fr) 28px;
   align-items: center;
   gap: 16px;
   padding: 14px 18px;
-  background: linear-gradient(180deg, var(--bg-2), var(--bg-1));
+  /* sits transparently on the .queue glass (no frost-on-frost) */
+  background: transparent;
 }
 .qbatch-info {
   display: flex; align-items: center; gap: 12px; min-width: 0;
@@ -779,14 +1042,14 @@ body::before {
   width: 7px; height: 7px; border-radius: 50%; background: var(--fg-3);
 }
 .tierchip.regular {
-  background: var(--cyan-tint);
-  border-color: var(--cyan-line);
-  color: var(--cyan);
+  background: var(--tier-fast-glass);
+  border-color: var(--tier-fast-line);
+  color: var(--tier-fast);
 }
-.tierchip.regular .dot { background: var(--cyan); box-shadow: 0 0 6px var(--cyan-dim); }
+.tierchip.regular .dot { background: var(--tier-fast); box-shadow: 0 0 6px var(--tier-fast-dim); }
 .tierchip.archival {
   background: var(--violet-tint);
-  border-color: oklch(0.72 0.115 295 / 0.34);
+  border-color: var(--tier-arch-line);
   color: var(--violet);
 }
 .tierchip.archival .dot { background: var(--violet); box-shadow: 0 0 6px var(--violet-dim); }
@@ -801,7 +1064,11 @@ body::before {
   padding: 3px 9px; border-radius: 999px;
   letter-spacing: 0.08em; text-transform: uppercase;
   border: 1px solid var(--border-subtle); background: var(--bg-1); color: var(--fg-3);
+  box-shadow: inset 0 1px 0 var(--hi-edge);   /* TWEAK 3 (v2.2.0): lit-edge so DONE/status pills read as the same glass material; semantic tint per-state kept */
   white-space: nowrap;
+  /* TWEAK 3 (v2.2.0): fixed width + centered so the progress bar after it starts
+     at a consistent x regardless of the status word (DONE/RUNNING/WAITING/…) */
+  min-width: 72px; justify-content: center;
   display: inline-flex; align-items: center; gap: 6px;
 }
 .qbatch-status .pill .dot {
@@ -810,18 +1077,18 @@ body::before {
 .qbatch-status.queued .pill   { color: var(--fg-3); }
 .qbatch-status.running .pill  { color: var(--cyan); border-color: var(--cyan-line); background: var(--cyan-tint); }
 .qbatch-status.running .pill .dot { animation: pulse 1.4s ease-in-out infinite; }
-.qbatch-status.paused .pill   { color: var(--amber); border-color: oklch(0.80 0.110 78 / 0.4); background: oklch(0.80 0.110 78 / 0.10); }
-.qbatch-status.done .pill     { color: var(--green); border-color: oklch(0.78 0.140 148 / 0.4); background: oklch(0.78 0.140 148 / 0.10); }
-.qbatch-status.failed .pill   { color: var(--red); border-color: oklch(0.70 0.19 25 / 0.5); background: oklch(0.70 0.19 25 / 0.10); }
+.qbatch-status.paused .pill   { color: var(--amber); border-color: var(--amber-line-strong); background: var(--amber-tint); }
+.qbatch-status.done .pill     { color: var(--green); border-color: var(--success-line); background: var(--success-pill); }
+.qbatch-status.failed .pill   { color: var(--red); border-color: var(--failure-line); background: var(--failure-pill); }
 .qbatch-status.cancelled .pill { color: var(--fg-3); border-color: var(--border-subtle); background: var(--bg-1); }
-.qbatch-status.cancelling .pill { color: var(--amber); border-color: oklch(0.80 0.110 78 / 0.4); background: oklch(0.80 0.110 78 / 0.10); }
+.qbatch-status.cancelling .pill { color: var(--amber); border-color: var(--amber-line-strong); background: var(--amber-tint); }
 .qbatch-status .progressbar {
-  flex: 1; height: 4px; border-radius: 2px;
+  flex: 1; height: 7px; border-radius: 999px;
   background: var(--bg-3); overflow: hidden; min-width: 80px;
   border: 1px solid var(--border-subtle);
 }
 .qbatch-status .progressbar > i {
-  display: block; height: 100%;
+  display: block; height: 100%; border-radius: 999px;
   background: var(--cyan-dim);
   transition: width .35s ease;
 }
@@ -852,47 +1119,59 @@ body::before {
    modifier, so it keeps the neutral hover above. */
 .qbatch-remove.qbatch-remove--x:hover {
   color: var(--red);
-  background: oklch(0.70 0.19 25 / 0.10);
-  border-color: oklch(0.70 0.19 25 / 0.45);
+  background: var(--failure-pill);
+  border-color: var(--failure-line);
 }
 
 /* ─── NESTED FILE ROWS ─── */
-/* Per-batch column headers — same grid as the file rows so the labels
-   align with the columns they describe. Sits between .qbatch-head and
-   the file list, scoped to this group only. 6th column reserved for the
-   per-file skip ✕ — no label needed. */
-.qfile-head {
+/* Per-batch column-label strip (v2.2.3): one quiet strip INSIDE each tray,
+   directly above that batch's rows. Sits on the tray fill (transparent over
+   --bg-1), inside the spine, same grid + padding-left 14 as .qrow so each
+   label sits exactly over its column. No hard top/bottom borders — the tray's
+   own top hairline is the only divider, so it reads as a sub-label of the tray
+   rather than a stacked table head. */
+.qbatch-files .qfile-head {
   display: grid;
   grid-template-columns: 24px 1.8fr 0.7fr 1.2fr 0.7fr 28px;
   align-items: center;
   gap: 14px;
-  padding: 7px 18px 7px 28px;
-  background: var(--bg-1);
-  border-top: 1px solid var(--border-subtle);
-  border-bottom: 1px solid var(--border-subtle);
+  padding: 7px 18px 5px 14px;   /* content origin 40px, matches .qrow */
+  background: transparent;
   font-family: var(--font-mono);
   font-size: 10px; font-weight: 500;
   text-transform: uppercase; letter-spacing: 0.10em;
   color: var(--fg-2);
 }
+/* The strip carries the head/tray divide above it; no divider beneath it. */
+.qbatch-files .qfile-head + .qrow { border-top: 0; }
 
 .qbatch-files {
   list-style: none; margin: 0; padding: 0;
-  background: var(--bg-0);
+  /* v2.2.2 file tray: recessed flat fill (NOT a backdrop-filter — no
+     frost-on-frost) under a tier-colored spine. Inset 24px into the gutter so
+     the spine sits between the head text (@18) and the file text (@40); files
+     visibly hang off the rail. Fallback transparent guards a modifier-less
+     batch against a currentColor spine. */
+  margin-left: 24px;
+  border-left: 2px solid var(--spine, transparent);
+  background: var(--bg-1);
+  border-top: 1px solid var(--hairline);
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
 }
-.qbatch-files .qrow:first-child { border-top: 0; }
 .qbatch-files .qrow {
   display: grid;
   grid-template-columns: 24px 1.8fr 0.7fr 1.2fr 0.7fr 28px;
   align-items: center;
   gap: 14px;
-  padding: 9px 18px 9px 28px;
-  border-top: 1px solid oklch(0.22 0.009 248);
+  /* padding-left 14 → content origin = tray margin 24 + border 2 + 14 = 40px,
+     matched by the per-batch .qfile-head strip (same grid + padding). */
+  padding: 9px 18px 9px 14px;
+  border-top: 1px solid var(--row-divider);
   font-size: 12.5px; color: var(--fg-2);
   transition: background .12s ease;
 }
-.qbatch-files .qrow:first-child { border-top: 1px solid var(--border-subtle); }
-.qbatch-files .qrow:hover { background: oklch(0.17 0.008 248); }
+.qbatch-files .qrow:hover { background: var(--row-hover); }
 .qrow .seq {
   font-family: var(--font-mono); font-size: 10.5px; color: var(--fg-4);
   text-align: right;
@@ -917,11 +1196,15 @@ body::before {
 .qrow .mono.red   { color: var(--red); }
 
 .qrow .status { display: flex; align-items: center; gap: 10px; min-width: 0; }
+/* v2.2.2: file-row status is DE-WEIGHTED to a colored dot + plain label —
+   no pill chrome (no border/background) — so the batch-level pill stays the
+   louder element (parent > child). Semantic dot/text colors are unchanged;
+   the per-file progressbar is untouched. Backs out cleanly. */
 .qrow .status .pill {
   font-family: var(--font-mono); font-size: 10px;
-  padding: 2px 8px; border-radius: 999px;
+  padding: 2px 0;
   letter-spacing: 0.08em; text-transform: uppercase;
-  border: 1px solid var(--border-subtle); background: var(--bg-1); color: var(--fg-3);
+  border: none; background: none; color: var(--fg-3);
   white-space: nowrap;
   display: inline-flex; align-items: center; gap: 5px;
 }
@@ -929,23 +1212,23 @@ body::before {
   width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: 0.85;
 }
 .qrow .status.queued .pill   { color: var(--fg-3); }
-.qrow .status.running .pill  { color: var(--cyan); border-color: var(--cyan-line); background: var(--cyan-tint); }
+.qrow .status.running .pill  { color: var(--cyan); }
 .qrow .status.running .pill .dot { animation: pulse 1.4s ease-in-out infinite; }
-.qrow .status.done .pill     { color: var(--green); border-color: oklch(0.78 0.140 148 / 0.4); background: oklch(0.78 0.140 148 / 0.10); }
-.qrow .status.failed .pill   { color: var(--red);  border-color: oklch(0.70 0.19 25 / 0.5); background: oklch(0.70 0.19 25 / 0.10); }
-.qrow .status.skipped .pill   { color: var(--fg-4); border-color: var(--border-subtle); background: var(--bg-1); }
-.qrow .status.existed .pill   { color: var(--fg-3); border-color: var(--border-subtle); background: var(--bg-1); }
-.qrow .status.cancelled .pill { color: var(--amber); border-color: var(--amber-line); background: var(--amber-tint); }
+.qrow .status.done .pill     { color: var(--green); }
+.qrow .status.failed .pill   { color: var(--red); }
+.qrow .status.skipped .pill   { color: var(--fg-4); }
+.qrow .status.existed .pill   { color: var(--fg-3); }
+.qrow .status.cancelled .pill { color: var(--amber); }
 @keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
 
 /* D: per-file progress bar — mirrors the batch-level treatment, half-sized. */
 .qbatch-files .qrow .status .progressbar {
-  flex: 1; height: 3px; border-radius: 2px;
+  flex: 1; height: 6px; border-radius: 999px;
   background: var(--bg-3); overflow: hidden; min-width: 40px;
   border: 1px solid var(--border-subtle);
 }
 .qbatch-files .qrow .status .progressbar > i {
-  display: block; height: 100%;
+  display: block; height: 100%; border-radius: 999px;
   background: var(--cyan-dim);
   transition: width .25s ease;
 }
@@ -985,8 +1268,8 @@ body::before {
 .qrow-skip-btn:focus-visible { opacity: 1; }
 .qrow-skip-btn:hover {
   color: var(--red);
-  background: oklch(0.70 0.19 25 / 0.10);
-  border-color: oklch(0.70 0.19 25 / 0.45);
+  background: var(--failure-pill);
+  border-color: var(--failure-line);
 }
 
 /* Empty queue list collapses cleanly. */
@@ -1021,7 +1304,7 @@ body::before {
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 20px 22px;
-  box-shadow: inset 0 1px 0 var(--raise-soft), 0 1px 0 oklch(0 0 0 / 0.4);
+  box-shadow: inset 0 1px 0 var(--raise-soft), 0 1px 0 var(--shadow-40);
 }
 .progress-header {
   display: flex; justify-content: space-between; align-items: center; gap: 16px;
@@ -1047,7 +1330,7 @@ body::before {
 }
 .progress-fill::after {
   content: ''; position: absolute; inset: 0;
-  background: linear-gradient(90deg, transparent 0%, oklch(1 0 0 / 0.18) 50%, transparent 100%);
+  background: linear-gradient(90deg, transparent 0%, var(--sheen-18) 50%, transparent 100%);
   background-size: 200% 100%;
   animation: tp-shimmer 1.8s linear infinite;
 }
@@ -1057,8 +1340,12 @@ body::before {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   margin-bottom: 16px;
   padding: 9px 12px;
-  background: var(--bg-0);
-  border: 1px solid var(--border-subtle); border-radius: 8px;
+  /* TWEAK 3 (v2.2.0): quiet glass (v3 material) */
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+  border: none; border-radius: 8px;
+  box-shadow: var(--glass-shadow);
   min-height: 36px;
   display: flex; align-items: center;
 }
@@ -1122,13 +1409,13 @@ body::before {
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 22px 24px;
-  box-shadow: inset 0 1px 0 var(--raise-soft), 0 18px 36px -28px oklch(0 0 0 / 0.7);
+  box-shadow: inset 0 1px 0 var(--raise-soft), 0 18px 36px -28px var(--shadow-70);
 }
 .summary-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .summary-badge {
   width: 32px; height: 32px;
-  background: oklch(0.76 0.095 148 / 0.16);
-  border: 1px solid oklch(0.76 0.095 148 / 0.4);
+  background: var(--success-pill);
+  border: 1px solid var(--success-line);
   border-radius: 9px;
   display: grid; place-items: center;
   color: var(--green);
@@ -1140,7 +1427,19 @@ body::before {
 .summary-body .reclaimed-line { color: var(--green); font-weight: 500; }
 .summary-body .failed-line    { color: var(--red);   font-weight: 500; }
 .summary-body .muted          { color: var(--fg-4); font-size: 13px; font-family: var(--font-mono); }
+/* HDR deferral notice — caution, not failure: the encode succeeded, but the
+   source's HDR brightness metadata could not be carried. */
+.summary-body .hdr-note       { color: var(--amber); font-size: 13px; font-weight: 500; }
 .summary-actions { margin-top: 16px; display: flex; gap: 10px; }
+
+/* Per-file HDR chip beside the status pill (done rows only). */
+.hdr-chip {
+  display: inline-block; margin-left: 6px; padding: 1px 5px;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.06em;
+  font-family: var(--font-mono); color: var(--amber);
+  background: var(--amber-tint); border: 1px solid rgba(255,179,64,.25);
+  border-radius: 4px; vertical-align: 1px; cursor: help;
+}
 
 /* ============================================================
    Misc
@@ -1155,13 +1454,15 @@ svg { display: block; }
    ============================================================ */
 .row-menu {
   position: absolute;
-  background: linear-gradient(180deg, var(--bg-3), var(--bg-2));
-  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--sheen-hi), var(--sheen-lo));
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+  border: 1px solid transparent; border-top-color: var(--lit-edge);   /* Pass 6 (v3): borderless sides, lit top edge only */
   border-radius: 10px;
   box-shadow:
-    inset 0 1px 0 var(--raise),
-    0 12px 32px -8px oklch(0 0 0 / 0.6),
-    0 4px 12px oklch(0 0 0 / 0.45);
+    inset 0 1px 0 var(--sheen-18),
+    0 12px 32px -8px var(--shadow-60),
+    0 4px 12px var(--shadow-45);
   padding: 5px;
   z-index: 250;
   min-width: 160px;
@@ -1192,7 +1493,7 @@ svg { display: block; }
 .row-menu button:hover { background: var(--bg-hover); color: var(--fg); }
 .row-menu button svg { width: 14px; height: 14px; flex-shrink: 0; opacity: 0.8; }
 .row-menu button.danger { color: var(--red); }
-.row-menu button.danger:hover { background: oklch(0.70 0.19 25 / 0.12); color: var(--red); }
+.row-menu button.danger:hover { background: var(--failure-pill); color: var(--red); }
 .row-menu .sep { height: 1px; background: var(--border-subtle); margin: 4px 2px; }
 
 /* ============================================================
@@ -1205,7 +1506,9 @@ svg { display: block; }
   margin-top: 32px;
   padding-top: 8px;
   border-top: 1px solid var(--border-subtle);
-  opacity: 0.92;
+  /* opacity:0.92 removed (v2.2.0): an ancestor opacity<1 would trap the .lt-row
+     backdrop-filter (frost dies). The section stays subordinate via muted fg-3
+     text + small treatment. */
 }
 .lifetime-section .section-head h2 { color: var(--fg-3); }
 .lifetime-section .section-head .hint {
@@ -1219,12 +1522,16 @@ svg { display: block; }
   align-items: center;
   gap: 14px;
   padding: 11px 14px;
-  background: var(--bg-1);
-  border: 1px solid var(--border-subtle);
+  /* TWEAK 3 (v2.2.0): quiet glass (v3 material) */
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+  border: none;
   border-radius: 10px;
-  transition: background .15s ease, border-color .15s ease;
+  box-shadow: var(--glass-shadow);
+  transition: background .15s ease, box-shadow .15s ease;
 }
-.lt-row:hover { background: oklch(0.20 0.009 248); }
+.lt-row:hover { background: var(--lt-hover); }
 .lt-icon {
   width: 36px; height: 36px;
   border-radius: 9px;
@@ -1383,20 +1690,22 @@ svg { display: block; }
   z-index: 500;
   display: grid; place-items: center;
   padding: 24px;
-  background: oklch(0 0 0 / 0.55);
-  -webkit-backdrop-filter: blur(3px);
-  backdrop-filter: blur(3px);
+  /* dark dim only — its own backdrop-filter is dropped so the glass .modal-card
+     samples the page through the dim (no double-blur backdrop-root). */
+  background: var(--shadow-55);
   animation: mb-in .14s ease;
 }
 @keyframes mb-in { from { opacity: 0; } to { opacity: 1; } }
 .modal-card {
   width: min(460px, 100%);
-  background: linear-gradient(180deg, var(--bg-2), var(--bg-1));
-  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--sheen-hi), var(--sheen-lo));
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+  border: 1px solid transparent; border-top-color: var(--lit-edge);   /* Pass 6 (v3): borderless sides, lit top edge only */
   border-radius: 16px;
   box-shadow:
-    inset 0 1px 0 var(--raise-soft),
-    0 28px 70px -24px oklch(0 0 0 / 0.78);
+    inset 0 1px 0 var(--sheen-18),
+    0 28px 70px -24px var(--shadow-78);
   padding: 24px 26px 22px;
   animation: mc-in .16s cubic-bezier(.2,.7,.3,1);
 }
@@ -1450,63 +1759,67 @@ svg { display: block; }
   pointer-events: none;
   transition: opacity .28s ease;
 }
+/* Glass backdrop-root guard: .output-row and .tiers are WRAPPERS of glass
+   panels — an opacity<1 on them would create a backdrop root and silently kill
+   the child's backdrop-filter. Keep the wrapper opaque and move the dim onto
+   the glass element itself (own-opacity renders the frost, then fades it).
+   `inert` still rides the wrapper, so interaction stays locked. */
+.output-row.step-dim,
+.tiers.step-dim { opacity: 1; }
+.output-row.step-dim .dest-picker,
+.tiers.step-dim .tier {
+  opacity: 0.5;
+  transition: opacity .28s ease;
+}
 
 /* The single "act here now" element. An orange ring + soft glow layered via
    ::after so each control keeps its own identity — in particular Start stays
    cyan and is NOT repainted. Gentle pulse; reduced-motion gets the static
    orange state with no animation. */
-.next-action { position: relative; }
+.next-action { position: relative; --cue-glow: var(--hairline-strong); }   /* default next-action cue = neutral own-color glow */
+/* cyan buttons pulse CYAN, never orange — the cue matches each button's own color */
+.dest-picker .change.next-action,
+.btn.cta.next-action { --cue-glow: color-mix(in srgb, var(--operational) 45%, transparent); }
+/* TWEAK 1 (v2.2.0 fix): NO hard orange outline. The locked --orange next-action
+   cue is expressed as a soft glow that BREATHES on the button itself — same
+   meaning, no ugly drawn border. */
 .next-action::after {
   content: '';
   position: absolute;
-  inset: -3px;
-  border-radius: 11px;
-  border: 1.5px solid var(--orange);
-  box-shadow: 0 0 12px 1px var(--orange-glow);
+  inset: 0;
+  border-radius: inherit;
+  /* SOFT WIDE OUTER GLOW ONLY — NEGATIVE spread so there is NO edge ring/border at any
+     point in the cycle (the prior +2 spread drew a 2px solid edge). Only opacity
+     animates (GPU-composited → seamless). */
+  box-shadow: 0 0 30px -6px var(--cue-glow);
+  opacity: 0.3;
   pointer-events: none;
-  opacity: 1;
-  animation: next-pulse 2.4s ease-in-out infinite;
+  animation: next-breathe 3s ease-in-out infinite;
 }
-@keyframes next-pulse {
-  0%, 100% { opacity: 0.5; }
-  50%      { opacity: 1; }
+/* slow, gentle breathe — swings softly between two CLOSE values so it swells/fades
+   imperceptibly (no blink, no restart seam: 0% == 100%, eased turnarounds). */
+@keyframes next-breathe {
+  0%, 100% { opacity: 0.3; }
+  50%      { opacity: 0.78; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .next-action::after { animation: none; opacity: 1; }
+  /* static fallback: a steady soft orange glow (no animation, still no hard line) */
+  .next-action::after { animation: none; opacity: 0.6; }   /* static fallback: steady own-color glow */
   /* Stop continuous motion: the orange cue is static (above), the moving sheen
      on the overall progress bar / top strip is removed, and the pulsing status
      dots hold steady. State is still conveyed by colour + the always-present
      text/icon labels, so nothing is lost. */
-  .top-progress.active { animation: none; }
   .progress-fill::after { animation: none; display: none; }
   .tl-tag.running::before,
   .qbatch-status.running .pill .dot,
   .qrow .status.running .pill .dot { animation: none; }
 }
 
-/* Orange repaint for the two REQUIRED-action buttons (Select location, Add).
-   Start is intentionally excluded — it keeps its cyan identity and only wears
-   the ring above. */
-.dest-picker .change.next-action {
-  color: var(--orange);
-  background: var(--orange-tint);
-  border-color: var(--orange-line);
-}
-.dest-picker .change.next-action:hover:not(:disabled) {
-  background: var(--orange-tint-strong);
-  color: var(--orange);
-}
-.btn.add-batch.next-action {
-  background: var(--orange-tint);
-  border-color: var(--orange-line);
-  color: var(--orange);
-}
-.btn.add-batch.next-action:hover:not(:disabled) {
-  background: var(--orange-tint-strong);
-  border-color: var(--orange);
-  color: var(--orange);
-}
-/* The ring's corner radius tracks each button so it hugs the shape. */
+/* TWEAK 1 (v2.2.0 fix): the orange-repaint of next-action buttons is removed —
+   they keep their normal glass material (cyan/neutral); the breathing --orange
+   glow above is the entire cue. (--orange stays the locked next-action color,
+   just expressed as soft motion instead of a tint+outline.) */
+/* The glow halo's corner radius tracks each button so it hugs the shape. */
 .dest-picker .change.next-action::after { border-radius: 9px; }
 .btn.add-batch.next-action::after { border-radius: 12px; }
 .btn.cta.next-action::after { border-radius: 13px; }
@@ -1529,7 +1842,7 @@ svg { display: block; }
   border: 1px solid var(--amber-line);
   color: var(--fg);
   font-size: 13px;
-  box-shadow: 0 8px 24px oklch(0 0 0 / 0.38);
+  box-shadow: 0 8px 24px var(--shadow-38);
   opacity: 0;
   pointer-events: none;
   transition: opacity .18s ease, transform .18s ease;
@@ -1537,5 +1850,73 @@ svg { display: block; }
 .app-notice.show {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
+}
+
+/* ============================================================
+   Motion + visual haptics (Pass 4) — pure CSS/WAAPI, no library.
+   Keyframes are defined unconditionally (harmless until referenced);
+   EVERY consuming rule lives in the @media (no-preference) block below,
+   so reduced-motion users get the static UI (0ms / opacity-only). One-shot
+   classes (.bloom-done/.shake-fail/.batch-enter/.row-enter) are JS-gated by
+   id Sets so they fire once, not on every renderQueue() rebuild.
+   ============================================================ */
+@keyframes breathe     { 0%,100% { opacity: .78; } 50% { opacity: 1; } }
+@keyframes done-bloom  { 0% { opacity: 0; } 35% { opacity: .18; } 100% { opacity: 0; } }
+@keyframes fail-bloom  { 0% { opacity: 0; } 25% { opacity: .18; } 100% { opacity: 0; } }
+@keyframes shake-x {
+  0%   { transform: translateX(0); }
+  14%  { transform: translateX(-4px); }
+  28%  { transform: translateX(4px); }
+  42%  { transform: translateX(-3px); }
+  57%  { transform: translateX(3px); }
+  71%  { transform: translateX(-2px); }
+  85%  { transform: translateX(2px); }
+  100% { transform: translateX(0); }
+}
+@keyframes batch-enter { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes row-enter   { from { opacity: 0; transform: translateY(-6px); }  to { opacity: 1; transform: translateY(0); } }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* 1 — press depression (release settles via the transform transition on each
+     base element; .tier already transitions transform). */
+  .btn:active:not(:disabled),
+  .safety-toggle:active,
+  .dest-picker .change:active:not(:disabled),
+  .tier:active { transform: scale(.97); }
+
+  /* 2 — tier select/deselect settle is driven by WAAPI in renderer.js. */
+
+  /* 3 — magnetic snap: drop target eases toward the cursor on dragover. */
+  .dropzone.dragover .dz-icon { transform: scale(1.06); }
+
+  /* 4 — progress breathing: the running batch's lit edge inhales/exhales. */
+  .qbatch.status-running .qbatch-head { position: relative; }
+  .qbatch.status-running .qbatch-head::after {
+    content: ''; position: absolute; left: 0; right: 0; top: 0; height: 1px;
+    background: var(--sheen-18); opacity: .78; pointer-events: none;
+    animation: breathe 1.6s ease-in-out infinite;
+  }
+
+  /* 5 — completion glow: one-shot success bloom on a row reaching DONE. */
+  .qrow.bloom-done { position: relative; }
+  .qrow.bloom-done::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+    background: radial-gradient(120% 140% at 50% 50%, var(--success), transparent 70%);
+    opacity: 0; animation: done-bloom 600ms var(--ease-out-quint);
+  }
+
+  /* 6 — failure shake (+ a brief failure-tinted bloom). */
+  .qrow.shake-fail { position: relative; animation: shake-x 320ms linear; }
+  .qrow.shake-fail::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+    background: radial-gradient(120% 140% at 50% 50%, var(--failure), transparent 70%);
+    opacity: 0; animation: fail-bloom 600ms var(--ease-out-quint);
+  }
+
+  /* 7 — queue-add settle (new batch enters). */
+  .qbatch.batch-enter { animation: batch-enter var(--dur-base) var(--ease-settle) backwards; }
+
+  /* 8 — staggered reveal: rows of a freshly-entered batch cascade in. */
+  .qrow.row-enter { animation: row-enter var(--dur-base) var(--ease-settle) var(--enter-delay, 0ms) backwards; }
 }
 

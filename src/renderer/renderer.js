@@ -44,12 +44,24 @@ const summaryBody = document.getElementById('summary-body');
 const showLogBtn = document.getElementById('show-log');
 const revealOutputBtn = document.getElementById('reveal-output');
 const dismissSummaryBtn = document.getElementById('dismiss-summary');
-const topProgress = document.getElementById('top-progress');
 const statEta = document.getElementById('stat-eta');
 const appVersionEl = document.getElementById('app-version');
 const lifetimeSection = document.getElementById('lifetime-section');
 const lifetimeList = document.getElementById('lifetime-list');
 const lifetimeTotal = document.getElementById('lifetime-total');
+
+/* ───── Pass 4 motion: visual-haptic helpers ─────
+   renderQueue() rebuilds the whole queue DOM on structural changes, so one-shot
+   animations are gated by id Sets to fire exactly once (not every rebuild).
+   All CSS motion is behind @media (no-preference); _motionOK() mirrors that for
+   the JS/WAAPI paths. Durations/easings are read from the :root tokens. */
+const _enteredBatches = new Set();   // batch.id  → entered (settle + stagger)
+const _bloomedFiles = new Set();     // batchId|path → done-bloom shown
+const _shakenFiles = new Set();      // batchId|path → fail-shake shown
+const _rootStyle = getComputedStyle(document.documentElement);
+const _motionOK = () => window.matchMedia('(prefers-reduced-motion: no-preference)').matches;
+const _durBase = () => parseFloat(_rootStyle.getPropertyValue('--dur-base')) || 240;
+const _easeSettle = () => _rootStyle.getPropertyValue('--ease-settle').trim() || 'ease';
 
 const DEST_PLACEHOLDER = 'Choose a folder — a run subfolder is created automatically';
 // Maps pipeline tier id → CSS class + display label
@@ -774,9 +786,23 @@ async function stageFiles(paths) {
 // Tier selection — keep the underlying radio working
 tierInputs.forEach((inp) => {
   inp.addEventListener('change', () => {
+    const prevSel = document.querySelector('.tier.selected');
     document.querySelectorAll('.tier').forEach((t) => t.classList.remove('selected'));
     const wrap = inp.closest('.tier');
     if (wrap) wrap.classList.add('selected');
+    /* Pattern 2: select-and-settle on the chosen card; the deselected card
+       exhales. WAAPI one-shot, reduced-motion gated. */
+    if (_motionOK()) {
+      const d = _durBase(), e = _easeSettle();
+      if (wrap) wrap.animate(
+        [{ transform: 'scale(.97)' }, { transform: 'scale(1.012)' }, { transform: 'scale(1)' }],
+        { duration: d, easing: e }
+      );
+      if (prevSel && prevSel !== wrap) prevSel.animate(
+        [{ transform: 'scale(1)' }, { transform: 'scale(.98)' }, { transform: 'scale(1)' }],
+        { duration: d, easing: e }
+      );
+    }
   });
 });
 // Tier card click anywhere → select
@@ -923,9 +949,17 @@ function beginRenameBatch(batch, nameEl) {
 
 function buildBatchGroup(batch, idx) {
   const li = document.createElement('li');
-  li.className = `qbatch status-${batch.status}`;
+  /* Tier modifier on the ROOT (mirrors the .tierchip below) so the file tray
+     can hang off a tier-colored spine (--spine). qbatch--regular / --archival. */
+  const cls = TIER_CSS[batch.tier] || 'regular';
+  li.className = `qbatch qbatch--${cls} status-${batch.status}`;
   li.dataset.id = batch.id;
   li.draggable = batch.status === 'queued';
+
+  /* Pattern 7/8: animate enter + stagger rows only the FIRST time this batch.id
+     is rendered (renderQueue rebuilds wholesale; the Set prevents replay). */
+  const isNewBatch = !_enteredBatches.has(batch.id);
+  if (isNewBatch) { _enteredBatches.add(batch.id); li.classList.add('batch-enter'); }
 
   // ─── Header ───
   const head = document.createElement('div');
@@ -968,7 +1002,6 @@ function buildBatchGroup(batch, idx) {
      and re-adds with the desired tier selected in staging. */
   const tierCtl = document.createElement('div');
   tierCtl.className = 'qbatch-tier';
-  const cls = TIER_CSS[batch.tier] || 'regular';
   const chip = document.createElement('span');
   chip.className = `tierchip ${cls}`;
   chip.innerHTML = `<span class="dot"></span>${TIER_LABEL[batch.tier] || batch.tier}`;
@@ -1033,12 +1066,18 @@ function buildBatchGroup(batch, idx) {
 
   li.appendChild(head);
 
-  /* ─── Column headers, scoped to THIS batch's file rows ───
-     A single global header above the whole queue would float over
-     batch summary strips it doesn't describe. Per-group headers stay
-     adjacent to the file columns they label. */
-  const filesHead = document.createElement('div');
+  // ─── File tray (recessed, spined) ───
+  const filesUl = document.createElement('ul');
+  filesUl.className = 'qbatch-files';
+
+  /* Quiet column-label strip INSIDE this batch's tray, above its rows (v2.2.3).
+     Sits on the tray fill (transparent over --bg-1), inside the spine, indented
+     to the file-row origin with the SAME grid — so it reads as a sub-label of
+     the tray, not a stacked table head. No hard borders: the tray's own top
+     hairline is the only divider. */
+  const filesHead = document.createElement('li');
   filesHead.className = 'qfile-head';
+  filesHead.setAttribute('aria-hidden', 'true');
   filesHead.innerHTML =
     '<div></div>'
     + '<div>File</div>'
@@ -1046,13 +1085,10 @@ function buildBatchGroup(batch, idx) {
     + '<div>Status</div>'
     + '<div style="text-align:right;">Output</div>'
     + '<div></div>';   // trailing skip cell
-  li.appendChild(filesHead);
+  filesUl.appendChild(filesHead);
 
-  // ─── File rows ───
-  const filesUl = document.createElement('ul');
-  filesUl.className = 'qbatch-files';
   batch.files.forEach((file, i) => {
-    filesUl.appendChild(buildFileRow(file, i, batch.id));
+    filesUl.appendChild(buildFileRow(file, i, batch.id, isNewBatch));
   });
   li.appendChild(filesUl);
 
@@ -1082,10 +1118,23 @@ function buildBatchGroup(batch, idx) {
   return li;
 }
 
-function buildFileRow(file, i, batchId) {
+function buildFileRow(file, i, batchId, entering) {
   const li = document.createElement('li');
   li.className = `qrow status-${file.status}`;
   li.dataset.fpath = file.path;
+
+  /* Pattern 5/6/8: one-shot motions, gated so they fire once per transition
+     across renderQueue rebuilds. CSS no-ops them all under reduced-motion. */
+  const fkey = batchId + '|' + file.path;
+  if (file.status === 'done' && !_bloomedFiles.has(fkey)) {
+    _bloomedFiles.add(fkey); li.classList.add('bloom-done');
+  } else if (file.status === 'failed' && !_shakenFiles.has(fkey)) {
+    _shakenFiles.add(fkey); li.classList.add('shake-fail');
+  }
+  if (entering) {
+    li.classList.add('row-enter');
+    li.style.setProperty('--enter-delay', (Math.min(i, 10) * 40) + 'ms');
+  }
 
   // # in batch
   const seq = document.createElement('div');
@@ -1140,6 +1189,16 @@ function buildFileRow(file, i, batchId) {
   pill.className = 'pill';
   pill.innerHTML = `<span class="dot"></span>${PILL_LABEL[file.status] || file.status}`;
   statusCol.appendChild(pill);
+  /* HDR deferral made visible: this source carried HDR metadata (mastering
+     display / content light / Dolby Vision) that a re-encode cannot carry.
+     Color tags ARE preserved; the brightness metadata is dropped. */
+  if (file.status === 'done' && Array.isArray(file.hdrMeta) && file.hdrMeta.length) {
+    const hdr = document.createElement('span');
+    hdr.className = 'hdr-chip';
+    hdr.textContent = 'HDR';
+    hdr.title = `This file's HDR metadata (${file.hdrMeta.join(', ')}) is not carried by re-encoding — color tags are preserved, HDR brightness metadata was dropped.`;
+    statusCol.appendChild(hdr);
+  }
   // Bar omitted for skipped — there's nothing to show.
   if (file.status !== 'skipped') {
     const fbar = document.createElement('div');
@@ -1310,7 +1369,6 @@ function updateTlTag({ running, paused, failed }) {
      batch returns to 'running' (paused→0) and the shimmer comes back. The
      .active class (run in progress) is owned by start/finish — we only toggle
      the paused modifier on top of it. */
-  if (topProgress) topProgress.classList.toggle('paused', paused > 0);
 }
 
 /* Drive label for plain-language disk messages: a /Volumes/<name>/… path
@@ -1430,7 +1488,6 @@ startBtn.addEventListener('click', async () => {
   stopBtn.classList.remove('hidden');
   runActive = true;
   updateFlowState();   // run in progress → clear the orange cue
-  if (topProgress) topProgress.classList.add('active');
   /* FIX 2: throughput model starts now. Show a calm "Estimating…" until the
      first live signal, then a continuous whole-queue countdown. A 1s ticker
      keeps the ETA/bar alive even between encoder progress events. */
@@ -1574,7 +1631,16 @@ window.api.onProgress((d) => {
         batch.files[idx].progress = Math.max(0, Math.min(100, d.fileProgress * 100));
         if (root) {
           const filesList = root.querySelector('.qbatch-files');
-          const fileRow = filesList ? filesList.children[idx] : null;
+          /* Key the row by its own data-fpath, NOT children[idx]: the tray's
+             first child is the .qfile-head label strip (v2.2.3), so a raw child
+             index is off by one — it wrote the running file's % onto the strip
+             (file 0) or the previous done row (file k>0). Match the active
+             file's path among the .qrow rows: index-free, strip-agnostic, and
+             scoped to this batch so the path is unique. */
+          const targetPath = batch.files[idx].path;
+          const fileRow = filesList
+            ? [...filesList.querySelectorAll('.qrow')].find((r) => r.dataset.fpath === targetPath)
+            : null;
           const fbar = fileRow ? fileRow.querySelector('.status .progressbar > i') : null;
           if (fbar) fbar.style.width = `${batch.files[idx].progress.toFixed(1)}%`;
         }
@@ -1628,6 +1694,9 @@ window.api.onProgress((d) => {
         } else {
           f.status = 'done';
           f.outputSize = realOut;
+          /* HDR side data (mastering display / content light / Dolby Vision)
+             that re-encoding can't carry — surfaced as a chip on the row. */
+          if (Array.isArray(d.hdrMeta) && d.hdrMeta.length) f.hdrMeta = d.hdrMeta;
           /* FIX 2: a completed encode is the most reliable throughput sample —
              refine this tier's model from in-bytes ÷ this file's encode time. */
           const inBytes = Number.isFinite(d.inBytes) && d.inBytes > 0 ? d.inBytes : f.size;
@@ -1657,7 +1726,6 @@ window.api.onQueueFinished(({ totals, stopped }) => {
   stopBtn.disabled = false;
   stopBtn.textContent = 'Stop after current file';
   startBtn.classList.remove('hidden');
-  if (topProgress) topProgress.classList.remove('active');
   // tl-tag state will be updated by the next renderQueue() call based on
   // remaining failed batches; if there are none it hides.
 
@@ -1679,6 +1747,17 @@ window.api.onQueueFinished(({ totals, stopped }) => {
   if (totals.alreadyDone > 0) sub.push(`${totals.alreadyDone} already done`);
   if (totals.skippedNonVideo > 0) sub.push(`${totals.skippedNonVideo} non-video ignored`);
   if (sub.length) lines.push(`<div class="muted">${sub.join(' · ')}</div>`);
+  /* HDR deferral, surfaced (not just logged): the operator must see when an
+     HDR source's mastering metadata didn't survive the re-encode. */
+  if (totals.hdrMetaDropped > 0) {
+    const n = totals.hdrMetaDropped;
+    lines.push(
+      `<div class="hdr-note">${n} file${n === 1 ? '' : 's'} carried HDR metadata `
+      + `(mastering display / content light / Dolby Vision) that re-encoding doesn’t carry — `
+      + `color tags are preserved, but the HDR brightness metadata was dropped. `
+      + `Keep the original${n === 1 ? '' : 's'} if you need true HDR delivery.</div>`
+    );
+  }
   /* Item 3: failures stay plain — no exit codes or ffmpeg text here. The
      technical detail lives one click away in the run log (Show log).
      Wording is conditional on whether the _FAILED/ copy was actually

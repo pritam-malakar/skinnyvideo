@@ -1,27 +1,18 @@
-/* Regression: v2.1.17 FEATURE 3 — paused queue → top activity line becomes
-   STATIC amber (motion stops), and returns to the running shimmer on resume.
+/* Regression: real pause/resume of a queue batch. (The original v2.1.17 FEATURE 3
+   "top activity line" has since been REMOVED in the re-skin — this test now also
+   asserts that the #top-progress element is gone in every state.)
 
    Drives the REAL renderer + preload + REAL queue-runner + REAL pipeline encode
    of a real clip. Pause/resume go through the SAME path the Pause button uses
    (window.api.pauseBatch/resumeBatch → a real SIGSTOP/SIGCONT on the encode
    child → the real 'Paused'/'Running' batch-status). The assertions bind to the
-   REAL pause state (item.status === 'paused', set by that message), NOT a
-   mocked flag, and read ground truth from getComputedStyle (animationName).
+   REAL pause state (item.status === 'paused', set by that message), NOT a mocked flag.
 
    Asserts:
-     • while PAUSED: top line carries .paused, animationName === 'none' (no
-       motion), tl-tag reads paused, and NO second orange cue (.next-action)
-       is active mid-run;
-     • on RESUME: .paused removed, animationName === 'tp-shimmer' (motion back).
-   Plus a static check that the paused color comes from the --amber TOKEN, not a
-   hardcoded hex (a future re-skin swaps tokens).
-
-   FAIL on old code: pausing leaves the top line in its cyan .active state with
-   the shimmer still running → .paused absent + animationName 'tp-shimmer' →
-   fails. PASS on the fix.
-
-   Physical check owed to Pritam: headless can confirm animationName === 'none'
-   but NOT that the pixels stop moving — verify visually.
+     • while PAUSED: tl-tag reads paused, NO second orange cue (.next-action) active,
+       and NO top-progress line exists;
+     • on RESUME: the batch returns to running;
+     • the #top-progress element is gone from index.html.
 
    Run:  ./node_modules/.bin/electron test/paused_topline_test.js
    Needs the CompressorTest fixture + bundled ffmpeg; skips cleanly otherwise. */
@@ -124,11 +115,14 @@ app.whenReady().then(async () => {
   let ready = false;
   for (let i = 0; i < 120 && !ready; i++) {
     await wait(500);
-    const st = await run(`(() => { const tp = document.getElementById('top-progress');
-      return { status: queue[0].status, active: tp.classList.contains('active') }; })()`);
-    if (st.status === 'running' && st.active && rt(batchId).child) ready = true;
+    const status = await run(`queue[0].status`);
+    if (status === 'running' && rt(batchId).child) ready = true;
   }
-  check(ready, 'real encode reached running state with the top line active');
+  check(ready, 'real encode reached running state');
+
+  // The top progress line was REMOVED — it must not exist in any state.
+  check(await run(`document.getElementById('top-progress') === null`),
+    'no top-progress line element while RUNNING');
 
   // PAUSE through the same mechanism the Pause button uses (real SIGSTOP).
   await run(`window.api.pauseBatch(${JSON.stringify(batchId)}); true;`);
@@ -136,33 +130,23 @@ app.whenReady().then(async () => {
   for (let i = 0; i < 30 && !paused; i++) { await wait(150); paused = (await run(`queue[0].status`)) === 'paused'; }
   check(paused, 'pause-batch drove the batch to the real paused state');
 
-  const onPause = await run(`(() => {
-    const tp = document.getElementById('top-progress');
-    const cs = getComputedStyle(tp);
-    return { hasPaused: tp.classList.contains('paused'),
-             anim: cs.animationName,
-             tlPaused: document.getElementById('tl-tag').classList.contains('paused'),
-             orangeCues: document.querySelectorAll('.next-action').length }; })()`);
-  check(onPause.hasPaused, 'PAUSED: top line carries the static .paused class');
-  check(onPause.anim === 'none', `PAUSED: animation stopped (animationName="${onPause.anim}")`);
+  const onPause = await run(`(() => ({
+    tlPaused: document.getElementById('tl-tag').classList.contains('paused'),
+    orangeCues: document.querySelectorAll('.next-action').length,
+    topGone: document.getElementById('top-progress') === null }))()`);
   check(onPause.tlPaused, 'PAUSED: tl-tag reads paused');
   check(onPause.orangeCues === 0, `PAUSED mid-run: no second orange cue active (got ${onPause.orangeCues})`);
+  check(onPause.topGone, 'PAUSED: still no top-progress line');
 
-  // RESUME (real SIGCONT) → shimmer comes back.
+  // RESUME (real SIGCONT) → back to running.
   await run(`window.api.resumeBatch(${JSON.stringify(batchId)}); true;`);
   let resumed = false;
   for (let i = 0; i < 30 && !resumed; i++) { await wait(150); resumed = (await run(`queue[0].status`)) === 'running'; }
   check(resumed, 'resume-batch drove the batch back to running');
-  const onResume = await run(`(() => { const tp = document.getElementById('top-progress');
-    return { hasPaused: tp.classList.contains('paused'), anim: getComputedStyle(tp).animationName }; })()`);
-  check(!onResume.hasPaused, 'RESUMED: .paused removed');
-  check(onResume.anim === 'tp-shimmer', `RESUMED: shimmer animation restored (animationName="${onResume.anim}")`);
 
-  // Static token check: paused color is the --amber TOKEN, never a hex.
-  const css = fs.readFileSync(path.join(ROOT, 'src/renderer/styles.css'), 'utf8');
-  const m = css.match(/\.top-progress\.active\.paused\s*\{[^}]*\}/);
-  check(!!m && /var\(--amber\)/.test(m[0]) && !/#[0-9a-fA-F]{3,}/.test(m[0]),
-    'paused top line uses the --amber token, no hardcoded hex');
+  // Static check: the top-progress element is gone from the source.
+  const idxHtml = fs.readFileSync(path.join(ROOT, 'src/renderer/index.html'), 'utf8');
+  check(!/id="top-progress"/.test(idxHtml), 'top-progress element removed from index.html');
 
   // Clean up: cancel the encode child + stop the queue.
   await run(`window.api.cancelBatch(${JSON.stringify(batchId)}); true;`);

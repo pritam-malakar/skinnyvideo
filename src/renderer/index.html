@@ -12,7 +12,7 @@
     <div class="tl-tag hidden" id="tl-tag"></div>
   </div>
 
-  <div id="top-progress" class="top-progress"></div>
+  <div class="top-blur" aria-hidden="true"></div>
 
   <div class="app">
     <!-- header -->
@@ -150,7 +150,9 @@
       <span class="hint" id="queue-count">0 done · 0 running · 0 waiting · 0 failed</span>
     </div>
     <div class="queue" id="queue-wrap">
-      <!-- Each child of #queue is a .qbatch — batch header + nested file rows. -->
+      <!-- Each child of #queue is a .qbatch — batch header + nested file rows.
+           Column labels are a quiet per-batch strip INSIDE each tray (v2.2.3),
+           built in buildBatchGroup — no global header bar. -->
       <ul id="queue" class="qlist"></ul>
       <div class="qfoot" id="qfoot">
         <span class="qfoot-seg">Source · <span id="qfoot-source" style="color:var(--fg-2);">—</span></span>
