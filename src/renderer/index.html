@@ -7,6 +7,10 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <!-- Pro Mode atmosphere — additive violet-leaning bloom layer, opacity 0 in
+       Simple. Crossfades in under body.pro-mode; base body::before is never
+       edited, so Simple mode renders byte-for-byte today's atmosphere. -->
+  <div id="pro-atmosphere" aria-hidden="true"></div>
   <div class="titlebar">
     <div class="tl-spacer"></div>
     <div class="tl-tag hidden" id="tl-tag"></div>
@@ -22,6 +26,13 @@
         <div class="wm-text">
           <div class="wm-name">Squeeze</div>
         </div>
+      </div>
+      <!-- Pro Mode toggle — session-only (never persisted; every launch starts
+           Simple). Flipping it mid-run cannot affect queued/running batches:
+           each batch freezes its settings snapshot at enqueue time. -->
+      <div class="mode-toggle" role="group" aria-label="Mode">
+        <button type="button" id="mode-simple" class="mode-seg active" aria-pressed="true">Normal</button>
+        <button type="button" id="mode-pro" class="mode-seg" aria-pressed="false">Nerd</button>
       </div>
     </div>
 
@@ -115,7 +126,10 @@
             <path d="M13 3 4 14h7l-1 7 9-11h-7l1-7Z"/>
           </svg>
         </div>
-        <span class="badge">Recommended</span>
+        <div class="badge-row">
+          <span class="badge">Recommended</span>
+          <span class="armed-chip" data-armed-chip="regular" hidden>modified</span>
+        </div>
         <div class="name">Who Cares…</div>
         <div class="desc">Smaller files, fast — great for most footage.</div>
       </label>
@@ -128,10 +142,30 @@
             <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4"/>
           </svg>
         </div>
-        <span class="badge">Archival</span>
+        <div class="badge-row">
+          <span class="badge">Archival</span>
+          <span class="armed-chip" data-armed-chip="preserve" hidden>modified</span>
+        </div>
         <div class="name">Probably Need It Later</div>
         <div class="desc">Best possible quality, larger files, much slower.</div>
       </label>
+    </div>
+
+    <!-- Pro Mode settings panel — persistent while body.pro-mode (Simple mode
+         never shows it). Always displays the SELECTED tier's sliders; moving a
+         slider arms the value live. No Confirm/Cancel: Add batch is the commit
+         point (enqueue-time freeze). Controls are JS-rendered, keyed lookups. -->
+    <div id="pro-panel" class="pro-panel pro-sheet" aria-label="Batch settings">
+      <div class="pro-panel-head">
+        <span class="pro-panel-title">Batch settings</span>
+        <span class="pro-panel-sub" id="pro-panel-sub">Applies to the next batch</span>
+        <span class="sheet-tier-chip" id="pro-panel-chip"></span>
+        <span class="sheet-modified" id="pro-panel-modified"><span class="dot"></span><span>Modified</span></span>
+        <button type="button" class="sheet-reset" id="pro-panel-reset">Reset to defaults</button>
+      </div>
+      <!-- Disabled-state line: visible only while no files are staged. -->
+      <div class="pro-panel-empty" id="pro-panel-empty">Drop files to configure this batch</div>
+      <div class="pro-panel-body" id="pro-panel-body"></div>
     </div>
 
     <!-- Commits the staging batch with frozen tier. -->
@@ -179,6 +213,9 @@
       <div class="progress-bar">
         <div id="progress-fill" class="progress-fill"></div>
       </div>
+      <!-- Finalizing note: shown only while a file is flushing to disk (the
+           frozen-ETA window). Plain language for a non-technical operator. -->
+      <div id="finalizing-note" class="finalizing-note" hidden></div>
       <div id="current-file" class="current-file"></div>
       <div class="progress-stats">
         <div class="stat">

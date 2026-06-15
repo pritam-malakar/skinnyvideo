@@ -22,7 +22,7 @@ const fsp = fs.promises;
 const os = require('os');
 
 const ROOT = path.join(__dirname, '..');
-const { scanFolder, getBinaries } = require(path.join(ROOT, 'src/encoder/pipeline'));
+const { scanFolder, getBinaries, tierDefaults } = require(path.join(ROOT, 'src/encoder/pipeline'));
 const { runQueue } = require(path.join(ROOT, 'src/main/queue-runner'));
 
 const MODE = process.env.MODE || 'removequeued';
@@ -65,6 +65,7 @@ ipcMain.handle('free-space', async () => ({ free: 9e15 }));
 ipcMain.handle('delete-orphans', async () => ({ deleted: 0 }));
 ['open-path', 'reveal-path', 'reset-drive', 'reveal-in-finder'].forEach((ch) => ipcMain.handle(ch, async () => ({ ok: true })));
 ipcMain.handle('check-engine', async () => ({ ok: true }));
+ipcMain.handle('get-tier-defaults', async () => ({ regular: tierDefaults('regular'), preserve: tierDefaults('preserve') }));
 ipcMain.handle('set-batch-skips', async (_e, { batchId, skipped }) => { rt(batchId).skips = new Set(Array.isArray(skipped) ? skipped : []); return { ok: true }; });
 ipcMain.handle('pause-batch', async () => ({ ok: true }));
 ipcMain.handle('resume-batch', async () => ({ ok: true }));
@@ -72,8 +73,10 @@ ipcMain.handle('cancel-batch', async () => ({ ok: true }));
 ipcMain.handle('stop-queue', async () => { stopRequested = true; return { ok: true }; });
 
 // ---- start-queue / enqueue-batch — MIRROR main.js ----
+let startPayloads = null;
 ipcMain.handle('start-queue', async (_evt, batches) => {
   if (queueRunning) return { ok: false, error: 'Already running' };
+  startPayloads = batches.map((b) => ({ tier: b.tier, settings: b.settings }));
   queueRunning = true; stopRequested = false; liveBatches = batches;
   let totals;
   try {
@@ -145,6 +148,13 @@ app.whenReady().then(async () => {
 
     const outs = outFiles();
     console.log('  RESULT', JSON.stringify({ bId, outs, finishedCount, statuses: batchStatuses.map((s) => ({ id: s.id, st: s.status })) }));
+    /* Pro Mode foundation: the REAL renderer payload must carry resolved
+       settings = its tier's defaults (engine stays correct without them, but
+       the field is the contract the Pro Mode sheet will later override). */
+    check(Array.isArray(startPayloads) && startPayloads.length > 0 &&
+      startPayloads.every((p) => JSON.stringify(p.settings) === JSON.stringify(tierDefaults(p.tier))),
+      'start payload carried settings === tierDefaults(tier) for every batch');
+
     check(outs.some((f) => /a1/i.test(f)) && outs.some((f) => /a2/i.test(f)), 'batch A encoded all its files');
     check(!outs.some((f) => /b1/i.test(f)), 'engine did NOT encode the removed batch B (THE FIX — phantom freeze)');
     check(bId != null && !wentRunning(bId), 'removed batch B never went Running main-side (no invisible work)');

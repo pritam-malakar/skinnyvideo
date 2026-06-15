@@ -1382,6 +1382,44 @@ body::after {
   white-space: nowrap;
 }
 .eta-strip.hidden { display: none; }
+
+/* ───── Finalizing — encode done, file still flushing to disk ─────
+   Honest "we're saving, not frozen" state. Replaces the old fabricated
+   "~10s left": the bars go indeterminate cyan (no fake %) and a plain note
+   tells a non-technical operator not to quit. All motion is CSS-only
+   (CSP-safe) and removed under prefers-reduced-motion, where a steady cyan bar
+   plus the always-present note still convey the state. */
+.finalizing-note {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono); font-size: 11.5px;
+  letter-spacing: 0.02em; color: var(--cyan);
+  margin: -4px 0 14px; padding: 0 2px;
+}
+.finalizing-note[hidden] { display: none; }
+.finalizing-note::before {
+  content: ''; flex: none; width: 7px; height: 7px; border-radius: 999px;
+  background: var(--cyan); box-shadow: 0 0 8px var(--cyan-line);
+  animation: sq-final-pulse 1.4s ease-in-out infinite;
+}
+
+/* Indeterminate cyan sweep — overall card bar + any queue row marked .indeterminate */
+.progress-card.finalizing .progress-fill,
+.progressbar.indeterminate > i {
+  width: 100% !important;
+  background: linear-gradient(90deg, transparent 0%, var(--cyan) 50%, transparent 100%);
+  background-size: 38% 100%; background-repeat: no-repeat;
+  box-shadow: 0 0 12px var(--cyan-line);
+  transition: none;
+  animation: sq-indeterminate 1.25s ease-in-out infinite;
+}
+/* Drop the % shimmer overlay while indeterminate. */
+.progress-card.finalizing .progress-fill::after { display: none; }
+
+@keyframes sq-indeterminate {
+  0%   { background-position: -40% 0; }
+  100% { background-position: 140% 0; }
+}
+@keyframes sq-final-pulse { 0%, 100% { opacity: .4; } 50% { opacity: 1; } }
 .eta-label {
   font-family: var(--font-mono);
   font-size: 10.5px;
@@ -1813,6 +1851,15 @@ svg { display: block; }
   .tl-tag.running::before,
   .qbatch-status.running .pill .dot,
   .qrow .status.running .pill .dot { animation: none; }
+  /* Finalizing: hold a steady full-width cyan bar (no sweep); the note still
+     reads "Finishing up…" / "Writing to disk", so meaning is preserved. */
+  .progress-card.finalizing .progress-fill,
+  .progressbar.indeterminate > i {
+    animation: none;
+    background: var(--cyan) !important;
+    width: 100% !important;
+  }
+  .finalizing-note::before { animation: none; opacity: .85; }
 }
 
 /* TWEAK 1 (v2.2.0 fix): the orange-repaint of next-action buttons is removed —
@@ -1920,3 +1967,345 @@ svg { display: block; }
   .qrow.row-enter { animation: row-enter var(--dur-base) var(--ease-settle) var(--enter-delay, 0ms) backwards; }
 }
 
+
+/* ============================================================
+   Pro Mode — header toggle + per-batch settings sheet
+   (v3 glass rules: reuses modal backdrop/card layer stack and the
+   existing tier accent variable sets — no new color tokens.)
+   ============================================================ */
+
+/* Segmented Simple/Pro toggle — quiet glass chip, right side of the header. */
+.mode-toggle {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--bg-2);
+  border: 1px solid var(--border-subtle);
+  box-shadow: inset 0 1px 0 var(--sheen-08, rgba(255,255,255,.04));
+}
+.mode-seg {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--fg-3);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .01em;
+  padding: 4px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color .14s ease, background .14s ease;
+}
+.mode-seg:hover { color: var(--fg-2); }
+.mode-seg.active {
+  color: var(--fg);
+  background: linear-gradient(180deg, var(--sheen-hi), var(--sheen-lo));
+  border-color: var(--border-subtle);
+  box-shadow: inset 0 1px 0 var(--sheen-18);
+}
+
+/* The sheet rides the generic modal layer stack (.modal-backdrop/.modal-card);
+   tier accent comes from the SAME variable sets the tier cards define. */
+.pro-sheet.tier-regular {
+  --accent: var(--tier-fast);
+  --accent-sel: var(--tier-fast-sel);
+  --accent-line: var(--tier-fast-line);
+  --accent-tint: var(--tier-fast-glass);
+}
+.pro-sheet.tier-preserve {
+  --accent: var(--violet);
+  --accent-sel: var(--tier-arch-sel);
+  --accent-line: var(--tier-arch-line);
+  --accent-tint: var(--tier-arch-glass);
+}
+.pro-sheet .modal-title { display: flex; align-items: center; gap: 10px; }
+.pro-sheet .sheet-tier-chip {
+  font-size: 11px; font-weight: 600; letter-spacing: .02em;
+  padding: 3px 9px; border-radius: 999px;
+  color: var(--accent);
+  background: var(--accent-tint);
+  border: 1px solid var(--accent-line);
+}
+.pro-sheet .sheet-row { margin: 14px 0 0; }
+.pro-sheet .sheet-label {
+  display: flex; align-items: baseline; justify-content: space-between;
+  font-size: 12.5px; font-weight: 600; color: var(--fg-2); margin-bottom: 7px;
+}
+.pro-sheet .sheet-label .val {
+  font-family: var(--font-mono); font-size: 12.5px; color: var(--fg);
+}
+.pro-sheet .sheet-label .def-mark { color: var(--fg-3); font-weight: 400; }
+.pro-sheet input[type="range"] { width: 100%; accent-color: var(--accent-sel); }
+.pro-sheet input[type="number"],
+.pro-sheet select {
+  width: 100%;
+  font: inherit; font-size: 13px;
+  color: var(--fg);
+  background: var(--bg-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+  padding: 8px 10px;
+}
+.pro-sheet input[type="number"]:focus,
+.pro-sheet select:focus,
+.pro-sheet input[type="range"]:focus-visible {
+  outline: none;
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 2px var(--accent-tint);
+}
+/* "Modified" indicator + one-click reset — hidden until a value differs. */
+.pro-sheet .sheet-modified {
+  display: none;
+  align-items: center; gap: 8px;
+  margin-top: 14px;
+  font-size: 12px; color: var(--accent);
+}
+.pro-sheet.modified .sheet-modified { display: flex; }
+.pro-sheet .sheet-modified .dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--accent-sel);
+}
+.pro-sheet .sheet-reset {
+  appearance: none; border: none; background: none; cursor: pointer;
+  font: inherit; font-size: 12px; color: var(--fg-3);
+  text-decoration: underline; text-underline-offset: 2px; padding: 0;
+}
+.pro-sheet .sheet-reset:hover { color: var(--fg-2); }
+
+/* ============================================================
+   Pro Mode — visual identity (additive; base styles never edited)
+   ============================================================ */
+
+/* Violet-leaning atmosphere overlay — mirror of the base bloom geometry with
+   the cast inverted (violet takes the dominant corner, cyan demoted to the
+   faint hint). Existing palette vars only; opacity 0 in Simple so the Simple
+   canvas is byte-for-byte today's. Sits on the canvas plane (z 0) like
+   body::before; grain (body::after) rides above both. */
+#pro-atmosphere {
+  position: fixed; inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0;
+  background:
+    radial-gradient(1040px 660px at 8% 3%, color-mix(in srgb, var(--tier-arch) 17%, transparent), transparent 72%),
+    radial-gradient(420px 340px at 94% 98%, color-mix(in srgb, var(--tier-arch) 7%, transparent), transparent 60%),
+    radial-gradient(900px 560px at 3% 97%, color-mix(in srgb, var(--tier-arch) 8%, transparent), transparent 66%),
+    radial-gradient(820px 520px at 97% 3%, color-mix(in srgb, var(--violet) 4%, transparent), transparent 66%);
+}
+/* The crossfade: violet rises, the cool base cast recedes. Both are opacity-
+   only — every .glass panel re-tints through its own backdrop sampling. */
+body.pro-mode #pro-atmosphere { opacity: 1; }
+body.pro-mode::before { opacity: .15; }   /* cool cast almost fully leaves the room */
+@media (prefers-reduced-motion: no-preference) {
+  #pro-atmosphere { transition: opacity .6s ease; }
+  body::before { transition: opacity .6s ease; }
+}
+
+/* Toggle active state reflects the mode strongly: the Pro segment, when
+   active, glows iris; the Simple-active treatment is untouched. */
+body.pro-mode #mode-pro.active {
+  color: var(--tier-arch-sel);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--tier-arch) 16%, transparent),
+    color-mix(in srgb, var(--tier-arch) 5%, transparent));
+  border-color: var(--tier-arch-line);
+  box-shadow:
+    inset 0 1px 0 var(--sheen-18),
+    0 0 14px -4px var(--tier-arch-glow);
+}
+
+/* Armed-settings "modified" chip on the tier card — existing accent pill
+   recipe (the card's own --accent set), keyed by data-armed-chip. */
+.armed-chip {
+  font-size: 10px; font-weight: 600; letter-spacing: .03em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--accent);
+  background: var(--accent-tint);
+  border: 1px solid var(--accent-line);
+}
+
+/* ── Sheet sliders (Part 2): slider-only controls with semantic endpoints,
+      quiet raw value, and a default-position notch on the track. ── */
+.pro-sheet .slider-wrap { position: relative; padding: 2px 0 0; }
+.pro-sheet .slider-wrap input[type="range"] { position: relative; z-index: 1; }
+.pro-sheet .slider-notch {
+  position: absolute;
+  top: -1px;
+  width: 2px; height: 8px;
+  border-radius: 1px;
+  background: var(--accent-line);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.pro-sheet .slider-ends {
+  display: flex; justify-content: space-between;
+  margin-top: 4px;
+  font-size: 11px; color: var(--fg-3);
+}
+
+/* ── Pro settings PANEL (replaces the modal sheet): persistent glass panel
+      below the tier cards, Pro Mode only. Carries the .pro-sheet class so the
+      slider/control recipes + tier accent var sets apply unchanged; this block
+      adds only the panel box, visibility gate, and a roomier type scale (the
+      modal's 11-12px read too small inline). ── */
+.pro-panel {
+  display: none;
+  margin-top: 10px;
+  background: linear-gradient(180deg, var(--sheen-hi), var(--sheen-lo));
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+  border: 1px solid transparent; border-top-color: var(--lit-edge);
+  border-radius: 16px;
+  box-shadow:
+    inset 0 1px 0 var(--sheen-18),
+    0 18px 44px -22px var(--shadow-78);
+  padding: 12px 20px 14px;
+}
+body.pro-mode .pro-panel { display: block; }
+.pro-panel-head {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 4px;
+}
+.pro-panel-title {
+  font-size: 14px; font-weight: 600; letter-spacing: -0.01em; color: var(--fg);
+}
+.pro-panel .sheet-tier-chip { font-size: 12px; padding: 3px 10px; }
+.pro-panel .sheet-modified { margin-top: 0; margin-left: auto; font-size: 12.5px; }
+.pro-panel .sheet-reset { font-size: 12.5px; }
+/* Reset sits at the head's right edge even when the modified chip is hidden. */
+.pro-panel:not(.modified) .sheet-reset { margin-left: auto; }
+.pro-panel .sheet-row { margin-top: 12px; }
+.pro-panel .sheet-label { font-size: 13.5px; margin-bottom: 8px; }
+.pro-panel .sheet-label .val { font-size: 13.5px; }
+.pro-panel .slider-ends { font-size: 12px; }
+
+/* ── Pro panel polish pass (layout/grouping/state-visibility only) ── */
+
+/* 2 — mode-aware hint: the Normal-mode header hint is hidden in Nerd Mode
+   (its copy contradicts the panel); the panel itself carries the Nerd copy
+   as a subtitle. Normal mode untouched. */
+body.pro-mode #tier-head #tier-hint { display: none; }
+
+/* 1+8 — control CLUSTERS: label+value / track / endpoints packed tight
+   (intra gaps 6/5px), clusters separated by a clearly larger gap (28px ≈
+   5x intra). Cluster width capped to a comfortable slider measure. */
+/* Cluster container is a grid (1-column today, column-READY for the next
+   knobs): the row gap IS the inter-cluster separation; clusters carry no
+   own margins. 20px still reads as clear separation against the 6/5px
+   intra-cluster rhythm. */
+.pro-panel .pro-panel-body {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px 28px;
+  margin-top: 10px;
+}
+.pro-panel .sheet-row { margin-top: 0; }
+.pro-panel .sheet-label { margin-bottom: 6px; }
+.pro-panel .slider-ends { margin-top: 5px; }
+
+/* 7 — endpoint captions are axis LABELS (they carry the inverted-CRF
+   semantics): control-label size, tier-desc contrast (--fg-2, not the
+   dimmest gray). */
+.pro-panel .slider-ends { font-size: 13.5px; color: var(--accent); }
+
+/* 3 — anchor the panel to the SELECTED card: a tier-accent top edge segment
+   spanning the selected card's half of the grid, so the accent geometry
+   (not just the color) follows selection. Existing accent tokens only. */
+.pro-panel { position: relative; }
+.pro-panel::before {
+  content: "";
+  position: absolute;
+  top: -1px;                       /* rides the lit top edge */
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--accent-line), color-mix(in srgb, var(--accent) 55%, transparent), var(--accent-line));
+  pointer-events: none;
+}
+.pro-panel.tier-regular::before  { left: 10px; right: calc(50% + 10px); }
+.pro-panel.tier-preserve::before { left: calc(50% + 10px); right: 10px; }
+@media (prefers-reduced-motion: no-preference) {
+  .pro-panel::before { transition: left .28s ease, right .28s ease; }
+}
+
+/* 4 — stepped-slider tick marks: snap points visible at rest. Same hairline
+   family as the default notch, dimmer so the notch stays primary. */
+.pro-panel .slider-tick {
+  position: absolute;
+  top: 0;
+  width: 1.5px; height: 8px;
+  background: var(--fg-4);
+  opacity: .9;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+/* 5 — default notch: clearly visible at rest (taller, accent-sel, above the
+   ticks). Existing tokens only. */
+.pro-panel .slider-notch {
+  top: -3px;
+  width: 3px; height: 12px;
+  background: var(--accent-sel);
+  opacity: .55;
+}
+
+/* 6 — Reset appears ONLY when modified: its presence IS the modified signal. */
+.pro-panel .sheet-reset { display: none; }
+.pro-panel.modified .sheet-reset { display: inline; }
+
+/* ── Pro panel correction pass ── */
+
+/* 2 — panel disabled until files are staged. Same dim treatment as the
+   step-dim pattern: own-opacity on the glass element fades the frost
+   without creating a backdrop-root wrapper problem. Visual+interaction
+   only — armed values and session memory are untouched. */
+.pro-panel.disabled { opacity: 0.5; }
+.pro-panel.disabled .pro-panel-body { pointer-events: none; }
+.pro-panel.disabled .sheet-reset { display: none; }   /* after the .modified rule — wins the tie */
+.pro-panel-empty {
+  display: none;
+  font-size: 13px;
+  color: var(--fg-3);
+  margin-top: 6px;
+}
+.pro-panel.disabled .pro-panel-empty { display: block; }
+
+/* ── Nerd-panel readout + card-chip polish ── */
+
+/* 1 — raw value READOUTS: loudest text in the cluster, seated in a quiet
+   hairline chip so they scan as live readouts. */
+.pro-panel .sheet-label .val {
+  font-size: 15px;
+  color: var(--text-high, var(--fg));
+  padding: 1px 9px;
+  border-radius: 7px;
+  border: 1px solid var(--hairline-strong);
+  background: var(--bg-2);
+}
+
+/* 2 — badge + armed chip share ONE fixed-height row inside the card: the
+   chip appearing/disappearing can never change the card's height. */
+.tier .badge-row { display: flex; align-items: center; gap: 8px; min-height: 21px; }
+.tier .badge-row .badge { align-self: auto; }
+.tier .armed-chip {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+  padding: 2px 8px;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* ── Nerd panel density + readout-cue pass ── */
+
+/* 2 — panel subtitle: the Nerd copy lives WITH the panel, one quiet line.
+   Hidden in the disabled state (the "Drop files…" line covers messaging). */
+.pro-panel-sub { font-size: 12.5px; color: var(--fg-3); }
+.pro-panel.disabled .pro-panel-sub { display: none; }
+
+/* 4 — readout direction cue: a chip whose value differs from its default
+   picks up the tier accent (text + border); at default it stays neutral.
+   Signals modified-ness AT the number — softens the inverted CRF axis. */
+.pro-panel .sheet-label .val.mod {
+  color: var(--accent);
+  border-color: var(--accent-line);
+  background: var(--accent-tint);
+}

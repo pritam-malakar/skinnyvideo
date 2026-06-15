@@ -45,6 +45,7 @@ const showLogBtn = document.getElementById('show-log');
 const revealOutputBtn = document.getElementById('reveal-output');
 const dismissSummaryBtn = document.getElementById('dismiss-summary');
 const statEta = document.getElementById('stat-eta');
+const finalizingNoteEl = document.getElementById('finalizing-note');
 const appVersionEl = document.getElementById('app-version');
 const lifetimeSection = document.getElementById('lifetime-section');
 const lifetimeList = document.getElementById('lifetime-list');
@@ -67,6 +68,13 @@ const DEST_PLACEHOLDER = 'Choose a folder — a run subfolder is created automat
 // Maps pipeline tier id → CSS class + display label
 const TIER_CSS = { regular: 'regular', preserve: 'archival' };
 const TIER_LABEL = { regular: 'Who Cares…', preserve: 'Probably Need It Later' };
+/* Tier names render from this ONE constant everywhere — the cards' .name
+   nodes are stamped here at boot (keyed by data-tier), so the queue chips,
+   the Pro settings panel, and the cards can never drift apart. */
+document.querySelectorAll('.tier[data-tier]').forEach((card) => {
+  const nameEl = card.querySelector('.name');
+  if (nameEl && TIER_LABEL[card.dataset.tier]) nameEl.textContent = TIER_LABEL[card.dataset.tier];
+});
 
 /* Staging area = the batch currently being composed. Tier and dryRun are
    sticky on the UI controls; on Add they get FROZEN into the batch and the
@@ -130,6 +138,69 @@ function resetEtaModel() {
   etaHasSignal = false;
 }
 
+/* ───── Finalizing state (the honest "writing to disk" window) ─────
+   At 100% ffmpeg goes quiet while it flushes the container (slow over SMB).
+   The renderer used to freeze on the last % and a fabricated "~10s left".
+   Instead we show an indeterminate bar + a plain note:
+     · active+!confirmed → instant heuristic: running file pinned ≳99% and no
+       fresh progress for ~2 ticks (covers the ~60s before main confirms).
+     · active+confirmed  → main's write-aware watchdog confirmed bytes are
+       still landing on disk (type:'finalizing' IPC).
+   Cleared on file-start / file-done / queue end. */
+let finalizing = { active: false, confirmed: false };
+let lastFileProgressTs = 0;     // when the last file-progress arrived
+let lastFileProgressVal = 0;    // its fraction (0..1)
+
+function applyFinalizingUI() {
+  if (progressCard) progressCard.classList.toggle('finalizing', finalizing.active);
+  if (finalizingNoteEl) {
+    if (finalizing.active) {
+      finalizingNoteEl.textContent = finalizing.confirmed
+        ? 'Writing to disk — please don’t quit'
+        : 'Finishing up…';
+      finalizingNoteEl.hidden = false;
+    } else {
+      finalizingNoteEl.hidden = true;
+      finalizingNoteEl.textContent = '';
+    }
+  }
+  /* Mirror onto the running batch's bars (overall row + the active file row) so
+     they read indeterminate too. Applied imperatively because no progress
+     events arrive during the flush to trigger a re-render. */
+  const batch = queue.find((q) => q.id === currentBatchId);
+  if (!batch) return;
+  const root = queueEl ? queueEl.querySelector(`[data-id="${batch.id}"]`) : null;
+  if (!root) return;
+  const obar = root.querySelector('.qbatch-status .progressbar');
+  if (obar) obar.classList.toggle('indeterminate', finalizing.active);
+  const idx = Number.isFinite(batch.runningFileIdx) ? batch.runningFileIdx : -1;
+  if (idx >= 0 && batch.files[idx]) {
+    const filesList = root.querySelector('.qbatch-files');
+    const targetPath = batch.files[idx].path;
+    const fileRow = filesList
+      ? [...filesList.querySelectorAll('.qrow')].find((r) => r.dataset.fpath === targetPath)
+      : null;
+    const fbar = fileRow ? fileRow.querySelector('.status .progressbar') : null;
+    if (fbar) fbar.classList.toggle('indeterminate', finalizing.active);
+  }
+}
+
+function setFinalizing(active, confirmed) {
+  finalizing.active = !!active;
+  finalizing.confirmed = !!confirmed;
+  applyFinalizingUI();
+}
+
+/* Instant heuristic, evaluated each ETA tick. Never overrides a confirmed
+   signal (which only main can clear, via file-done). */
+function maybeInferFinalizing() {
+  if (!runActive || finalizing.confirmed) return;
+  const stale = lastFileProgressTs > 0 && (Date.now() - lastFileProgressTs) >= 2000;
+  const nearDone = lastFileProgressVal >= 0.99;
+  const want = stale && nearDone;
+  if (want !== finalizing.active) setFinalizing(want, false);
+}
+
 /* Whole-queue work accounting (by SOURCE SIZE), used by BOTH the overall
    progress bar (FIX 3) and the ETA (FIX 2) so they always agree. Terminal
    files (done/existed/failed/cancelled) count as fully-worked; the running
@@ -189,10 +260,19 @@ function updateOverallProgressEta() {
   }
   if (reclaimedEl) reclaimedEl.textContent = humanBytes(w.reclaimedBytes);
 
+  // Re-evaluate the "finishing up" heuristic each tick (running file pinned
+  // ≳99% with no fresh progress) before deciding what the ETA strip shows.
+  maybeInferFinalizing();
+
   if (!w.hasRemaining) { hideEta(); return; }
+  /* During the flush window the time-left is meaningless — the note carries
+     the state. No fabricated countdown. */
+  if (finalizing.active) { hideEta(); return; }
   if (!etaHasSignal) { showEta('Estimating…'); return; }
-  // Floor so it never reads 0:00 while work remains; fmtEta buckets the rest.
-  showEta(fmtEta(w.remainMs) || '~10s left');
+  // Honest estimate only — when there's none (remainMs ≤ 0), hide rather than
+  // invent a floor.
+  const eta = fmtEta(w.remainMs);
+  if (eta) showEta(eta); else hideEta();
 }
 
 /* A file row in a settled state — done/failed/cancelled/already-present/
@@ -301,6 +381,238 @@ function showModal({ title, body, tone = 'warn', actions = [] }) {
     if (primary) primary.focus();
   });
 }
+
+/* ───── Pro Mode ─────
+   Session-only state: defaults to Simple on EVERY launch, never persisted.
+   Flipping mid-run is safe by construction — every batch freezes its settings
+   snapshot at enqueue time (addCurrentToQueue), so the toggle only affects
+   batches added AFTER the flip. */
+let proMode = false;
+const modeSimpleBtn = document.getElementById('mode-simple');
+const modeProBtn = document.getElementById('mode-pro');
+function setProMode(on) {
+  proMode = !!on;
+  if (modeSimpleBtn) {
+    modeSimpleBtn.classList.toggle('active', !proMode);
+    modeSimpleBtn.setAttribute('aria-pressed', String(!proMode));
+  }
+  if (modeProBtn) {
+    modeProBtn.classList.toggle('active', proMode);
+    modeProBtn.setAttribute('aria-pressed', String(proMode));
+  }
+  /* The room changes: body.pro-mode crossfades the violet atmosphere overlay
+     in and the cool base bloom down (CSS-only, reduced-motion gated). The
+     class only ADDS rules — Simple appearance is the untouched base. */
+  document.body.classList.toggle('pro-mode', proMode);
+  /* Flip-on: silently arm the currently-checked tier (session memory or
+     defaults) so armed.tier always equals the checked tier in Pro Mode.
+     No sheet — sheets open ONLY on explicit card clicks. */
+  if (proMode) {
+    const checked = document.querySelector('input[name="tier"]:checked');
+    armTier(checked ? checked.value : 'regular');
+  } else {
+    updateArmedChips();   // chips are a Pro-only signal
+  }
+}
+if (modeSimpleBtn) modeSimpleBtn.addEventListener('click', () => setProMode(false));
+if (modeProBtn) modeProBtn.addEventListener('click', () => setProMode(true));
+
+/* Last-CONFIRMED sheet values per tier — session memory only (plain variable,
+   never written to disk; relaunch returns to pure defaults). */
+const sessionSheetMemory = {};
+
+/* ARMED settings — the values the NEXT batch will freeze at enqueue (Pro
+   Mode). Session-only. INVARIANT: in Pro Mode armed.tier ALWAYS equals the
+   checked tier radio, however selection changed (card click + confirm,
+   keyboard arrow on the radio group, post-enqueue reset, toggle flip-on).
+   Sheet Confirm arms explicitly; every other selection path silently arms
+   that tier's session-memory values (or defaults) — never auto-opens a
+   sheet. */
+let armed = { tier: 'regular', settings: null };
+
+const X265_PRESETS = ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow'];
+
+/* Tier-keyed control manifests — SLIDERS ONLY. The sheet edits exactly the
+   fields that already exist in tierDefaults: regular → qv; preserve → crf +
+   preset. The VT quality scale is 1–100 and is labeled "Quality" (it is NOT
+   CRF). Slider positions are mapped to resolved values via toValue/toPos so
+   RIGHT always means "better quality" (CRF runs inverted: right = LOWER crf)
+   and the preset slider snaps to the nine valid x265 names. */
+const SHEET_MANIFESTS = {
+  regular: [
+    /* max 85 (v2.2.8): the VT bitrate curve goes vertical past 85 — higher
+       values can out-bit the source. Engine clamps at the arg builder too. */
+    { key: 'qv', label: 'Quality', min: 1, max: 85,
+      ends: ['Smaller file', 'Better quality'],
+      toValue: (p) => p, toPos: (v) => v, fmt: (v) => String(v) }
+  ],
+  preserve: [
+    { key: 'crf', label: 'CRF', min: 0, max: 51,
+      ends: ['Smaller file', 'Better quality'],
+      toValue: (p) => 51 - p, toPos: (v) => 51 - v, fmt: (v) => String(v) },
+    { key: 'preset', label: 'Preset', min: 0, max: 8, ticks: true,
+      ends: ['Faster encode', 'Smaller file, slower'],
+      toValue: (p) => X265_PRESETS[p], toPos: (v) => Math.max(0, X265_PRESETS.indexOf(v)), fmt: (v) => String(v) }
+  ]
+};
+const clampPos = (v, min, max, fallback) => {
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+};
+
+/* Resolve a tier's armed settings: defaults overlaid with the session's
+   last-armed values for that tier (sessionSheetMemory, in-memory only). */
+function resolveArmSettings(tier) {
+  const defaults = (tierDefaultsCache && tierDefaultsCache[tier]) || {};
+  return { ...defaults, ...(sessionSheetMemory[tier] || {}) };
+}
+
+/* Arm a tier and re-render the settings panel. With the persistent panel
+   there is no confirm step: arming IS the live state, and Add batch is the
+   commit point (enqueue-time freeze). The armed.tier === checked-tier
+   invariant holds BY CONSTRUCTION: every selection path fires the radio
+   change handler below, which arms the newly selected tier. */
+function armTier(tier, settings) {
+  armed = { tier, settings: settings || resolveArmSettings(tier) };
+  renderProPanel();
+  updateArmedChips();
+}
+
+/* "Modified" chip on the tier cards: visible on the armed tier's card, in Pro
+   Mode only, when the armed settings differ from that tier's defaults.
+   Keyed lookups by data-armed-chip — never positional. */
+function updateArmedChips() {
+  document.querySelectorAll('.armed-chip').forEach((chip) => {
+    const tier = chip.dataset.armedChip;
+    const defaults = (tierDefaultsCache && tierDefaultsCache[tier]) || null;
+    const show = proMode && armed.tier === tier && !!armed.settings && !!defaults
+      && JSON.stringify(armed.settings) !== JSON.stringify(defaults);
+    chip.hidden = !show;
+  });
+}
+
+/* ───── Pro Mode: persistent settings PANEL ─────
+   Always visible in Pro Mode (body.pro-mode gates the CSS), directly below
+   the tier cards. Shows the SELECTED tier's sliders; switching tier re-renders
+   from that tier's session memory or defaults. Moving a slider arms the value
+   LIVE (armed.settings + sessionSheetMemory) — no Confirm, no Cancel.
+   Tier name chip comes from TIER_LABEL, the same constant the rest of the UI
+   renders — never retyped. All lookups keyed (data-key / ids). */
+const proPanelEl = document.getElementById('pro-panel');
+const proPanelBody = document.getElementById('pro-panel-body');
+const proPanelChip = document.getElementById('pro-panel-chip');
+const proPanelReset = document.getElementById('pro-panel-reset');
+const proPanelEmpty = document.getElementById('pro-panel-empty');
+
+function renderProPanel() {
+  if (!proPanelEl || !proPanelBody) return;
+  const tier = armed.tier;
+  const defaults = (tierDefaultsCache && tierDefaultsCache[tier]) || {};
+  const manifest = SHEET_MANIFESTS[tier] || [];
+  const values = armed.settings || defaults;
+
+  proPanelEl.classList.remove('tier-regular', 'tier-preserve');
+  proPanelEl.classList.add(`tier-${tier}`);
+  if (proPanelChip) proPanelChip.textContent = TIER_LABEL[tier] || tier;
+
+  proPanelBody.textContent = '';
+  const inputs = new Map();   // key -> slider element (keyed, never positional)
+  const readValue = (m) => m.toValue(clampPos(inputs.get(m.key).value, m.min, m.max, m.toPos(defaults[m.key])));
+  const refresh = () => {
+    for (const m of manifest) {
+      const valEl = proPanelBody.querySelector(`.sheet-label .val[data-key="${m.key}"]`);
+      if (valEl) {
+        valEl.textContent = m.fmt(readValue(m));
+        /* Readout cue: this chip alone signals ITS value's modified-ness —
+           tier accent when off-default, neutral at default. */
+        valEl.classList.toggle('mod', readValue(m) !== defaults[m.key]);
+      }
+    }
+    const modified = manifest.some((m) => readValue(m) !== defaults[m.key]);
+    proPanelEl.classList.toggle('modified', modified);
+  };
+  /* LIVE arming: every slider move updates the armed settings AND the
+     session memory for this tier (panel re-renders from memory on return). */
+  const commitLive = () => {
+    const edited = {};
+    for (const m of manifest) edited[m.key] = readValue(m);
+    sessionSheetMemory[tier] = { ...edited };
+    armed = { tier, settings: { ...defaults, ...edited } };
+    refresh();
+    updateArmedChips();
+  };
+
+  for (const m of manifest) {
+    const row = document.createElement('div');
+    row.className = 'sheet-row';
+    const label = document.createElement('div');
+    label.className = 'sheet-label';
+    /* Quiet raw value (number / preset name) — pros want it visible; the
+       run-summary stamp references it. */
+    label.innerHTML = `<span>${escapeHtml(m.label)}`
+      + ` <span class="def-mark">(default ${escapeHtml(String(defaults[m.key]))})</span></span>`
+      + `<span class="val" data-key="${m.key}"></span>`;
+    row.appendChild(label);
+
+    const input = document.createElement('input');
+    input.type = 'range';              // sliders ONLY — stepped, snapping
+    input.min = String(m.min); input.max = String(m.max); input.step = '1';
+    input.value = String(clampPos(m.toPos(values[m.key]), m.min, m.max, m.toPos(defaults[m.key])));
+    input.dataset.key = m.key;
+    input.addEventListener('input', commitLive);
+    input.addEventListener('change', commitLive);
+    inputs.set(m.key, input);
+
+    /* Default position visibly marked on the track. */
+    const wrap = document.createElement('div');
+    wrap.className = 'slider-wrap';
+    /* Stepped sliders show their snap points as tick marks at rest. */
+    if (m.ticks) {
+      for (let pos = m.min; pos <= m.max; pos++) {
+        const tick = document.createElement('span');
+        tick.className = 'slider-tick';
+        tick.style.left = `${((pos - m.min) / (m.max - m.min)) * 100}%`;
+        wrap.appendChild(tick);
+      }
+    }
+    const notch = document.createElement('span');
+    notch.className = 'slider-notch';
+    const defPct = ((m.toPos(defaults[m.key]) - m.min) / (m.max - m.min)) * 100;
+    notch.style.left = `${defPct}%`;
+    wrap.appendChild(notch);
+    wrap.appendChild(input);
+    row.appendChild(wrap);
+
+    /* Semantic endpoints — right ALWAYS means better quality (or, for the
+       preset axis, smaller/slower). */
+    const ends = document.createElement('div');
+    ends.className = 'slider-ends';
+    ends.innerHTML = `<span>${escapeHtml(m.ends[0])}</span><span>${escapeHtml(m.ends[1])}</span>`;
+    row.appendChild(ends);
+    proPanelBody.appendChild(row);
+  }
+  refresh();
+  updateProPanelDisabled();   // re-renders (tier switches) keep the gate state
+}
+
+if (proPanelReset) proPanelReset.addEventListener('click', () => {
+  /* One-click Reset: back to pure tier defaults — clears this tier's session
+     memory so the defaults stick across tier switches too. */
+  delete sessionSheetMemory[armed.tier];
+  armTier(armed.tier);
+});
+
+/* Every tier selection path (card click, keyboard arrows, programmatic
+   selection, post-enqueue reset) fires this change handler — arming the newly
+   selected tier keeps armed.tier === checked tier by construction. Never
+   opens anything: the panel is already on screen. */
+tierInputs.forEach((inp) => {
+  inp.addEventListener('change', () => {
+    if (proMode) armTier(inp.value);
+  });
+});
+
 
 /* ───── Non-blocking transient notice ─────
    A brief, auto-dismissing toast for informational failures (e.g. a file row
@@ -490,6 +802,34 @@ function updateAddState() {
   const ready = hasSource && current.scanned && current.videoCount > 0 && current.dest;
   addBtn.disabled = !ready;
   updateFlowState();
+  updateProPanelDisabled();
+}
+
+/* Pro panel gating: disabled (dimmed, sliders inert, Reset hidden, one quiet
+   prompt line) until the batch is ACTIONABLE — staged video files AND an output
+   location. Matches the "Add batch" / tierReachable condition so settings are
+   never live before the batch can exist (the panel is a DOM sibling after the
+   tier cards, so the tier step's `inert` lock can't cover it). VISUAL +
+   INTERACTION ONLY — armed values and session memory persist; tier switching
+   still re-renders the displayed tier while disabled. Mode-agnostic: a batch
+   needs file+location in both Simple and Pro Mode, so this never wrongly locks
+   Pro Mode. */
+function updateProPanelDisabled() {
+  if (!proPanelEl) return;
+  const hasSource = current.kind === 'files'
+    ? current.fileSources.length > 0
+    : !!current.src;
+  const hasFiles = hasSource && current.scanned && current.videoCount > 0;
+  const ready = hasFiles && !!current.dest;
+  proPanelEl.classList.toggle('disabled', !ready);
+  proPanelEl.querySelectorAll('input[type="range"]').forEach((i) => { i.disabled = !ready; });
+  /* Disabled-state prompt names what's actually missing: files first, then the
+     location once files are staged. */
+  if (proPanelEmpty) {
+    proPanelEmpty.textContent = !hasFiles
+      ? 'Drop files to configure this batch'
+      : 'Pick an output location to configure this batch';
+  }
 }
 
 /* ───── Guided progressive-disclosure flow (hard-gated) ─────
@@ -555,6 +895,9 @@ function resetStagingTier() {
   document.querySelectorAll('.tier').forEach((t) => t.classList.remove('selected'));
   const wrap = reg.closest('.tier');
   if (wrap) wrap.classList.add('selected');
+  /* Pro Mode: the reset re-arms the recommended tier's session-memory values
+     (or defaults) SILENTLY — sheets open only on explicit card clicks. */
+  if (proMode) armTier('regular');
 }
 
 function updateTierHint() {
@@ -831,6 +1174,20 @@ dryRunBtn.addEventListener('click', () => {
   if (dryStateEl) dryStateEl.textContent = next ? 'On' : 'Off';
 });
 
+/* Pro Mode foundation: per-tier encode defaults, fetched once from main at
+   startup (single source of truth: pipeline.js tierDefaults). Today, with no
+   Pro Mode UI, a batch's settings are ALWAYS its tier's defaults. If the
+   cache hasn't loaded yet (or the channel is absent in a test harness) the
+   payload carries no settings and the engine resolves the same defaults
+   itself — identical args either way. */
+let tierDefaultsCache = null;
+window.api.getTierDefaults?.().then((d) => {
+  tierDefaultsCache = d;
+  /* If Pro Mode was flipped on before this resolved, the panel rendered
+     against an empty defaults object — re-arm so it shows real values. */
+  if (proMode) armTier(armed.tier);
+}).catch(() => {});
+
 /* The minimal batch shape main needs to RUN a batch — used by BOTH the Start
    payload and a mid-run enqueue, so the two paths can never drift. Display-only
    fields (srcName, rename label) are deliberately omitted: they cannot affect
@@ -839,6 +1196,12 @@ function batchToPayload(b) {
   return {
     id: b.id, src: b.src, dest: b.dest, tier: b.tier, dryRun: b.dryRun,
     kind: b.kind,
+    /* Fully-resolved encode settings — FROZEN on the batch at enqueue time
+       (Pro sheet result, or tier defaults in Simple mode). The payload-time
+       cache read is only the fallback for batches created before the boot
+       fetch resolved. Queue and engine carry this field blindly; the arg
+       builder reads ONLY this for encode parameters. */
+    settings: b.settings || (tierDefaultsCache && tierDefaultsCache[b.tier]) || undefined,
     fileSources: b.kind === 'files' ? (b.fileSources || []) : [],
     skipped: b.files.filter((f) => f.status === 'skipped').map((f) => f.path)
   };
@@ -851,6 +1214,16 @@ function addCurrentToQueue() {
   if (addBtn.disabled) return;
   const tier = document.querySelector('input[name="tier"]:checked').value;
   const dry = dryRunBtn.getAttribute('aria-pressed') === 'true';
+
+  /* Settings are FROZEN here, at enqueue time, for EVERY batch — Simple mode
+     freezes the tier defaults; Pro Mode freezes the ARMED settings (confirmed
+     on the tier card's sheet, or silently armed defaults/session memory).
+     A later mode flip or sheet edit can never touch an already-queued batch.
+     No sheet opens here — the sheet trigger is the tier card click. */
+  const settings = (proMode && armed.tier === tier && armed.settings)
+    ? armed.settings
+    : ((tierDefaultsCache && tierDefaultsCache[tier]) || undefined);
+
   const batch = {
     id: nextId++,
     src: current.src,
@@ -859,6 +1232,7 @@ function addCurrentToQueue() {
     fileSources: current.fileSources.slice(), // frozen for 'files' kind
     dest: current.dest,
     tier,                   // frozen
+    settings,               // frozen — resolved at enqueue time (see above)
     dryRun: dry,
     videoCount: current.videoCount,
     totalSize: current.totalSize || 0,
@@ -1523,6 +1897,8 @@ stopBtn.addEventListener('click', async () => {
 
 function resetProgressUI() {
   progressFill.style.width = '0%';
+  lastFileProgressTs = 0; lastFileProgressVal = 0;
+  setFinalizing(false, false);
   progressBatch.textContent = '';
   progressCounts.textContent = '';
   currentFileEl.textContent = '';
@@ -1603,6 +1979,9 @@ window.api.onProgress((d) => {
   if (d.type === 'file-start') {
     currentFileEl.textContent = d.basename;
     lastFileStartTs = Date.now();
+    // New file → not finalizing; reset the staleness trackers.
+    lastFileProgressTs = 0; lastFileProgressVal = 0;
+    setFinalizing(false, false);
     progressCounts.textContent = `File ${d.index} of ${d.total}`;
     if (batch) {
       batch.progress = ((d.index - 1) / d.total) * 100;
@@ -1626,6 +2005,11 @@ window.api.onProgress((d) => {
     }
     updateOverallProgressEta();   // FIX 2/3: refresh whole-queue bar + ETA
   } else if (d.type === 'file-progress') {
+    // Fresh encoder progress → record for the finalizing heuristic. A live
+    // sample means still encoding, so drop any unconfirmed "finishing up".
+    lastFileProgressTs = Date.now();
+    lastFileProgressVal = d.fileProgress;
+    if (finalizing.active && !finalizing.confirmed) setFinalizing(false, false);
     const overall = ((d.index - 1) + d.fileProgress) / d.total;   // per-BATCH progress
     if (batch) {
       batch.progress = overall * 100;
@@ -1661,7 +2045,15 @@ window.api.onProgress((d) => {
       }
     }
     updateOverallProgressEta();   // FIX 3: whole-queue bar + FIX 2: ETA
+  } else if (d.type === 'finalizing') {
+    /* Confirmed by main's finalization detector: the encode reached ~100% but
+       the process is still alive flushing the container (slow SMB moov write).
+       Upgrade to the explicit "don't quit" state and hold the indeterminate bar. */
+    setFinalizing(true, true);
   } else if (d.type === 'file-done') {
+    // File fully written → leave any finalizing state.
+    lastFileProgressTs = 0; lastFileProgressVal = 0;
+    setFinalizing(false, false);
     const overall = d.index / d.total;   // per-BATCH progress (for this batch's row bar)
     if (batch) {
       batchPrevReclaimed = d.reclaimed || 0;
@@ -1728,6 +2120,7 @@ window.api.onProgress((d) => {
 window.api.onQueueFinished(({ totals, stopped }) => {
   runActive = false;   // run over → flow can re-cue Start if work remains
   if (etaTimer) { clearInterval(etaTimer); etaTimer = null; }
+  setFinalizing(false, false);   // run over → drop any finalizing state
   progressCard.classList.add('hidden');
   stopBtn.classList.add('hidden');
   stopBtn.disabled = false;

@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
   getAppVersion: () => ipcRenderer.invoke('app-version'),
+  getTierDefaults: () => ipcRenderer.invoke('get-tier-defaults'),
   chooseDestination: (defaultPath) => ipcRenderer.invoke('choose-destination', defaultPath),
   scanSource: (srcPath) => ipcRenderer.invoke('scan-source', srcPath),
   checkEngine: () => ipcRenderer.invoke('check-engine'),

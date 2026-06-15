@@ -16,6 +16,32 @@ const TIER_CONSTANTS = {
   preserve: { crf: 20, preset: 'medium' }
 };
 
+/* Quality ceiling (v2.2.8): the measured VT bitrate curve goes vertical past
+   85 (4K source: 42 Mbps @85 → 128 @90 → 552 @100) — above 85 a compression
+   app can emit MORE bits than its source, and the firehose is what blew the
+   SMB write-back stalls past the old watchdog. Clamped in three layers:
+   slider manifest max (renderer), render-time position clamp, and HERE at
+   the arg-builder boundary so a stale payload (old session memory) can never
+   reach the encoder with qv > 85. */
+const QV_MAX = 85;
+
+/* ─── Pro Mode foundation: per-tier encode settings ──────────────────────
+   The resolved settings object is the ONLY thing the arg builder reads for
+   encode parameters; tier id stays on the batch purely for UI/labeling.
+   Today (no Pro Mode UI yet) settings always equal these tier defaults —
+   derived from TIER_CONSTANTS, never duplicated, so the settings-driven args
+   are byte-identical to the historical tier-switch (locked by
+   test/settings_args_test.js against fixtures captured at d7feacb).
+   An unknown tier resolves to {} (no -c:v injected), matching the historical
+   fall-through. Audio handling and 10-bit pixel-format choice are not
+   settings yet: audio is tier-independent, and the 10-bit format is
+   codec-intrinsic (videotoolbox → main10/p010le, x265 → yuv420p10le). */
+function tierDefaults(tier) {
+  if (tier === 'regular')  return { vcodec: 'hevc_videotoolbox', qv: TIER_CONSTANTS.regular.qv };
+  if (tier === 'preserve') return { vcodec: 'libx265', crf: TIER_CONSTANTS.preserve.crf, preset: TIER_CONSTANTS.preserve.preset };
+  return {};
+}
+
 /* ─── ffmpeg/ffprobe resolution — ONE path, no fallback ──────────────────
    The encoder is fully self-contained: Squeeze only EVER runs the ffmpeg it
    ships in its own bundle. There is deliberately NO PATH lookup, no system
@@ -88,6 +114,22 @@ async function ffmpegVersionLine(ffmpegPath) {
    can't hang that check either. */
 const STALL_TIMEOUT_MS = 60000;
 const REACH_TIMEOUT_MS = 3000;
+
+/* ─── Finalization detector (v2.2.8) ─────────────────────────────────────────
+   Separate from the stall watchdog. Finalization is NOT silence — it's "encode
+   reached ~100% but the process is still alive flushing the container" (the
+   multi-second SMB moov write). We detect it directly: progress has been at/near
+   complete for a short debounce while the child is still running. This fires
+   within ~2s of completion regardless of how long the silence gaps are, where
+   keying off the 60s stall window missed real finalizes by ~1s.
+     FINALIZE_NEAR        — progress fraction that counts as "done emitting".
+     FINALIZE_DEBOUNCE_MS — must hold ≥NEAR this long, alive, before firing
+                            (skips the normal sub-second close on a fast local
+                            write → no false "writing to disk").
+     FINALIZE_POLL_MS     — how often the detector samples progress. */
+const FINALIZE_NEAR = 0.99;
+const FINALIZE_DEBOUNCE_MS = 1500;
+const FINALIZE_POLL_MS = 500;
 // Hard cap on a single ffprobe — it emits all output at once at the end, so a
 // wedged probe (source on a vanished volume) is caught by the same watchdog.
 const PROBE_TIMEOUT_MS = 15000;
@@ -130,7 +172,7 @@ async function isSourceReadable(file) {
   );
 }
 
-function runCmd(cmd, args, { onStderr, onStdout, signal, onSpawn, stallTimeoutMs, isPaused, isCancelled } = {}) {
+function runCmd(cmd, args, { onStderr, onStdout, signal, onSpawn, stallTimeoutMs, stallCeilingMs, outPath, probeOutSize, isPaused, isCancelled, onFinalizing, getProgress, finalizeDebounceMs } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     if (onSpawn) { try { onSpawn(child); } catch {} }
@@ -139,10 +181,14 @@ function runCmd(cmd, args, { onStderr, onStdout, signal, onSpawn, stallTimeoutMs
     let settled = false;
     let stallTimer = null;
     let cancelPoll = null;
+    let finalPoll = null;
+    let finalizingFired = false;
+    let nearSince = 0;            // when progress first reached ≥FINALIZE_NEAR
     const clearStall = () => { if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; } };
     const clearCancel = () => { if (cancelPoll) { clearInterval(cancelPoll); cancelPoll = null; } };
-    const finish = (val) => { if (settled) return; settled = true; clearStall(); clearCancel(); resolve(val); };
-    const fail = (err) => { if (settled) return; settled = true; clearStall(); clearCancel(); reject(err); };
+    const clearFinalPoll = () => { if (finalPoll) { clearInterval(finalPoll); finalPoll = null; } };
+    const finish = (val) => { if (settled) return; settled = true; clearStall(); clearCancel(); clearFinalPoll(); resolve(val); };
+    const fail = (err) => { if (settled) return; settled = true; clearStall(); clearCancel(); clearFinalPoll(); reject(err); };
     /* BUG C — cancel must ALWAYS terminate. Poll the cancel flag; the moment
        it's set, kill the child (SIGTERM then a bounded SIGKILL) and resolve
        IMMEDIATELY. We do not wait for 'close' — a child wedged in
@@ -165,29 +211,85 @@ function runCmd(cmd, args, { onStderr, onStdout, signal, onSpawn, stallTimeoutMs
        catches that. A NOT-yet-started file whose source is gone is caught by
        the pre-encode isSourceReadable() check in runBatch (folder mode). */
     /* (Re)arm the inactivity watchdog. Any output cancels and restarts it, so
-       it only fires after a full window of true silence. */
+       it only fires after a full window of true silence.
+
+       WRITE-AWARE (v2.2.8): silence alone is NOT a stall when we know the
+       encode's output path. An encoder blocked on a slow destination write
+       (SMB write-back flush — the diagnosed qv=90/NAS false kill: 85s silent
+       gaps with the encoder healthy) emits nothing while the file keeps
+       growing. So on window expiry we take a BOUNDED size probe of outPath:
+         · grew since last look  → alive (blocked-on-write); re-arm, reset the
+                                   ceiling clock. CONSCIOUS CHOICE: confirmed
+                                   growth always re-arms, so a pathological
+                                   writer dribbling one byte per window could
+                                   run forever — accepted, because a dribbling
+                                   writer is indistinguishable from a very
+                                   slow SMB flush, and killing it re-creates
+                                   exactly the false positive this fixes.
+                                   Cancel/Stop remain available to the
+                                   operator.
+         · same size (definite)  → genuine stall; kill now (same promptness
+                                   as the old watchdog).
+         · ENOENT (never made)   → dead before first write; kill now.
+         · probe timed out       → UNKNOWN (a stat() on a flushing SMB mount
+                                   can itself block — bounded by the same
+                                   withTimeout pattern as isDestWritable).
+                                   Unknown never kills on its own: extend one
+                                   window. The HARD CEILING below backstops a
+                                   writer that stays probe-blind forever.
+       Callers without outPath (ffprobe, -version) keep pure-silence kills. */
+    const ceilingMs = stallCeilingMs || (stallTimeoutMs ? stallTimeoutMs * 5 : 0);
+    const probe = probeOutSize || ((p) => withTimeout(
+      fsp.stat(p).then((s) => s.size, (e) => (e && e.code === 'ENOENT' ? -2 : null)),
+      REACH_TIMEOUT_MS,
+      null
+    ));
+    let lastSize = -1;            // largest size confirmed so far (-1 = none)
+    let lastAliveAt = Date.now(); // last data OR confirmed growth
+    const killStalled = (reason, windowS) => {
+      try { child.kill('SIGTERM'); } catch {}
+      setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, 1500);
+      // Resolve NOW regardless of whether 'close' ever arrives.
+      finish({ code: -1, stdout, stderr, child, stalled: true, stallReason: reason, stallWindowS: windowS });
+    };
     function armStall() {
       if (!stallTimeoutMs) return;
       clearStall();
-      stallTimer = setTimeout(() => {
+      stallTimer = setTimeout(async () => {
         // A paused encode (SIGSTOP) legitimately emits nothing — never kill
         // it; just keep watching until it resumes.
         if (isPaused && isPaused()) { armStall(); return; }
-        try { child.kill('SIGTERM'); } catch {}
-        setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, 1500);
-        // Resolve NOW regardless of whether 'close' ever arrives.
-        finish({ code: -1, stdout, stderr, child, stalled: true });
+        if (!outPath) { killStalled('silent', Math.round(stallTimeoutMs / 1000)); return; }
+        let size = null;
+        try { size = await probe(outPath); } catch { size = null; }
+        if (settled) return;                     // closed/cancelled while probing
+        if (typeof size === 'number' && size > lastSize && size !== -2) {
+          lastSize = size;
+          lastAliveAt = Date.now();              // confirmed growth resets the ceiling
+          armStall();
+          return;
+        }
+        if (size === -2) { killStalled('no-output-file', Math.round(stallTimeoutMs / 1000)); return; }
+        if (typeof size === 'number') { killStalled('no-growth', Math.round(stallTimeoutMs / 1000)); return; }
+        // UNKNOWN — probe-blind. Extend, unless the hard ceiling has passed.
+        if (ceilingMs && Date.now() - lastAliveAt >= ceilingMs) {
+          killStalled('probe-blind', Math.round(ceilingMs / 1000));
+          return;
+        }
+        armStall();
       }, stallTimeoutMs);
     }
     child.stdout.on('data', (d) => {
       const s = d.toString();
       stdout += s;
+      lastAliveAt = Date.now();
       armStall();
       if (onStdout) onStdout(s);
     });
     child.stderr.on('data', (d) => {
       const s = d.toString();
       stderr += s;
+      lastAliveAt = Date.now();
       armStall();
       if (onStderr) onStderr(s);
     });
@@ -196,8 +298,47 @@ function runCmd(cmd, args, { onStderr, onStdout, signal, onSpawn, stallTimeoutMs
     if (signal) {
       signal.attach(() => { try { child.kill('SIGTERM'); } catch {} });
     }
+    /* Finalization detector — independent of the stall watchdog. Fires
+       onFinalizing ONCE when progress has held ≥FINALIZE_NEAR for the debounce
+       while the child is STILL alive: the encode is done emitting frames but the
+       process is flushing the container (the multi-second SMB moov write). This
+       fires within ~debounce of completion, never tied to a 60s silence window.
+       Inert unless the caller opts in with BOTH onFinalizing and getProgress. */
+    if (onFinalizing && getProgress) {
+      const debounceMs = (typeof finalizeDebounceMs === 'number') ? finalizeDebounceMs : FINALIZE_DEBOUNCE_MS;
+      finalPoll = setInterval(() => {
+        if (settled || finalizingFired) { clearFinalPoll(); return; }
+        if (isPaused && isPaused()) { nearSince = 0; return; }   // paused ≠ finalizing
+        let p = null;
+        try { p = getProgress(); } catch { p = null; }
+        if (typeof p === 'number' && p >= FINALIZE_NEAR) {
+          if (nearSince === 0) nearSince = Date.now();
+          else if (Date.now() - nearSince >= debounceMs) {
+            finalizingFired = true;
+            try { onFinalizing(); } catch {}
+            clearFinalPoll();
+          }
+        } else {
+          nearSince = 0;   // not yet at completion (or moved back) → reset debounce
+        }
+      }, FINALIZE_POLL_MS);
+    }
     armStall();   // start watching at spawn — covers a dest that's already dead
   });
+}
+
+
+/* Human log wording for the three distinct watchdog kill reasons (plus the
+   legacy pure-silence wording for outPath-less callers). The NEXT field
+   diagnosis depends on this line telling the truth about which branch fired. */
+function stallLogDetail(r) {
+  if (r && r.stallReason === 'no-growth')
+    return `silent ${r.stallWindowS}s and output confirmed not growing; terminated`;
+  if (r && r.stallReason === 'no-output-file')
+    return `silent ${r.stallWindowS}s and never created its output file; terminated`;
+  if (r && r.stallReason === 'probe-blind')
+    return `silent with output growth unknowable (probes blocked) for ${r.stallWindowS}s ceiling; terminated`;
+  return `produced no output for ${r && r.stallWindowS ? r.stallWindowS : Math.round(STALL_TIMEOUT_MS / 1000)}s; terminated`;
 }
 
 async function ffprobeJson(file) {
@@ -484,7 +625,11 @@ function buildColorArgs(videoStream, { withRange }) {
   return colorArgs;
 }
 
-function buildArgs({ input, tmpOut, tier, videoStream, audioStream, dropColorTags, colorStamp }) {
+function buildArgs({ input, tmpOut, tier, settings, videoStream, audioStream, dropColorTags, colorStamp }) {
+  /* Encode params come ONLY from settings (Pro Mode foundation). Callers that
+     still pass just a tier (tests, legacy paths) get the tier's defaults —
+     identical args either way, guarded by test/settings_args_test.js. */
+  const s = settings || tierDefaults(tier);
   const args = ['-y', '-nostdin', '-hide_banner', '-loglevel', 'error', '-stats', '-i', input];
   const tenBit = is10Bit(videoStream?.pix_fmt);
 
@@ -495,12 +640,12 @@ function buildArgs({ input, tmpOut, tier, videoStream, audioStream, dropColorTag
 
   const colorArgs = dropColorTags ? [] : buildColorArgs(videoStream, { withRange: true });
 
-  if (tier === 'regular') {
-    args.push('-c:v', 'hevc_videotoolbox', '-q:v', String(TIER_CONSTANTS.regular.qv), '-tag:v', 'hvc1');
+  if (s.vcodec === 'hevc_videotoolbox') {
+    args.push('-c:v', 'hevc_videotoolbox', '-q:v', String(Math.min(QV_MAX, s.qv)), '-tag:v', 'hvc1');
     if (tenBit) args.push('-profile:v', 'main10', '-pix_fmt', 'p010le');
-  } else if (tier === 'preserve') {
-    args.push('-c:v', 'libx265', '-crf', String(TIER_CONSTANTS.preserve.crf),
-      '-preset', TIER_CONSTANTS.preserve.preset, '-tag:v', 'hvc1');
+  } else if (s.vcodec === 'libx265') {
+    args.push('-c:v', 'libx265', '-crf', String(s.crf),
+      '-preset', s.preset, '-tag:v', 'hvc1');
     if (tenBit) args.push('-pix_fmt', 'yuv420p10le');
   }
 
@@ -594,6 +739,11 @@ async function runBatch(batch, controlOrFn, onProgress) {
   const isPaused    = ctl.isPaused    || (() => false);
 
   const { src, dest, tier } = batch;
+  /* Pro Mode foundation: the batch carries fully-resolved encode settings
+     (today always the tier defaults, attached renderer-side at payload time).
+     Resolve the fallback here so direct runBatch callers without a settings
+     field (tests, older harnesses) encode exactly as before. */
+  const settings = batch.settings || tierDefaults(tier);
   const runDir = path.join(dest, tsRunFolder());
 
   /* NO SILENT FALLBACK: verify the bundled engine before doing anything. If the
@@ -635,6 +785,16 @@ async function runBatch(batch, controlOrFn, onProgress) {
   log(`# Source: ${src}`);
   log(`# Destination: ${runDir}`);
   log(`# Tier: ${tier}`);
+  /* Pro Mode: when this batch ran with non-default settings, record exactly
+     which values were overridden (e.g. "crf=18 preset=slow"). Default-settings
+     batches stamp nothing — the line exists only when there is a difference. */
+  {
+    const defs = tierDefaults(tier);
+    const overridden = Object.keys(settings)
+      .filter((k) => settings[k] !== defs[k])
+      .map((k) => `${k}=${settings[k]}`);
+    if (overridden.length) log(`# Settings overrides: ${overridden.join(' ')}`);
+  }
   /* Provenance — which engine actually ran. The absolute bundled path proves no
      PATH/system ffmpeg slipped in; the version line lets a per-machine failure
      be diagnosed from the log alone (mini vs Studio). */
@@ -814,26 +974,40 @@ async function runBatch(batch, controlOrFn, onProgress) {
       log(`HDR-METADATA ${v.file} :: ${hdrMeta.join(', ')} — re-encoding does not carry this metadata (color tags are preserved; HDR brightness metadata is dropped)`);
     }
 
-    const args = buildArgs({ input: v.file, tmpOut: tmpPath, tier, videoStream: vs, audioStream: as, colorStamp });
+    const args = buildArgs({ input: v.file, tmpOut: tmpPath, tier, settings, videoStream: vs, audioStream: as, colorStamp });
 
     let stderrBuf = '';
+    /* Latest parsed progress fraction for THIS encode attempt (0..1), fed to
+       runCmd's finalization detector via getProgress. Reset before each attempt
+       (primary / retry / fallback) so a fresh encode debounces from zero. */
+    let lastProgress = 0;
+    /* Emitted ONCE per file by runCmd's finalization detector: the encode has
+       reached ~100% but the process is still alive flushing the container (the
+       multi-second SMB moov write). The renderer upgrades to "writing to disk". */
+    const emitFinalizing = () => onProgress && onProgress({
+      type: 'finalizing',
+      index: i + 1,
+      total: totalFiles,
+      file: v.file,
+      basename: path.basename(v.file)
+    });
     const result = await runCmd(ffmpeg, args, {
       signal: null,
       onSpawn,
       stallTimeoutMs: STALL_TIMEOUT_MS,
+      outPath: tmpPath,
       isPaused,
       isCancelled,
+      onFinalizing: emitFinalizing,
+      getProgress: () => lastProgress,
       onStderr: (chunk) => {
         stderrBuf += chunk;
         if (stderrBuf.length > 20000) stderrBuf = stderrBuf.slice(-10000);
         const t = parseFFmpegTime(chunk);
         if (t != null && durationSec > 0) {
-          onProgress && onProgress({
-            type: 'file-progress',
-            index: i + 1,
-            total: totalFiles,
-            fileProgress: Math.max(0, Math.min(1, t / durationSec))
-          });
+          const frac = Math.max(0, Math.min(1, t / durationSec));
+          lastProgress = frac;
+          onProgress && onProgress({ type: 'file-progress', index: i + 1, total: totalFiles, fileProgress: frac });
         }
       }
     });
@@ -867,7 +1041,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
        too; copy only if the source is still readable). */
     if (result.stalled) {
       try { await fsp.unlink(tmpPath); } catch {}
-      log(`STALL ${v.file} (primary encoder produced no output for ${Math.round(STALL_TIMEOUT_MS / 1000)}s; terminated)`);
+      log(`STALL ${v.file} (primary encoder ${stallLogDetail(result)})`);
       if (!(await isDestWritable(runDir))) { recordDestLost(v, i); break; }
       if (!(await isSourceReadable(v.file))) { recordSourceMissing(v, i); continue; }
       await recordPlainFailure(v, i);   // stalled but src+dest fine — genuine stuck encode
@@ -911,24 +1085,25 @@ async function runBatch(batch, controlOrFn, onProgress) {
          worth a dead job. */
       const optRejected = /Error applying encoder options|Error applying option .* to filter 'setparams'/.test(stderrBuf);
       if (optRejected) {
-        const bareArgs = buildArgs({ input: v.file, tmpOut: tmpPath, tier, videoStream: vs, audioStream: as, dropColorTags: true });
+        const bareArgs = buildArgs({ input: v.file, tmpOut: tmpPath, tier, settings, videoStream: vs, audioStream: as, dropColorTags: true });
         let stderrBuf3 = '';
+        lastProgress = 0;   // fresh encode → debounce finalization from zero
         const r3 = await runCmd(ffmpeg, bareArgs, {
           onSpawn,
           stallTimeoutMs: STALL_TIMEOUT_MS,
+          outPath: tmpPath,
           isPaused,
           isCancelled,
+          onFinalizing: emitFinalizing,
+          getProgress: () => lastProgress,
           onStderr: (chunk) => {
             stderrBuf3 += chunk;
             if (stderrBuf3.length > 20000) stderrBuf3 = stderrBuf3.slice(-10000);
             const t = parseFFmpegTime(chunk);
             if (t != null && durationSec > 0) {
-              onProgress && onProgress({
-                type: 'file-progress',
-                index: i + 1,
-                total: totalFiles,
-                fileProgress: Math.max(0, Math.min(1, t / durationSec))
-              });
+              const frac = Math.max(0, Math.min(1, t / durationSec));
+              lastProgress = frac;
+              onProgress && onProgress({ type: 'file-progress', index: i + 1, total: totalFiles, fileProgress: frac });
             }
           }
         });
@@ -947,7 +1122,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
         }
         if (r3.stalled) {
           try { await fsp.unlink(tmpPath); } catch {}
-          log(`STALL ${v.file} (no-color retry produced no output for ${Math.round(STALL_TIMEOUT_MS / 1000)}s; terminated)`);
+          log(`STALL ${v.file} (no-color retry ${stallLogDetail(r3)})`);
           if (!(await isDestWritable(runDir))) { recordDestLost(v, i); break; }
           if (!(await isSourceReadable(v.file))) { recordSourceMissing(v, i); continue; }
           await recordPlainFailure(v, i);
@@ -969,22 +1144,23 @@ async function runBatch(batch, controlOrFn, onProgress) {
          them would fail identically. */
       const fallbackArgs = buildFallbackArgs({ input: v.file, tmpOut: tmpPath, tier, videoStream: vs, audioStream: as, dropColorTags: optRejected, colorStamp });
       let stderrBuf2 = '';
+      lastProgress = 0;   // fresh encode → debounce finalization from zero
       const r2 = await runCmd(ffmpeg, fallbackArgs, {
         onSpawn,
         stallTimeoutMs: STALL_TIMEOUT_MS,
+        outPath: tmpPath,
         isPaused,
         isCancelled,
+        onFinalizing: emitFinalizing,
+        getProgress: () => lastProgress,
         onStderr: (chunk) => {
           stderrBuf2 += chunk;
           if (stderrBuf2.length > 20000) stderrBuf2 = stderrBuf2.slice(-10000);
           const t = parseFFmpegTime(chunk);
           if (t != null && durationSec > 0) {
-            onProgress && onProgress({
-              type: 'file-progress',
-              index: i + 1,
-              total: totalFiles,
-              fileProgress: Math.max(0, Math.min(1, t / durationSec))
-            });
+            const frac = Math.max(0, Math.min(1, t / durationSec));
+            lastProgress = frac;
+            onProgress && onProgress({ type: 'file-progress', index: i + 1, total: totalFiles, fileProgress: frac });
           }
         }
       });
@@ -1130,6 +1306,9 @@ module.exports = {
   isSourceReadable,
   VIDEO_EXTS,
   TIER_CONSTANTS,
+  QV_MAX,
+  STALL_TIMEOUT_MS,
+  tierDefaults,
   buildArgs,
   buildFallbackArgs,
   buildColorArgs,

@@ -3,16 +3,21 @@ const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
 const os = require('os');
-const { runBatch, dryRunBatch, scanFolder, isVideoFile, getBinaries, ffmpegStatus, ENGINE_MISSING_MESSAGE, VIDEO_EXTS } = require('../encoder/pipeline');
+const { runBatch, dryRunBatch, scanFolder, isVideoFile, getBinaries, ffmpegStatus, ENGINE_MISSING_MESSAGE, VIDEO_EXTS, tierDefaults } = require('../encoder/pipeline');
 const { flattenRunDir } = require('../encoder/flatten');
 const { findOrphanPartials, deletePartials } = require('../encoder/orphans');
 const { stageFileList } = require('../encoder/stage');
 const { runQueue } = require('./queue-runner');
 const { revealInFinder } = require('./reveal');
+const { QUIT_DIALOG, handleCloseAttempt, applyProgressToQuitState } = require('./close-guard');
 
 let mainWindow = null;
 let stopRequested = false;
 let queueRunning = false;
+/* Soft close-guard state: isFinalizing is raised by the finalizing progress
+   signal (a file flushing to disk) and read by the close/quit handlers so a
+   quit mid-write asks for confirmation instead of corrupting the output. */
+const quitState = { isFinalizing: false, forceQuit: false };
 /* The LIVE batch list the running queue is draining (the same array object
    passed to runQueue). Mid-run drops are appended here via 'enqueue-batch', and
    runQueue's loop re-reads `.length` each turn so it absorbs them in the SAME
@@ -117,6 +122,27 @@ function createWindow() {
   });
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
   mainWindow.once('ready-to-show', () => mainWindow.show());
+
+  /* Soft close-guard: a red-button close while a file is flushing to disk asks
+     for confirmation first. When not finalizing, close is untouched. */
+  mainWindow.on('close', (e) => {
+    handleCloseAttempt(quitState, {
+      preventDefault: () => e.preventDefault(),
+      confirmQuit: confirmQuitAnyway,
+      proceed: () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close(); }
+    });
+  });
+}
+
+/* Native confirm for the close-guard. Returns true iff the operator chose
+   "Quit anyway" (button index 1). Synchronous so it can answer Electron's
+   close/before-quit events inline. */
+function confirmQuitAnyway() {
+  const parent = (mainWindow && !mainWindow.isDestroyed()) ? mainWindow : null;
+  const choice = parent
+    ? dialog.showMessageBoxSync(parent, QUIT_DIALOG)
+    : dialog.showMessageBoxSync(QUIT_DIALOG);
+  return choice === 1;
 }
 
 app.whenReady().then(() => {
@@ -175,10 +201,30 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
+/* Soft close-guard for ⌘Q / app-level quit: same confirmation as the red
+   button when a file is still flushing to disk. forceQuit (set by the dialog)
+   lets the re-entrant quit through. */
+app.on('before-quit', (e) => {
+  handleCloseAttempt(quitState, {
+    preventDefault: () => e.preventDefault(),
+    confirmQuit: confirmQuitAnyway,
+    proceed: () => app.quit()
+  });
+});
+
 /* Version read from Electron's bundled identity — single source of truth.
    In dev this falls through to package.json; in a packaged .app it returns
    CFBundleShortVersionString. The renderer fetches it once at startup. */
 ipcMain.handle('app-version', async () => app.getVersion());
+
+/* Pro Mode foundation: the per-tier encode defaults, resolved renderer-side
+   into each batch payload's `settings` field at enqueue time. Single source
+   of truth is pipeline.js tierDefaults (derived from TIER_CONSTANTS) — the
+   renderer only caches this table at startup, it never defines values. */
+ipcMain.handle('get-tier-defaults', async () => ({
+  regular: tierDefaults('regular'),
+  preserve: tierDefaults('preserve')
+}));
 
 /* Engine pre-flight for the renderer's Start handler: returns {ok} plus the
    plain-language message on failure, so the run can be blocked BEFORE any UI
@@ -295,6 +341,8 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
   } catch { /* non-fatal */ }
 
   const send = (channel, payload) => {
+    // Track the finalizing window off the same progress stream the renderer sees.
+    applyProgressToQuitState(quitState, channel, payload);
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
   };
 
@@ -307,6 +355,7 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
   } finally {
     liveBatches = null;   // run over → further drops start a fresh run
     queueRunning = false;
+    quitState.isFinalizing = false;   // run ended → never leave the guard armed
     // Run reached a clean end — no orphaned partials to recover next launch.
     try { prefs.pendingDests = []; savePrefs(); } catch { /* non-fatal */ }
     send('queue-finished', {
