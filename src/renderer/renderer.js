@@ -1656,7 +1656,7 @@ function buildFileRow(file, i, batchId, entering) {
     const hdr = document.createElement('span');
     hdr.className = 'hdr-chip';
     hdr.textContent = 'HDR';
-    hdr.title = `This file's HDR metadata (${file.hdrMeta.join(', ')}) is not carried by re-encoding — color tags are preserved, HDR brightness metadata was dropped.`;
+    hdr.title = `This file carried extra HDR metadata (${file.hdrMeta.join(', ')}) that re-encoding doesn’t keep. The output is still valid HDR — color and transfer tags are preserved; only this metadata was dropped. Keep the original if you need it for color grading or mastered delivery.`;
     statusCol.appendChild(hdr);
   }
   // Bar omitted for skipped — there's nothing to show.
@@ -2230,11 +2230,12 @@ window.api.onQueueFinished(({ totals, stopped }) => {
      HDR source's mastering metadata didn't survive the re-encode. */
   if (totals.hdrMetaDropped > 0) {
     const n = totals.hdrMetaDropped;
+    const isAre = n === 1 ? 'output is' : 'outputs are';
+    const itThem = n === 1 ? 'it' : 'them';
     lines.push(
-      `<div class="hdr-note">${n} file${n === 1 ? '' : 's'} carried HDR metadata `
-      + `(mastering display / content light / Dolby Vision) that re-encoding doesn’t carry — `
-      + `color tags are preserved, but the HDR brightness metadata was dropped. `
-      + `Keep the original${n === 1 ? '' : 's'} if you need true HDR delivery.</div>`
+      `<div class="hdr-note">${n} file${n === 1 ? '' : 's'} carried extra HDR metadata that re-encoding doesn’t keep. `
+      + `The ${isAre} still valid HDR — color and transfer tags are preserved; only this metadata was dropped. `
+      + `Keep the original${n === 1 ? '' : 's'} if you need ${itThem} for color grading or mastered delivery.</div>`
     );
   }
   /* Item 3: failures stay plain — no exit codes or ffmpeg text here. The
