@@ -525,6 +525,31 @@ body::after {
 .dz-loaded .count { color: var(--cyan); font-weight: 500; }
 .dz-loaded .total { color: var(--fg-2); }
 
+/* Clear staged-file control — quiet ghost button mirroring .lt-reset, pushed to
+   the trailing edge of the loaded row. Lives only inside #drop-status, so it's
+   present exactly when a file is staged (has-source). */
+.dz-clear {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--orange);
+  background: var(--orange-tint);
+  border: 1px solid var(--orange-line);
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  transition: color .15s ease, border-color .15s ease, background .15s ease;
+  white-space: nowrap;
+}
+.dz-clear:hover {
+  color: var(--orange);
+  border-color: var(--orange-line);
+  background: var(--orange-tint-strong);
+}
+
 /* ============================================================
    Options row
    ============================================================ */

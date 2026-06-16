@@ -3,6 +3,7 @@ const dropStatus = document.getElementById('drop-status');
 const dropStatusPath = document.getElementById('drop-status-path');
 const dropStatusCount = document.getElementById('drop-status-count');
 const dropStatusExtra = document.getElementById('drop-status-extra');
+const dropClearBtn = document.getElementById('drop-clear');
 const destPathEl = document.getElementById('dest-path');
 const chooseDestBtn = document.getElementById('choose-dest');
 const tierInputs = document.querySelectorAll('input[name="tier"]');
@@ -1075,6 +1076,15 @@ async function browseAndStage() {
 }
 if (dzBrowseBtn) dzBrowseBtn.addEventListener('click', browseAndStage);
 if (dzBrowseTextBtn) dzBrowseTextBtn.addEventListener('click', browseAndStage);
+
+/* Clear the staged file without an Add-then-remove round-trip. Uses the SAME
+   reset Add runs post-commit (clearDrop with resetTier) — discards the staged
+   file + tier/settings, KEEPS the sticky dest, and never touches the queue or
+   any active run. stopPropagation so the click never reaches the dropzone. */
+if (dropClearBtn) dropClearBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  clearDrop({ resetTier: true });
+});
 
 /* Display name for a file-list batch shown in the dropzone + queue header.
    Single file: just its basename. Many: "first.mov + N more". */
