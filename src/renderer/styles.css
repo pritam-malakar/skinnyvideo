@@ -2204,6 +2204,26 @@ body.pro-mode #tier-head #tier-hint { display: none; }
 .pro-panel .sheet-label { margin-bottom: 6px; }
 .pro-panel .slider-ends { margin-top: 5px; }
 
+/* Downconvert 10-bit→8-bit checkbox — a boolean knob below the sliders, shown
+   only on a batch that has a 10-bit file. [hidden] is toggled by the renderer. */
+.pro-toggle {
+  display: flex; align-items: flex-start; gap: 10px;
+  margin-top: 18px; padding-top: 14px;
+  border-top: 1px solid var(--border-subtle);
+  cursor: pointer;
+}
+.pro-toggle[hidden] { display: none; }
+.pro-toggle input[type="checkbox"] {
+  margin: 1px 0 0; width: 15px; height: 15px;
+  accent-color: var(--accent-sel); cursor: pointer; flex: none;
+}
+.pro-toggle-text { display: flex; flex-direction: column; gap: 2px; }
+.pro-toggle-title { font-size: 13.5px; color: var(--fg); }
+.pro-toggle-sub { font-size: 12px; color: var(--fg-3); }
+/* While the panel is gated (no files / no location) the toggle is SUPPRESSED
+   (not just dimmed) — part of the mutually-exclusive empty-vs-armed render. */
+.pro-panel.disabled .pro-toggle { display: none; }
+
 /* 7 — endpoint captions are axis LABELS (they carry the inverted-CRF
    semantics): control-label size, tier-desc contrast (--fg-2, not the
    dimmest gray). */
@@ -2260,7 +2280,12 @@ body.pro-mode #tier-head #tier-hint { display: none; }
    without creating a backdrop-root wrapper problem. Visual+interaction
    only — armed values and session memory are untouched. */
 .pro-panel.disabled { opacity: 0.5; }
-.pro-panel.disabled .pro-panel-body { pointer-events: none; }
+/* Disabled = batch not yet actionable. SUPPRESS the armed display entirely
+   (don't dim a stale value): the slider rows, the Modified badge, Reset, and the
+   downconvert checkbox are all removed so ONLY the empty prompt shows. Empty-
+   state and armed-display are mutually exclusive — never both drawn. */
+.pro-panel.disabled .pro-panel-body { display: none; pointer-events: none; }
+.pro-panel.disabled .sheet-modified { display: none; }   /* later than the .modified show rule → wins */
 .pro-panel.disabled .sheet-reset { display: none; }   /* after the .modified rule — wins the tie */
 .pro-panel-empty {
   display: none;

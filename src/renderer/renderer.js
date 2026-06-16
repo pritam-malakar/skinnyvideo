@@ -479,14 +479,27 @@ function armTier(tier, settings) {
   updateArmedChips();
 }
 
+/* SINGLE source of truth for "is the staged batch actionable" — has scanned
+   video files AND an output location. The whole Nerd panel (empty prompt,
+   slider rows, Modified badge, downconvert checkbox) gates on this ONE read so
+   the empty-state and the armed-value display can never contradict on screen
+   (the desync that let "Drop files…" coexist with a stale qv:85 + Modified).
+   Equals the v2.2.8 file+location gate. */
+function panelReady() {
+  const hasSource = current.kind === 'files' ? current.fileSources.length > 0 : !!current.src;
+  return hasSource && current.scanned && current.videoCount > 0 && !!current.dest;
+}
+
 /* "Modified" chip on the tier cards: visible on the armed tier's card, in Pro
-   Mode only, when the armed settings differ from that tier's defaults.
-   Keyed lookups by data-armed-chip — never positional. */
+   Mode only, when the armed settings differ from that tier's defaults — AND only
+   once the batch is actionable (panelReady), so a persisted off-default value
+   never shows Modified over an empty panel. Keyed by data-armed-chip. */
 function updateArmedChips() {
+  const ready = panelReady();
   document.querySelectorAll('.armed-chip').forEach((chip) => {
     const tier = chip.dataset.armedChip;
     const defaults = (tierDefaultsCache && tierDefaultsCache[tier]) || null;
-    const show = proMode && armed.tier === tier && !!armed.settings && !!defaults
+    const show = proMode && ready && armed.tier === tier && !!armed.settings && !!defaults
       && JSON.stringify(armed.settings) !== JSON.stringify(defaults);
     chip.hidden = !show;
   });
@@ -504,6 +517,41 @@ const proPanelBody = document.getElementById('pro-panel-body');
 const proPanelChip = document.getElementById('pro-panel-chip');
 const proPanelReset = document.getElementById('pro-panel-reset');
 const proPanelEmpty = document.getElementById('pro-panel-empty');
+const proDownconvert = document.getElementById('pro-downconvert');
+const proDownconvertInput = document.getElementById('pro-downconvert-input');
+
+/* Mirror of pipeline.is10Bit — the renderer can't require the main-process
+   module, so the regex is duplicated (kept in sync deliberately). Used ONLY to
+   decide whether to SHOW the downconvert checkbox; the encoder re-probes each
+   file and makes the real per-file decision. */
+function is10BitPix(pixFmt) { return /10le|10be|p010|p210|p410/.test(pixFmt || ''); }
+function batchHas10Bit() {
+  return !!(current.files && current.files.some((f) => is10BitPix(f.pix_fmt)));
+}
+/* The "Downconvert 10-bit to 8-bit" checkbox shows ONLY in Nerd mode AND only
+   when the staged batch actually contains a 10-bit file — never a dead control
+   on an all-8-bit batch. Reflects the armed flag. On an 8-bit source the flag
+   is a no-op in buildArgs, so a stale-armed value left hidden is harmless. */
+function syncDownconvertUI() {
+  if (!proDownconvert || !proDownconvertInput) return;
+  // Same single `ready` gate as the rest of the panel: the checkbox only shows
+  // once the batch is actionable AND it has a 10-bit file — never desyncs from
+  // the empty-state, and never a dead control on an all-8-bit batch.
+  proDownconvert.hidden = !(proMode && panelReady() && batchHas10Bit());
+  proDownconvertInput.checked = !!(armed.settings && armed.settings.downconvert8);
+}
+/* Toggle → tier session memory + armed.settings (rides the same delta path as
+   the sliders). Re-render keeps the modified-state / Reset affordance in sync. */
+function onDownconvertToggle() {
+  const tier = armed.tier;
+  const next = { ...(sessionSheetMemory[tier] || {}) };
+  if (proDownconvertInput.checked) next.downconvert8 = true; else delete next.downconvert8;
+  sessionSheetMemory[tier] = next;
+  armed = { tier, settings: resolveArmSettings(tier) };
+  renderProPanel();      // refresh readouts + modified state; re-syncs the checkbox
+  updateArmedChips();
+}
+if (proDownconvertInput) proDownconvertInput.addEventListener('change', onDownconvertToggle);
 
 function renderProPanel() {
   if (!proPanelEl || !proPanelBody) return;
@@ -529,14 +577,20 @@ function renderProPanel() {
         valEl.classList.toggle('mod', readValue(m) !== defaults[m.key]);
       }
     }
-    const modified = manifest.some((m) => readValue(m) !== defaults[m.key]);
+    /* downconvert8 (a non-slider boolean knob) also counts as "modified" so the
+       Reset affordance appears when only the checkbox is changed. */
+    const modified = manifest.some((m) => readValue(m) !== defaults[m.key])
+      || !!(armed.settings && armed.settings.downconvert8);
     proPanelEl.classList.toggle('modified', modified);
   };
   /* LIVE arming: every slider move updates the armed settings AND the
-     session memory for this tier (panel re-renders from memory on return). */
+     session memory for this tier (panel re-renders from memory on return).
+     The tier-independent downconvert8 boolean is preserved across slider
+     commits (it isn't in the manifest). */
   const commitLive = () => {
     const edited = {};
     for (const m of manifest) edited[m.key] = readValue(m);
+    if (sessionSheetMemory[tier] && sessionSheetMemory[tier].downconvert8) edited.downconvert8 = true;
     sessionSheetMemory[tier] = { ...edited };
     armed = { tier, settings: { ...defaults, ...edited } };
     refresh();
@@ -593,7 +647,7 @@ function renderProPanel() {
     proPanelBody.appendChild(row);
   }
   refresh();
-  updateProPanelDisabled();   // re-renders (tier switches) keep the gate state
+  updateProPanelDisabled();   // ONE pass: .disabled + empty copy + syncDownconvertUI
 }
 
 if (proPanelReset) proPanelReset.addEventListener('click', () => {
@@ -822,7 +876,9 @@ function updateProPanelDisabled() {
   const hasFiles = hasSource && current.scanned && current.videoCount > 0;
   const ready = hasFiles && !!current.dest;
   proPanelEl.classList.toggle('disabled', !ready);
-  proPanelEl.querySelectorAll('input[type="range"]').forEach((i) => { i.disabled = !ready; });
+  // Gate every panel input — the sliders AND the downconvert checkbox. (The tier
+  // radios live outside the panel, so this only touches panel controls.)
+  proPanelEl.querySelectorAll('input').forEach((i) => { i.disabled = !ready; });
   /* Disabled-state prompt names what's actually missing: files first, then the
      location once files are staged. */
   if (proPanelEmpty) {
@@ -830,6 +886,9 @@ function updateProPanelDisabled() {
       ? 'Drop files to configure this batch'
       : 'Pick an output location to configure this batch';
   }
+  // Staging changed → the batch's 10-bit-ness may have changed → re-evaluate the
+  // downconvert checkbox visibility.
+  syncDownconvertUI();
 }
 
 /* ───── Guided progressive-disclosure flow (hard-gated) ─────
@@ -1054,13 +1113,18 @@ async function stageSource(p) {
   dropStatusCount.textContent = 'scanning…';
   dropStatusExtra.textContent = '';
   updateAddState();
+  /* Staging identity captured BEFORE the await. clearDrop reassigns `current` to
+     a NEW object on Add; if that happens while this scan is in flight, the late
+     result must NOT mutate the reset `current` or re-enable a reset panel. */
+  const token = current;
   try {
     const scan = await window.api.scanSource(p);
+    if (current !== token) return;   // reassigned mid-scan → drop this stale result
     current.videoCount = scan.videos.length;
     current.ignoredCount = scan.ignored;
     current.totalSize = scan.totalSize || scan.videos.reduce((a, v) => a + (v.size || 0), 0);
     current.files = scan.videos.map((v) => ({
-      path: v.file, name: v.file.split('/').pop(), size: v.size || 0
+      path: v.file, name: v.file.split('/').pop(), size: v.size || 0, pix_fmt: v.pix_fmt
     }));
     current.scanned = true;
     dropStatusPath.textContent = p;
@@ -1073,6 +1137,7 @@ async function stageSource(p) {
     dropzone.classList.add('has-source');
     window.api.saveLastSrc(p);
   } catch (e) {
+    if (current !== token) return;
     showScanError(e && e.message);
     current.scanned = false;
   }
@@ -1096,13 +1161,16 @@ async function stageFiles(paths) {
   dropStatusCount.textContent = 'scanning…';
   dropStatusExtra.textContent = '';
   updateAddState();
+  /* See stageSource: bail if `current` was reassigned (Add reset) during the await. */
+  const token = current;
   try {
     const scan = await window.api.scanFiles(paths);
+    if (current !== token) return;   // reassigned mid-scan → drop this stale result
     current.videoCount = scan.videos.length;
     current.ignoredCount = scan.ignored;
     current.totalSize = scan.totalSize || scan.videos.reduce((a, v) => a + (v.size || 0), 0);
     current.files = scan.videos.map((v) => ({
-      path: v.file, name: v.file.split('/').pop(), size: v.size || 0
+      path: v.file, name: v.file.split('/').pop(), size: v.size || 0, pix_fmt: v.pix_fmt
     }));
     /* Restrict fileSources to those that probed as real videos so the
        symlink stage on the main side doesn't waste links on non-videos. */
@@ -1119,6 +1187,7 @@ async function stageFiles(paths) {
     dropzone.classList.add('has-source');
     if (paths[0]) window.api.saveLastSrc(paths[0]);
   } catch (e) {
+    if (current !== token) return;
     showScanError(e && e.message);
     current.scanned = false;
   }

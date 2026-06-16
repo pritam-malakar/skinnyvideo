@@ -166,6 +166,15 @@
       <!-- Disabled-state line: visible only while no files are staged. -->
       <div class="pro-panel-empty" id="pro-panel-empty">Drop files to configure this batch</div>
       <div class="pro-panel-body" id="pro-panel-body"></div>
+      <!-- Downconvert 10-bit→8-bit. Shown ONLY when the staged batch contains a
+           10-bit file (renderer toggles [hidden]); a no-op on 8-bit sources. -->
+      <label class="pro-toggle" id="pro-downconvert" hidden>
+        <input type="checkbox" id="pro-downconvert-input">
+        <span class="pro-toggle-text">
+          <span class="pro-toggle-title">Downconvert 10-bit to 8-bit</span>
+          <span class="pro-toggle-sub">8-bit files are left unchanged</span>
+        </span>
+      </label>
     </div>
 
     <!-- Commits the staging batch with frozen tier. -->

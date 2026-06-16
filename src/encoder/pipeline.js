@@ -642,11 +642,19 @@ function buildArgs({ input, tmpOut, tier, settings, videoStream, audioStream, dr
 
   if (s.vcodec === 'hevc_videotoolbox') {
     args.push('-c:v', 'hevc_videotoolbox', '-q:v', String(Math.min(QV_MAX, s.qv)), '-tag:v', 'hvc1');
-    if (tenBit) args.push('-profile:v', 'main10', '-pix_fmt', 'p010le');
+    /* 10-bit handling. Nested under tenBit so it is a NO-OP on 8-bit sources.
+       settings.downconvert8 (Nerd-mode) forces 8-bit (nv12, no main10 profile);
+       default-off preserves the source's 10-bit depth (main10/p010le). Color
+       args below are emitted regardless of pix_fmt — 8-bit output still carries
+       the source's color tags (proven: bt2020/HLG survives). */
+    if (tenBit) {
+      if (s.downconvert8) args.push('-pix_fmt', 'nv12');
+      else args.push('-profile:v', 'main10', '-pix_fmt', 'p010le');
+    }
   } else if (s.vcodec === 'libx265') {
     args.push('-c:v', 'libx265', '-crf', String(s.crf),
       '-preset', s.preset, '-tag:v', 'hvc1');
-    if (tenBit) args.push('-pix_fmt', 'yuv420p10le');
+    if (tenBit) args.push('-pix_fmt', s.downconvert8 ? 'yuv420p' : 'yuv420p10le');
   }
 
   args.push(...colorArgs);
@@ -667,12 +675,16 @@ function buildArgs({ input, tmpOut, tier, settings, videoStream, audioStream, dr
   return args;
 }
 
-function buildFallbackArgs({ input, tmpOut, tier, videoStream, audioStream, dropColorTags, colorStamp }) {
+function buildFallbackArgs({ input, tmpOut, tier, settings, videoStream, audioStream, dropColorTags, colorStamp }) {
+  /* Settings only inform the bit-depth choice here; the fallback is otherwise a
+     fixed libx265 crf22 backstop. downconvert8 (default-off → falsy) forces 8-bit
+     on a 10-bit source, matching buildArgs; nested under tenBit → no-op on 8-bit. */
+  const s = settings || tierDefaults(tier);
   const args = ['-y', '-nostdin', '-hide_banner', '-loglevel', 'error', '-stats', '-i', input];
   const tenBit = is10Bit(videoStream?.pix_fmt);
   if (colorStamp && !dropColorTags) args.push('-vf', setparamsArg(colorStamp));
   args.push('-c:v', 'libx265', '-crf', '22', '-preset', 'medium', '-tag:v', 'hvc1');
-  if (tenBit) args.push('-pix_fmt', 'yuv420p10le');
+  if (tenBit) args.push('-pix_fmt', s.downconvert8 ? 'yuv420p' : 'yuv420p10le');
 
   args.push(...(dropColorTags ? [] : buildColorArgs(videoStream, { withRange: false })));
 
@@ -1142,7 +1154,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
       /* The fallback inherits dropColorTags when the primary's options were
          rejected — its color args share the same vocabulary, so re-sending
          them would fail identically. */
-      const fallbackArgs = buildFallbackArgs({ input: v.file, tmpOut: tmpPath, tier, videoStream: vs, audioStream: as, dropColorTags: optRejected, colorStamp });
+      const fallbackArgs = buildFallbackArgs({ input: v.file, tmpOut: tmpPath, tier, settings, videoStream: vs, audioStream: as, dropColorTags: optRejected, colorStamp });
       let stderrBuf2 = '';
       lastProgress = 0;   // fresh encode → debounce finalization from zero
       const r2 = await runCmd(ffmpeg, fallbackArgs, {

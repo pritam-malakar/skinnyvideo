@@ -516,6 +516,13 @@ app.whenReady().then(async () => {
     check(hintNerd.headerHint === 'none' && /next batch/i.test(hintNerd.subText)
       && ((hintNerd.sub !== 'none') === !hintNerd.disabled),
       'Nerd mode: header hint hidden; panel subtitle carries the copy (hidden only while disabled)');
+    /* Stage a batch so the panel is READY: the slider rows are only RENDERED
+       (not suppressed) once the batch is actionable — the disabled panel hides
+       them now (empty-state vs armed-display are mutually exclusive). The grid/
+       width layout is meaningful only in this rendered state. */
+    BATCH_FILES = [[await mk('v1.mov')]];
+    await browse();
+    await run(`document.getElementById('choose-dest').click(); true;`); await wait(300);
     await cardClick('preserve');       // two clusters needed for the gap probe
     const gaps = await run(`(() => {
       const body = document.getElementById('pro-panel-body');
