@@ -1121,8 +1121,15 @@ function showScanError(raw) {
    so the post-mutate measurement isn't polluted by drop-status' lingering fade-out. */
 let _dzFlipCleanup = null;
 function flipDropzoneHeight(mutate) {
-  if (!_motionOK()) { mutate(); return; }
-  if (_dzFlipCleanup) _dzFlipCleanup();              // settle any in-flight tween first
+  /* Always fully reset any in-flight flip FIRST (timer + listeners + inline geometry), so a
+     new flip — or the reduced-motion path below — can never stack on or strand a prior one. */
+  if (_dzFlipCleanup) _dzFlipCleanup();
+  if (!_motionOK()) {
+    mutate();
+    // No tween under reduced motion: guarantee nothing inline is stranded from a mid-flight flip.
+    dropzone.style.height = ''; dropzone.style.transition = ''; dropzone.style.overflow = '';
+    return;
+  }
   const h0 = dropzone.getBoundingClientRect().height;
   mutate();
   /* B.5: measure the target with transitions OFF so .dropzone's stylesheet `padding .2s`
@@ -1137,13 +1144,26 @@ function flipDropzoneHeight(mutate) {
   void dropzone.offsetHeight;                        // commit the start height (still transition:none)
   dropzone.style.transition = 'height .3s var(--ease-out-quint)';   // quint: decelerates and LANDS, no end-crawl
   dropzone.style.height = h1 + 'px';
-  const onEnd = (e) => { if (e.target === dropzone && e.propertyName === 'height') _dzFlipCleanup && _dzFlipCleanup(); };
-  _dzFlipCleanup = () => {
-    dropzone.style.height = ''; dropzone.style.transition = '';
-    dropzone.removeEventListener('transitionend', onEnd);
-    _dzFlipCleanup = null;
+
+  /* Cleanup is IDEMPOTENT (done-guard) and reachable from THREE racers — whichever lands
+     first wins, the rest no-op: (a) transitionend on success, (b) transitioncancel if the
+     tween is interrupted, (c) a 360ms timeout fallback in case the event never arrives at
+     all (the backdrop-filter compositor stall that left the dropzone stuck-collapsed). */
+  let done = false, timer = null;
+  const onEvent = (e) => { if (e.target === dropzone && e.propertyName === 'height') cleanup(); };
+  const cleanup = () => {
+    if (done) return;
+    done = true;
+    if (timer) { clearTimeout(timer); timer = null; }
+    dropzone.removeEventListener('transitionend', onEvent);
+    dropzone.removeEventListener('transitioncancel', onEvent);
+    dropzone.style.height = ''; dropzone.style.transition = ''; dropzone.style.overflow = '';
+    if (_dzFlipCleanup === cleanup) _dzFlipCleanup = null;
   };
-  dropzone.addEventListener('transitionend', onEnd);
+  _dzFlipCleanup = cleanup;
+  dropzone.addEventListener('transitionend', onEvent);
+  dropzone.addEventListener('transitioncancel', onEvent);
+  timer = setTimeout(cleanup, 360);                  // .30s tween + margin
 }
 
 async function stageSource(p) {
