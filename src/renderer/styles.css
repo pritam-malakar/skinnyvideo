@@ -534,6 +534,10 @@ body::after {
    present exactly when a file is staged (has-source). */
 .dz-clear {
   margin-left: auto;
+  /* Align Clear's right edge with the Change button in the output row below: the loaded
+     dropzone's padding-right (.dropzone.has-source = 26px) is 12px deeper than the
+     dest-picker's (14px), so pull Clear out by that delta. */
+  margin-right: -12px;
   flex: 0 0 auto;
   font-family: var(--font-mono);
   font-size: 10.5px;
@@ -2160,10 +2164,15 @@ svg { display: block; }
 .mode-pill::after {
   content: ""; position: absolute; inset: 0; border-radius: inherit;
 }
-.mode-pill::before {           /* Normal fill (was .mode-seg.active) */
-  background: linear-gradient(180deg, var(--sheen-hi), var(--sheen-lo));
-  border: 1px solid var(--border-subtle);
-  box-shadow: inset 0 1px 0 var(--sheen-18);
+.mode-pill::before {           /* Simple fill — CYAN (operational = the default/active mode);
+                                  mirrors the Nerd ::after recipe with --cyan, no new tokens */
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--cyan) 16%, transparent),
+    color-mix(in srgb, var(--cyan) 5%, transparent));
+  border: 1px solid color-mix(in srgb, var(--cyan) 30%, transparent);
+  box-shadow:
+    inset 0 1px 0 var(--sheen-18),
+    0 0 14px -4px color-mix(in srgb, var(--cyan) 38%, transparent);
   opacity: 1;
 }
 .mode-pill::after {            /* Nerd fill (was body.pro-mode #mode-pro.active) */
@@ -2195,9 +2204,9 @@ svg { display: block; }
 }
 .mode-seg:hover { color: var(--fg-2); }
 /* Active segment now contributes ONLY the text colour — the fill comes from the
-   pill underneath. (color already transitions.) */
+   pill underneath. Simple-active = cyan (the Nerd override below repaints it iris). */
 .mode-seg.active {
-  color: var(--fg);
+  color: var(--cyan);
 }
 
 /* The sheet rides the generic modal layer stack (.modal-backdrop/.modal-card);
