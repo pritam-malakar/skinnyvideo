@@ -1886,7 +1886,7 @@ svg { display: block; }
   box-shadow: 0 0 30px -6px var(--cue-glow);
   opacity: 0.3;
   pointer-events: none;
-  animation: next-breathe 3s ease-in-out infinite;
+  animation: next-breathe 1.4s ease-in-out infinite;
 }
 /* slow, gentle breathe — swings softly between two CLOSE values so it swells/fades
    imperceptibly (no blink, no restart seam: 0% == 100%, eased turnarounds). */
