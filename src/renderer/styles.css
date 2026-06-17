@@ -22,6 +22,10 @@
    Tokens
    ============================================================ */
 :root {
+  /* Pass B.2: let height/etc. transition to/from the `auto` keyword, so reveal cards can
+     animate height 0↔auto and the siblings below them glide. Only affects transitions that
+     touch a size keyword; the app's numeric width-% bar transitions are unaffected. */
+  interpolate-size: allow-keywords;
   /* ============================================================
      PALETTE — canonical color-token layer (Pass 1 re-skin: oklch→hex,
      toward the frosted-glass dark aesthetic). RAW color values live
@@ -843,9 +847,11 @@ body::after {
   /* Pass 7: tiers are glass panels too — milky sheen base + faint accent tint so
      they lift off the bright backdrop like the mockup's tier cards. */
   /* v3 .tier idle: subtle accent-tinted glass (accent .05 -> white .035), no border,
-     hi-edge top highlight + soft drop. Accent = cobalt (recommended) / iris (archival). */
-  background:
-    linear-gradient(160deg, color-mix(in srgb, var(--accent) 5%, transparent), var(--glass-tint));
+     hi-edge top highlight + soft drop. Accent = cobalt (recommended) / iris (archival).
+     STATE-CHANGE: the idle + selected fills live on ::before / ::after (opacity-
+     crossfaded) so selecting GLIDES instead of snapping — CSS can't tween a gradient
+     image, but it can tween a layer's opacity. Element bg stays transparent. */
+  background: transparent;
   -webkit-backdrop-filter: blur(28px) saturate(170%);
   backdrop-filter: blur(28px) saturate(170%);
   border: none;
@@ -858,6 +864,31 @@ body::after {
   font-family: inherit;
   display: flex; flex-direction: column; gap: 10px;
   transition: border-color .18s ease, transform .18s ease, background .18s ease, box-shadow .18s ease;
+}
+/* Fill layers (z below content, above the element's backdrop): ::before carries the
+   IDLE wash, ::after the SELECTED wash + its inner glow + ring. Exactly one is at
+   opacity 1 at rest, so each end-state is byte-identical to the pre-tween look; the
+   crossfade is the only new thing. The inset glow/ring ride ::after (not the element)
+   so they paint OVER the fill — an inset shadow on the element would sit under a
+   negative-z pseudo. Idle hi-edge + drop stay on the element. No new color tokens. */
+.tier::before,
+.tier::after {
+  content: ""; position: absolute; inset: 0;
+  border-radius: inherit; pointer-events: none; z-index: -1;
+}
+.tier::before {
+  background:
+    linear-gradient(160deg, color-mix(in srgb, var(--accent) 5%, transparent), var(--glass-tint));
+  opacity: 1;
+}
+.tier::after {
+  background: linear-gradient(160deg,
+      color-mix(in srgb, var(--accent) 15%, transparent),
+      color-mix(in srgb, var(--accent) 3.5%, transparent));
+  box-shadow:
+    inset 0 1px 22px -8px color-mix(in srgb, var(--accent) 55%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+  opacity: 0;
 }
 .tier:hover {
   border-color: var(--accent-line, var(--border-strong));
@@ -910,14 +941,12 @@ body::after {
   /* v3 .tier.sel VERBATIM (rose -> cobalt via --accent): accent .15 -> .035 fill,
      contained inner top glow (.55), 1px accent ring (.18), drop. No border, no sheen. */
   border: none;
-  background: linear-gradient(160deg,
-      color-mix(in srgb, var(--accent) 15%, transparent),
-      color-mix(in srgb, var(--accent) 3.5%, transparent));
-  box-shadow:
-    inset 0 1px 22px -8px color-mix(in srgb, var(--accent) 55%, transparent),
-    inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent),
-    0 22px 52px -26px var(--shadow-80);
+  /* Wash + inner glow + ring moved to ::after (crossfaded). The element keeps only
+     the outer drop, which already transitions. */
+  box-shadow: 0 22px 52px -26px var(--shadow-80);
 }
+.tier.selected::before { opacity: 0; }
+.tier.selected::after  { opacity: 1; }
 .tier .select-pin {
   position: absolute; top: 16px; right: 16px;
   width: 16px; height: 16px; border-radius: 50%;
@@ -1885,6 +1914,10 @@ svg { display: block; }
     width: 100% !important;
   }
   .finalizing-note::before { animation: none; opacity: .85; }
+  /* Dropzone swap is instant under reduce: the FLIP early-returns, but the stylesheet
+     padding tween (28->22px on has-source) would still settle ~12px after the swap. Drop
+     padding from the transition (keep the color fades). */
+  .dropzone { transition: border-color .18s ease, background .18s ease; }
 }
 
 /* TWEAK 1 (v2.2.0 fix): the orange-repaint of next-action buttons is removed —
@@ -1934,6 +1967,26 @@ svg { display: block; }
    ============================================================ */
 @keyframes breathe     { 0%,100% { opacity: .78; } 50% { opacity: 1; } }
 @keyframes done-bloom  { 0% { opacity: 0; } 35% { opacity: .18; } 100% { opacity: 0; } }
+/* Tier select bloom: inner glow overshoots at 40% then returns to the EXACT resting
+   glow (0%/100% == .tier::after box-shadow). Colours derive from --accent (per-tier),
+   no new tokens. fill-mode none → box-shadow reverts to the resting rule when done. */
+@keyframes tier-bloom {
+  0% {
+    box-shadow:
+      inset 0 1px 22px -8px color-mix(in srgb, var(--accent) 55%, transparent),
+      inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  40% {
+    box-shadow:
+      inset 0 1px 30px -5px color-mix(in srgb, var(--accent) 72%, transparent),
+      inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  100% {
+    box-shadow:
+      inset 0 1px 22px -8px color-mix(in srgb, var(--accent) 55%, transparent),
+      inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+}
 @keyframes fail-bloom  { 0% { opacity: 0; } 25% { opacity: .18; } 100% { opacity: 0; } }
 @keyframes shake-x {
   0%   { transform: translateX(0); }
@@ -1957,6 +2010,20 @@ svg { display: block; }
   .tier:active { transform: scale(.97); }
 
   /* 2 — tier select/deselect settle is driven by WAAPI in renderer.js. */
+
+  /* 2b — state-change washes glide (opacity tween) instead of snapping; the mode
+     pill slides. Gated here so reduce-motion users get today's instant end-state. */
+  .tier::before,
+  .tier::after { transition: opacity .36s var(--ease-settle); }   /* longer than the pill so the card read isn't instant */
+  .mode-pill::before,
+  .mode-pill::after { transition: opacity var(--dur-base) var(--ease-settle); }
+  .mode-pill { transition: transform var(--dur-base) var(--ease-settle); }
+
+  /* 2c — select "light-up": the inner glow overshoots ~1.3× then settles to the
+     EXACT resting glow (keyframe ends == rest, fill-mode none reverts to .tier::after).
+     Transient one-shot; also plays once for the card selected at launch (fine). The
+     opacity crossfade above carries the fill; this only animates box-shadow. */
+  .tier.selected::after { animation: tier-bloom .45s var(--ease-out-quint); }
 
   /* 3 — magnetic snap: drop target eases toward the cursor on dragover. */
   .dropzone.dragover .dz-icon { transform: scale(1.06); }
@@ -1990,6 +2057,68 @@ svg { display: block; }
 
   /* 8 — staggered reveal: rows of a freshly-entered batch cascade in. */
   .qrow.row-enter { animation: row-enter var(--dur-base) var(--ease-settle) var(--enter-delay, 0ms) backwards; }
+
+  /* 9 — Pass B.2: hidden→shown reveals OPEN by animating HEIGHT 0↔auto so the siblings
+     below them GLIDE down instead of snapping (B.1's translateY rise fought the layout
+     snap and read as a back-and-forth, so it's gone). interpolate-size (at :root) enables
+     the 0↔auto height tween. box-sizing:border-box still RENDERS padding+border at
+     height:0 (~42px residual on the cards, 9px on lifetime) and margin sits OUTSIDE the
+     box — so padding/border/margin-top are zeroed in @starting-style and tweened too, or
+     the residual jump persists. opacity starts at .3 (not 0) so text isn't ghosting while
+     the box opens. overflow:hidden clips content mid-expand; display .30s allow-discrete
+     keeps it rendered through the open. Fires ONLY on real display:none→shown (all .hidden
+     at first paint → no boot bloom) and rests at full height / opacity 1, so it never
+     re-fires on content updates. */
+  #progress-card,
+  #summary-card {
+    overflow: hidden;
+    transition:
+      height .30s ease, opacity .30s ease, margin-top .30s ease,
+      padding-top .30s ease, padding-bottom .30s ease,
+      border-top-width .30s ease, border-bottom-width .30s ease,
+      display .30s allow-discrete;
+  }
+  #lifetime-section {
+    overflow: hidden;
+    transition:
+      height .30s ease, opacity .30s ease, margin-top .30s ease,
+      padding-top .30s ease, border-top-width .30s ease,
+      display .30s allow-discrete;
+  }
+  @starting-style {
+    #progress-card,
+    #summary-card {
+      height: 0; opacity: .3; margin-top: 0;
+      padding-top: 0; padding-bottom: 0;
+      border-top-width: 0; border-bottom-width: 0;
+    }
+    #lifetime-section {
+      height: 0; opacity: .3; margin-top: 0;
+      padding-top: 0; border-top-width: 0;
+    }
+  }
+  /* #drop-status is a content-SWAP inside the padded dropzone (.dz-inner display:none the
+     same frame it appears), NOT an in-flow append — height-animating it would DIP. It also
+     has no own padding/margin/border. Gentle opacity-only fade (no rise, no height). */
+  #drop-status {
+    transition: opacity .30s ease, display .30s allow-discrete;
+  }
+  @starting-style {
+    #drop-status { opacity: 0; }
+  }
+  /* B.3: hide instantly (no lingering fade) so the dropzone FLIP measures the true empty
+     height right after the swap, and clearing doesn't leave drop-status overlapping the
+     returning prompt. (Fade-IN on reveal is unchanged.) */
+  #drop-status.hidden { transition: none; }
+
+  /* 10 — Pass B.3 (3): at run finish the progress card hides the SAME beat summary +
+     lifetime reveal. With the B.2 transition it lingered at full height (display held by
+     allow-discrete) then popped out — a page lurch UP against the summary expanding DOWN.
+     Kill the leaving transition so the progress card disappears INSTANTLY (one frame); only
+     the incoming summary/lifetime then animate, so siblings move one direction (down). */
+  #progress-card.hidden {
+    transition: none;
+  }
 }
 
 
@@ -2001,15 +2130,57 @@ svg { display: block; }
 
 /* Segmented Simple/Pro toggle — quiet glass chip, right side of the header. */
 .mode-toggle {
-  display: inline-flex;
+  display: inline-grid;        /* two 1fr columns equalize even at auto width
+                                  (flex:1 only splits EXTRA space, of which an
+                                  auto-width inline toggle has none) so the 50%
+                                  pill maps to exactly one segment */
+  grid-template-columns: 1fr 1fr;
+  position: relative;          /* containing block for the sliding pill */
   padding: 3px;
   border-radius: 10px;
   background: var(--bg-2);
   border: 1px solid var(--border-subtle);
   box-shadow: inset 0 1px 0 var(--sheen-08, rgba(255,255,255,.04));
 }
+/* Sliding indicator: one cell-wide pill that GLIDES between the two segments
+   instead of each segment painting its own (snapping) fill. ::before = the neutral
+   Normal fill, ::after = the iris Nerd fill; they crossfade as the pill slides, so
+   neither the position NOR the colour snaps. Driven purely by body.pro-mode (it is
+   toggled in lock-step with #mode-pro.active in renderer.js) — no JS change. */
+.mode-pill {
+  position: absolute;
+  top: 3px; bottom: 3px; left: 3px;
+  width: calc(50% - 3px);      /* one segment width (padding-box math) */
+  border-radius: 8px;
+  z-index: 0;
+  pointer-events: none;
+  transform: translateX(0);    /* Normal: pill under the first segment */
+}
+.mode-pill::before,
+.mode-pill::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit;
+}
+.mode-pill::before {           /* Normal fill (was .mode-seg.active) */
+  background: linear-gradient(180deg, var(--sheen-hi), var(--sheen-lo));
+  border: 1px solid var(--border-subtle);
+  box-shadow: inset 0 1px 0 var(--sheen-18);
+  opacity: 1;
+}
+.mode-pill::after {            /* Nerd fill (was body.pro-mode #mode-pro.active) */
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--tier-arch) 16%, transparent),
+    color-mix(in srgb, var(--tier-arch) 5%, transparent));
+  border: 1px solid var(--tier-arch-line);
+  box-shadow:
+    inset 0 1px 0 var(--sheen-18),
+    0 0 14px -4px var(--tier-arch-glow);
+  opacity: 0;
+}
 .mode-seg {
   appearance: none;
+  position: relative;
+  z-index: 1;                  /* text rides above the pill */
+  text-align: center;          /* fills its grid cell; label centered */
   border: 1px solid transparent;
   background: transparent;
   color: var(--fg-3);
@@ -2020,14 +2191,13 @@ svg { display: block; }
   padding: 4px 12px;
   border-radius: 8px;
   cursor: pointer;
-  transition: color .14s ease, background .14s ease;
+  transition: color .14s ease;
 }
 .mode-seg:hover { color: var(--fg-2); }
+/* Active segment now contributes ONLY the text colour — the fill comes from the
+   pill underneath. (color already transitions.) */
 .mode-seg.active {
   color: var(--fg);
-  background: linear-gradient(180deg, var(--sheen-hi), var(--sheen-lo));
-  border-color: var(--border-subtle);
-  box-shadow: inset 0 1px 0 var(--sheen-18);
 }
 
 /* The sheet rides the generic modal layer stack (.modal-backdrop/.modal-card);
@@ -2126,18 +2296,16 @@ body.pro-mode::before { opacity: .15; }   /* cool cast almost fully leaves the r
   body::before { transition: opacity .6s ease; }
 }
 
-/* Toggle active state reflects the mode strongly: the Pro segment, when
-   active, glows iris; the Simple-active treatment is untouched. */
+/* Toggle active state reflects the mode strongly: the Pro segment, when active,
+   glows iris. The iris FILL now rides the sliding pill (.mode-pill::after); the
+   active segment contributes only the iris text colour. */
 body.pro-mode #mode-pro.active {
   color: var(--tier-arch-sel);
-  background: linear-gradient(180deg,
-    color-mix(in srgb, var(--tier-arch) 16%, transparent),
-    color-mix(in srgb, var(--tier-arch) 5%, transparent));
-  border-color: var(--tier-arch-line);
-  box-shadow:
-    inset 0 1px 0 var(--sheen-18),
-    0 0 14px -4px var(--tier-arch-glow);
 }
+/* Nerd: pill slides one cell to the right and its fill crossfades neutral → iris. */
+body.pro-mode .mode-pill { transform: translateX(100%); }
+body.pro-mode .mode-pill::before { opacity: 0; }
+body.pro-mode .mode-pill::after  { opacity: 1; }
 
 /* Armed-settings "modified" chip on the tier card — existing accent pill
    recipe (the card's own --accent set), keyed by data-armed-chip. */

@@ -985,8 +985,10 @@ function clearDrop({ resetTier = true } = {}) {
     destPathEl.textContent = DEST_PLACEHOLDER;
     destPathEl.classList.add('placeholder');
   }
-  clearDropStatus();
-  dropzone.classList.remove('has-source');
+  flipDropzoneHeight(() => {
+    clearDropStatus();
+    dropzone.classList.remove('has-source');
+  });
   if (resetTier) resetStagingTier();
   updateAddState();
   updateTierHint();
@@ -1110,6 +1112,40 @@ function showScanError(raw) {
 
 /* Shared scan/stage path used by both drag-drop and browse — FOLDER kind.
    Unchanged from the validated folder workflow. */
+/* B.3 (1)+(2): the dropzone swaps its tall prompt (.dz-inner) for the compact loaded row
+   (#drop-status) and back; that one-frame resize lurched the whole page (drop, and again on
+   Add via clearDrop). FLIP it: snapshot the height, apply the swap, measure the new natural
+   height, then transition height old->new so the content below GLIDES. Reduced-motion →
+   apply instantly. Inline style is CSP-clean (style-src 'unsafe-inline'); .dropzone
+   overflow:hidden clips during the tween. Pairs with `#drop-status.hidden{transition:none}`
+   so the post-mutate measurement isn't polluted by drop-status' lingering fade-out. */
+let _dzFlipCleanup = null;
+function flipDropzoneHeight(mutate) {
+  if (!_motionOK()) { mutate(); return; }
+  if (_dzFlipCleanup) _dzFlipCleanup();              // settle any in-flight tween first
+  const h0 = dropzone.getBoundingClientRect().height;
+  mutate();
+  /* B.5: measure the target with transitions OFF so .dropzone's stylesheet `padding .2s`
+     (has-source changes padding 28->22px) is SNAPPED to its final value first. Otherwise h1
+     is read mid-padding-tween (old 28px) → tween lands 12px too tall → a one-frame pop when
+     transitionend clears the inline height. transition:none makes h1 == true natural auto. */
+  dropzone.style.transition = 'none';
+  dropzone.style.height = 'auto';
+  const h1 = dropzone.getBoundingClientRect().height;
+  if (Math.abs(h1 - h0) < 1) { dropzone.style.height = ''; dropzone.style.transition = ''; return; }
+  dropzone.style.height = h0 + 'px';
+  void dropzone.offsetHeight;                        // commit the start height (still transition:none)
+  dropzone.style.transition = 'height .3s var(--ease-out-quint)';   // quint: decelerates and LANDS, no end-crawl
+  dropzone.style.height = h1 + 'px';
+  const onEnd = (e) => { if (e.target === dropzone && e.propertyName === 'height') _dzFlipCleanup && _dzFlipCleanup(); };
+  _dzFlipCleanup = () => {
+    dropzone.style.height = ''; dropzone.style.transition = '';
+    dropzone.removeEventListener('transitionend', onEnd);
+    _dzFlipCleanup = null;
+  };
+  dropzone.addEventListener('transitionend', onEnd);
+}
+
 async function stageSource(p) {
   current.src = p;
   current.srcName = p.split('/').pop();
@@ -1117,11 +1153,16 @@ async function stageSource(p) {
   current.fileSources = [];
   current.scanned = false;
   current.files = [];
-  dropStatus.classList.remove('hidden');
   dropStatusPath.textContent = p;
   dropStatusPath.style.color = 'var(--cyan)';
   dropStatusCount.textContent = 'scanning…';
   dropStatusExtra.textContent = '';
+  /* Swap to the loaded row NOW (not at scan end) so the dropzone makes ONE clean
+     glide instead of grow-while-scanning then collapse. */
+  flipDropzoneHeight(() => {
+    dropStatus.classList.remove('hidden');
+    dropzone.classList.add('has-source');
+  });
   updateAddState();
   /* Staging identity captured BEFORE the await. clearDrop reassigns `current` to
      a NEW object on Add; if that happens while this scan is in flight, the late
@@ -1144,12 +1185,12 @@ async function stageSource(p) {
     if (current.totalSize > 0) parts.push(`${humanBytes(current.totalSize)} total`);
     if (scan.ignored > 0) parts.push(`${scan.ignored} ignored`);
     dropStatusExtra.textContent = parts.join(' · ') || '—';
-    dropzone.classList.add('has-source');
     window.api.saveLastSrc(p);
   } catch (e) {
     if (current !== token) return;
     showScanError(e && e.message);
     current.scanned = false;
+    flipDropzoneHeight(() => dropzone.classList.remove('has-source'));   // restore prompt
   }
   updateAddState();
   updateTierHint();
@@ -1165,11 +1206,14 @@ async function stageFiles(paths) {
   current.srcName = fileListDisplayName(paths);
   current.scanned = false;
   current.files = [];
-  dropStatus.classList.remove('hidden');
   dropStatusPath.textContent = current.srcName;
   dropStatusPath.style.color = 'var(--cyan)';
   dropStatusCount.textContent = 'scanning…';
   dropStatusExtra.textContent = '';
+  flipDropzoneHeight(() => {
+    dropStatus.classList.remove('hidden');
+    dropzone.classList.add('has-source');
+  });
   updateAddState();
   /* See stageSource: bail if `current` was reassigned (Add reset) during the await. */
   const token = current;
@@ -1194,12 +1238,12 @@ async function stageFiles(paths) {
     if (current.totalSize > 0) parts.push(`${humanBytes(current.totalSize)} total`);
     if (scan.ignored > 0) parts.push(`${scan.ignored} ignored`);
     dropStatusExtra.textContent = parts.join(' · ') || '—';
-    dropzone.classList.add('has-source');
     if (paths[0]) window.api.saveLastSrc(paths[0]);
   } catch (e) {
     if (current !== token) return;
     showScanError(e && e.message);
     current.scanned = false;
+    flipDropzoneHeight(() => dropzone.classList.remove('has-source'));   // restore prompt
   }
   updateAddState();
   updateTierHint();
