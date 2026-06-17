@@ -216,8 +216,11 @@
   --green:var(--success);
   --red:var(--failure);
 
-  --font-sans: "Geist", "General Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "Geist Mono", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  /* Pass D: Apple system faces. Sans = SF Pro via system-ui. Mono floors at Menlo: this
+     Chromium's `ui-monospace` does NOT resolve the hidden system SF Mono (it falls through
+     to serif), so we drop it — SF Mono if a standalone face is installed, else native Menlo. */
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  --font-mono: "SF Mono", Menlo, monospace;
 }
 
 * { box-sizing: border-box; }
