@@ -15,7 +15,7 @@
                    same tier. Panel visible in Pro, absent in Simple. Panel
                    tier chip shows the REAL tier name — the same string the
                    tier card renders (single TIER_LABEL constant).
-   MODE=override   select preserve, slide crf 18 + preset ultrafast (armed
+   MODE=override   select preserve, slide crf 14 + preset ultrafast (armed
                    LIVE, no confirm); modified indicator + card chip; values
                    survive a tier round-trip (session memory); Reset returns
                    to defaults; payload + compress.log stamp mandatory; live
@@ -252,10 +252,10 @@ app.whenReady().then(async () => {
     const resetShownDef = await run(`getComputedStyle(document.getElementById('pro-panel-reset')).display !== 'none'`);
     check(resetShownDef === false, 'Reset hidden while values equal defaults');
     check(await modalPresent() === false, 'no modal on tier selection');
-    await sliderSet('crf', 51 - 18);       // inverted axis: pos 33 → crf 18
+    await sliderSet('crf', 51 - 14);       // inverted axis: pos 33 → crf 14
     await sliderSet('preset', 0);          // ultrafast
-    check((await displayedVal('crf')) === '18' && (await displayedVal('preset')) === 'ultrafast',
-      'sliders display raw values (crf 18, ultrafast)');
+    check((await displayedVal('crf')) === '14' && (await displayedVal('preset')) === 'ultrafast',
+      'sliders display raw values (crf 14, ultrafast)');
     /* Readout direction cue: modified chips take the tier accent; the chip
        text color matches the tier chip (var(--accent)) when off-default. */
     const valAccent = await run(`(() => {
@@ -269,7 +269,7 @@ app.whenReady().then(async () => {
     const resetShownMod = await run(`getComputedStyle(document.getElementById('pro-panel-reset')).display !== 'none'`);
     check(resetShownMod === true, 'Reset visible when modified (its presence is the modified signal)');
     const armedLive = await armedState();
-    check(armedLive.settings.crf === 18 && armedLive.settings.preset === 'ultrafast',
+    check(armedLive.settings.crf === 14 && armedLive.settings.preset === 'ultrafast',
       'sliding armed the values LIVE (no confirm step)');
     const chipShown = await run(`!document.querySelector('[data-armed-chip="preserve"]').hidden`);
     check(chipShown === true, 'armed-modified chip visible on the tier card');
@@ -285,10 +285,10 @@ app.whenReady().then(async () => {
        pure defaults. */
     await cardClick('regular');
     await cardClick('preserve');
-    check((await sliderVal('crf')) === String(51 - 18) && (await displayedVal('preset')) === 'ultrafast',
+    check((await sliderVal('crf')) === String(51 - 14) && (await displayedVal('preset')) === 'ultrafast',
       'tier round-trip re-rendered the panel from session memory');
     await panelReset();
-    check((await displayedVal('crf')) === '20' && (await displayedVal('preset')) === 'medium' && (await panelModified()) === false,
+    check((await displayedVal('crf')) === '18' && (await displayedVal('preset')) === 'medium' && (await panelModified()) === false,
       'one-click Reset returns the panel to defaults');
     const valNeutral = await run(`(() => {
       const v = document.querySelector('#pro-panel .sheet-label .val[data-key="crf"]');
@@ -296,7 +296,7 @@ app.whenReady().then(async () => {
     })()`);
     check(valNeutral.mod === false, 'readout chip returns to neutral at defaults');
     // Re-apply the overrides for the actual run.
-    await sliderSet('crf', 51 - 18);
+    await sliderSet('crf', 51 - 14);
     await sliderSet('preset', 0);
     await clickAdd();
     await run(`document.getElementById('start').click(); true;`);
@@ -306,7 +306,7 @@ app.whenReady().then(async () => {
       if (!liveArgvSeen) {
         try {
           const ps = execSync('ps -axo command', { encoding: 'utf8' });
-          if (ps.split('\n').some((l) => /ffmpeg/.test(l) && /-crf 18/.test(l) && /-preset ultrafast/.test(l))) liveArgvSeen = true;
+          if (ps.split('\n').some((l) => /ffmpeg/.test(l) && /-crf 14/.test(l) && /-preset ultrafast/.test(l))) liveArgvSeen = true;
         } catch {}
       }
       await wait(250);
@@ -314,12 +314,12 @@ app.whenReady().then(async () => {
     await finishRun();
     const p = payloads[0];
     console.log('  RESULT', JSON.stringify({ settings: p && p.settings, liveArgvSeen, stamps: stampLogs().map((l) => l.text.match(/# Settings overrides:.*$/m)[0]) }));
-    check(!!p && !!p.settings && p.settings.crf === 18 && p.settings.preset === 'ultrafast' && p.settings.vcodec === 'libx265',
-      'MANDATORY: payload settings carry the armed overrides (crf=18 preset=ultrafast on libx265)');
+    check(!!p && !!p.settings && p.settings.crf === 14 && p.settings.preset === 'ultrafast' && p.settings.vcodec === 'libx265',
+      'MANDATORY: payload settings carry the armed overrides (crf=14 preset=ultrafast on libx265)');
     const stamps = stampLogs();
-    check(stamps.length === 1 && /# Settings overrides: crf=18 preset=ultrafast/.test(stamps[0].text),
-      'MANDATORY: compress.log records "# Settings overrides: crf=18 preset=ultrafast"');
-    if (liveArgvSeen) check(true, 'BONUS: live ffmpeg argv contained -crf 18 -preset ultrafast');
+    check(stamps.length === 1 && /# Settings overrides: crf=14 preset=ultrafast/.test(stamps[0].text),
+      'MANDATORY: compress.log records "# Settings overrides: crf=14 preset=ultrafast"');
+    if (liveArgvSeen) check(true, 'BONUS: live ffmpeg argv contained -crf 14 -preset ultrafast');
     else warn('live argv not caught in the ps polling window (timing) — bonus check skipped, not a failure');
     check(outFiles().some((f) => /o1/.test(f)), 'overridden batch encoded');
   } else if (MODE === 'mixed') {
@@ -332,7 +332,7 @@ app.whenReady().then(async () => {
     await setMode(true);
     await browse();                        // stage first — panel enabled for the edits
     await cardClick('preserve');
-    await sliderSet('crf', 51 - 18);
+    await sliderSet('crf', 51 - 14);
     await sliderSet('preset', 0);
     await clickAdd();
     // C: simple again, regular (post-enqueue reset already re-selected it).
@@ -347,10 +347,10 @@ app.whenReady().then(async () => {
     const [pA, pB, pC] = payloads;
     console.log('  RESULT', JSON.stringify({ a: pA && pA.settings, b: pB && pB.settings, c: pC && pC.settings, outs: outFiles() }));
     check(!!pA && same(pA.settings, tierDefaults('regular')), 'batch A (simple) froze regular defaults');
-    check(!!pB && pB.settings && pB.settings.crf === 18 && pB.settings.preset === 'ultrafast', 'batch B (pro) froze its armed overrides');
+    check(!!pB && pB.settings && pB.settings.crf === 14 && pB.settings.preset === 'ultrafast', 'batch B (pro) froze its armed overrides');
     check(!!pC && same(pC.settings, tierDefaults('regular')), 'batch C (simple, post-pro) froze regular defaults');
     const stamps = stampLogs();
-    check(stamps.length === 1 && /crf=18 preset=ultrafast/.test(stamps[0].text),
+    check(stamps.length === 1 && /crf=14 preset=ultrafast/.test(stamps[0].text),
       'exactly ONE overrides stamp across the run — on the pro batch\'s log');
     const outs = outFiles();
     check(outs.some((f) => /a1/.test(f)) && outs.some((f) => /b1/.test(f)) && outs.some((f) => /c1/.test(f)),

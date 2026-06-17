@@ -36,7 +36,7 @@ ipcMain.handle('scan-files', async () => ({
 }));
 ipcMain.handle('scan-source', async () => ({ rootKind: 'files', root: FAKE, videos: [], ignored: 0, totalSize: 0 }));
 ipcMain.handle('free-space', async () => ({ free: 9e15 }));
-ipcMain.handle('get-tier-defaults', async () => ({ regular: { vcodec: 'hevc_videotoolbox', qv: 62 }, preserve: { vcodec: 'libx265', crf: 20, preset: 'medium' } }));
+ipcMain.handle('get-tier-defaults', async () => ({ regular: { vcodec: 'hevc_videotoolbox', qv: 62 }, preserve: { vcodec: 'libx265', crf: 18, preset: 'medium' } }));
 // start-queue does NOT run a real queue — we drive progress events by hand.
 ipcMain.handle('start-queue', async () => ({ ok: true }));
 ipcMain.handle('stop-queue', async () => ({ ok: true }));

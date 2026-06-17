@@ -34,7 +34,7 @@ ipcMain.handle('scan-files', async () => ({
 }));
 ipcMain.handle('scan-source', async () => ({ rootKind: 'files', root: FAKE, videos: [], ignored: 0, totalSize: 0 }));
 ipcMain.handle('free-space', async () => ({ free: 9e15 }));
-ipcMain.handle('get-tier-defaults', async () => ({ regular: { vcodec: 'hevc_videotoolbox', qv: 62 }, preserve: { vcodec: 'libx265', crf: 20, preset: 'medium' } }));
+ipcMain.handle('get-tier-defaults', async () => ({ regular: { vcodec: 'hevc_videotoolbox', qv: 62 }, preserve: { vcodec: 'libx265', crf: 18, preset: 'medium' } }));
 ['save-last-src', 'add-reclaimed', 'delete-orphans', 'open-path', 'reveal-path', 'reset-drive',
  'reveal-in-finder', 'pause-batch', 'resume-batch', 'cancel-batch', 'set-batch-skips',
  'start-queue', 'stop-queue', 'enqueue-batch'

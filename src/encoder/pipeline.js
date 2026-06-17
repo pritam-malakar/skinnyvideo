@@ -13,7 +13,7 @@ const VIDEO_EXTS = new Set([
 
 const TIER_CONSTANTS = {
   regular:  { qv: 62 },
-  preserve: { crf: 20, preset: 'medium' }
+  preserve: { crf: 18, preset: 'medium' }
 };
 
 /* Quality ceiling (v2.2.8): the measured VT bitrate curve goes vertical past

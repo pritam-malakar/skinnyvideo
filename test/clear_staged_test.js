@@ -31,7 +31,7 @@ ipcMain.handle('stat-path', async () => ({ isFile: true, isDirectory: false }));
 ipcMain.handle('scan-files', async () => ({ rootKind: 'files', root: nextVideo.file, videos: [nextVideo], ignored: 0, totalSize: nextVideo.size }));
 ipcMain.handle('scan-source', async () => ({ rootKind: 'files', root: nextVideo.file, videos: [], ignored: 0, totalSize: 0 }));
 ipcMain.handle('free-space', async () => ({ free: 9e15 }));
-ipcMain.handle('get-tier-defaults', async () => ({ regular: { vcodec: 'hevc_videotoolbox', qv: 62 }, preserve: { vcodec: 'libx265', crf: 20, preset: 'medium' } }));
+ipcMain.handle('get-tier-defaults', async () => ({ regular: { vcodec: 'hevc_videotoolbox', qv: 62 }, preserve: { vcodec: 'libx265', crf: 18, preset: 'medium' } }));
 ipcMain.handle('get-lifetime-drives', async () => []);
 ['save-last-src', 'add-reclaimed', 'delete-orphans', 'open-path', 'reveal-path', 'reset-drive',
  'reveal-in-finder', 'pause-batch', 'resume-batch', 'cancel-batch', 'set-batch-skips',
