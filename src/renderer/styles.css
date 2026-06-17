@@ -139,7 +139,7 @@
      white-alpha tokens; no new color value. */
   --sheen-hi:rgba(255,255,255,.06);    /* Pass 7: mockup .glass white ~.05 — milky over the bright backdrop */
   --sheen-lo:rgba(255,255,255,.04);
-  --grain-opacity:0.05;                /* film-grain overlay strength — raised from .035 to break atmosphere banding */
+  --grain-opacity:0.15;                /* grayscale overlay dither strength — the minimum that dissolves the bloom rings in the open canvas without washing (C.2); lower leaves residual rings, higher reads as heavy grain */
 
   /* Pass 7 reset — v3 layer-stack tokens, ported verbatim from squeeze_mockup_v3.html.
      The glow comes from this translucent stack (atmosphere -> window -> bloom -> glass),
@@ -266,20 +266,23 @@ body::before {
     radial-gradient(820px 520px at 97% 3%, color-mix(in srgb, var(--tier-arch) 2%, transparent), transparent 66%);
 }
 
-/* Film grain — external SVG feTurbulence (CSP default-src 'self' blocks a
-   data: URI, so it's a same-origin asset). Sits above the panels; overlay
-   blend + ~3.5% keeps it imperceptible on text and never blocks pointer. */
+/* Film grain + anti-banding DITHER — external SVG feTurbulence (CSP default-src 'self' blocks
+   a data: URI, so it's a same-origin asset). The bloom's gentle radial gradients quantize to
+   ~1-RGB steps over ~24px-wide bands (the rings). C.2 finding: a SOURCE fix isn't reachable
+   in CSS — `filter: blur()` is 8-bit (doesn't add depth) and washes the bloom; a noise tile
+   blended INTO the bloom (background-blend) just greys it out (no backdrop to stay neutral
+   against). The working tool is a full-screen mix-blend-mode: overlay dither — overlay is
+   MEAN-PRESERVING (no wash/lift) and peaks in the mids (where the rings are). 0.15 is the
+   minimum that fully dissolves the rings in the open canvas (longBands 0); the titlebar strip
+   (under .top-blur z4 / .titlebar z5) is occluded from this z0 layer, so a little residual
+   remains there. Grayscale tile → no chroma. Static (no animation). Panels (z1) untouched. */
 body::after {
   content: "";
   position: fixed; inset: 0;
   pointer-events: none;
-  /* z-index 0 (was 200): grain belongs to the CANVAS — it sits over the atmosphere/
-     blooms (anti-banding) but BELOW the panels (.app z1), so it never hazes a panel's
-     lit edge / drop shadow / surface. Panels still pick up faint grain through their
-     own backdrop-filter (frosted atmosphere), which is correct. */
   z-index: 0;
-  background-image: url("grain.svg");
-  background-size: 160px 160px;
+  background-image: url("dither.svg");
+  background-size: 180px 180px;
   opacity: var(--grain-opacity);
   mix-blend-mode: overlay;
 }
