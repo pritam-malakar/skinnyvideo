@@ -1,7 +1,7 @@
 {
   "name": "squeeze",
   "productName": "Squeeze",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "description": "Video archive compressor for macOS",
   "main": "src/main/main.js",
   "scripts": {
