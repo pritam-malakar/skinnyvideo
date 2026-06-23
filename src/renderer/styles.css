@@ -135,11 +135,10 @@
   --hairline-strong:rgba(255,255,255,.10);
   --lit-edge:rgba(255,255,255,.14);
 
-  /* glass material (Pass 2) — tonal-lift gradient + grain. Reuse existing
+  /* glass material (Pass 2) — tonal-lift gradient. Reuse existing
      white-alpha tokens; no new color value. */
   --sheen-hi:rgba(255,255,255,.06);    /* Pass 7: mockup .glass white ~.05 — milky over the bright backdrop */
   --sheen-lo:rgba(255,255,255,.04);
-  --grain-opacity:0.15;                /* grayscale overlay dither strength — the minimum that dissolves the bloom rings in the open canvas without washing (C.2); lower leaves residual rings, higher reads as heavy grain */
 
   /* Pass 7 reset — v3 layer-stack tokens, ported verbatim from squeeze_mockup_v3.html.
      The glow comes from this translucent stack (atmosphere -> window -> bloom -> glass),
@@ -228,12 +227,12 @@
    atmospheric backdrop directly — the bright field the frosted panels lift off. */
 html, body { margin: 0; padding: 0; background: var(--bd-3); color: var(--fg); font-family: var(--font-sans); }
 body {
-  background:
-    /* FIX B (v2.2.0): wider, gentler teal reaching up to the very top edge */
-    radial-gradient(1500px 1000px at 14% -8%, var(--bd-cool), transparent 64%),
-    /* TWEAK 2 (v2.2.0): bottom-right violet atmosphere — smaller + faded so it's a hint, not a glow */
-    radial-gradient(600px 560px at 108% 116%, color-mix(in srgb, var(--bd-violet) 50%, transparent), transparent 55%),
-    linear-gradient(160deg, var(--bd-1) 0%, var(--bd-2) 60%, var(--bd-3) 100%);
+  /* Baked Simple atmosphere — Photoshop-dithered PNG (base ramp + teal/cobalt/violet
+     blooms), band-free on bright external displays. The whole Simple field lives in
+     the image now; the old radial-gradient stack + body::before blooms are gone.
+     --canvas (#0B0F14) is the fallback canvas behind it. cover = scale to fill,
+     never upscaling the 2560×1600 art past native. */
+  background: var(--canvas) url("bg_simple.png") center / cover no-repeat fixed;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -244,55 +243,15 @@ body {
 }
 .mono, code, kbd, .qfoot, .qhead, .qrow .mono { font-family: var(--font-mono); font-feature-settings: "zero", "ss01"; letter-spacing: 0; }
 
-/* Pass 3: real OS vibrancy is now the backdrop, so this simulated atmosphere is
-   reduced to a faint brand-tinted glow riding over the vibrancy (not removed —
-   it keeps the cyan/violet character). Grain (body::after) is unchanged. */
-/* Pass 7 tweak: v3's colored bloom as a FULL-WINDOW fixed layer (not bounded to
-   .app, so no box/seam). With .app's blur44 gone, the panels sample this cleanly
-   for their glow — no wash-out. v3 .window::before intensities (cyan .08,
-   accent-center .05, violet .07); center bloom rose -> cobalt per locked palette. */
-body::before {
-  content: "";
-  position: fixed; inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  background:
-    /* FIX B (v2.2.0): wider/softer cyan bloom, reaches up into the title-bar zone */
-    radial-gradient(1040px 660px at 8% 3%, color-mix(in srgb, var(--operational) 8%, transparent), transparent 72%),
-    radial-gradient(520px 380px at 40% 64%, color-mix(in srgb, var(--tier-fast) 5%, transparent), transparent 58%),
-    /* bottom-right violet bloom — faint hint (v2.2.0 TWEAK 2) */
-    radial-gradient(420px 340px at 94% 98%, color-mix(in srgb, var(--tier-arch) 4%, transparent), transparent 60%),
-    /* v2.2.0 counter-blooms — fill the dead OPPOSITE corners at wide/fullscreen widths so
-       the field reads balanced edge-to-edge. Viewport-relative (this layer is fixed),
-       and clearly SECONDARY: ~half the primaries' alpha, large soft radius, barely-there. */
-    radial-gradient(900px 560px at 3% 97%, color-mix(in srgb, var(--operational) 4%, transparent), transparent 66%),
-    radial-gradient(820px 520px at 97% 3%, color-mix(in srgb, var(--tier-arch) 2%, transparent), transparent 66%);
-}
-
-/* Film grain + anti-banding DITHER — external SVG feTurbulence (CSP default-src 'self' blocks
-   a data: URI, so it's a same-origin asset). The bloom's gentle radial gradients quantize to
-   ~1-RGB steps over ~24px-wide bands (the rings). C.2 finding: a SOURCE fix isn't reachable
-   in CSS — `filter: blur()` is 8-bit (doesn't add depth) and washes the bloom; a noise tile
-   blended INTO the bloom (background-blend) just greys it out (no backdrop to stay neutral
-   against). The working tool is a full-screen mix-blend-mode: overlay dither — overlay is
-   MEAN-PRESERVING (no wash/lift) and peaks in the mids (where the rings are). 0.15 is the
-   minimum that fully dissolves the rings in the open canvas (longBands 0); the titlebar strip
-   (under .top-blur z4 / .titlebar z5) is occluded from this z0 layer, so a little residual
-   remains there. Grayscale tile → no chroma. Static (no animation). Panels (z1) untouched. */
-body::after {
-  content: "";
-  position: fixed; inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  background-image: url("dither.svg");
-  background-size: 180px 180px;
-  opacity: var(--grain-opacity);
-  mix-blend-mode: overlay;
-}
+/* Simple atmosphere is now a single baked PNG on the body background (above) —
+   the old body::before colored-bloom layer + the body::after overlay dither (with
+   its temporal-shuffle rAF and --dpr/--dither-pos/--grain-opacity tokens) are gone.
+   The PNG is Photoshop-dithered, so it's band-free on bright external displays with
+   zero runtime cost. */
 
 /* TWEAK 2 (v2.2.0 fix): real top BLUR band — content blurs and dissolves into the
    frosted atmosphere as it scrolls up (no dark vignette). Fixed, masked to fade
-   out, above content (z 4) but below the titlebar (z 5) + grain (z 200). The
+   out, above content (z 4) but below the titlebar (z 5). The
    atmosphere still shows through; nothing is darkened. */
 .top-blur {
   position: fixed; top: 0; left: 0; right: 0; height: 64px;
@@ -2286,29 +2245,23 @@ svg { display: block; }
    Pro Mode — visual identity (additive; base styles never edited)
    ============================================================ */
 
-/* Violet-leaning atmosphere overlay — mirror of the base bloom geometry with
-   the cast inverted (violet takes the dominant corner, cyan demoted to the
-   faint hint). Existing palette vars only; opacity 0 in Simple so the Simple
-   canvas is byte-for-byte today's. Sits on the canvas plane (z 0) like
-   body::before; grain (body::after) rides above both. */
+/* Baked Nerd atmosphere — the full violet-leaning Nerd field as a Photoshop-dithered
+   PNG. Sits on the canvas plane (z 0) above the body's baked bg_simple. opacity 0 in
+   Simple so bg_simple shows untouched; crossfades to 1 under body.pro-mode, painting
+   bg_nerd OVER bg_simple. Same opacity mechanism as before — image instead of gradient. */
 #pro-atmosphere {
   position: fixed; inset: 0;
   pointer-events: none;
   z-index: 0;
   opacity: 0;
-  background:
-    radial-gradient(1040px 660px at 8% 3%, color-mix(in srgb, var(--tier-arch) 17%, transparent), transparent 72%),
-    radial-gradient(420px 340px at 94% 98%, color-mix(in srgb, var(--tier-arch) 7%, transparent), transparent 60%),
-    radial-gradient(900px 560px at 3% 97%, color-mix(in srgb, var(--tier-arch) 8%, transparent), transparent 66%),
-    radial-gradient(820px 520px at 97% 3%, color-mix(in srgb, var(--violet) 4%, transparent), transparent 66%);
+  /* cover = scale to fill, never upscaling the 2560×1600 art past native. */
+  background: url("bg_nerd.png") center / cover no-repeat fixed;
 }
-/* The crossfade: violet rises, the cool base cast recedes. Both are opacity-
-   only — every .glass panel re-tints through its own backdrop sampling. */
+/* The crossfade: bg_nerd rises over bg_simple. Opacity-only — every .glass panel
+   re-tints through its own backdrop sampling. */
 body.pro-mode #pro-atmosphere { opacity: 1; }
-body.pro-mode::before { opacity: .15; }   /* cool cast almost fully leaves the room */
 @media (prefers-reduced-motion: no-preference) {
   #pro-atmosphere { transition: opacity .6s ease; }
-  body::before { transition: opacity .6s ease; }
 }
 
 /* Toggle active state reflects the mode strongly: the Pro segment, when active,
