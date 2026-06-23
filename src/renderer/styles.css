@@ -227,12 +227,11 @@
    atmospheric backdrop directly — the bright field the frosted panels lift off. */
 html, body { margin: 0; padding: 0; background: var(--bd-3); color: var(--fg); font-family: var(--font-sans); }
 body {
-  /* Baked Simple atmosphere — Photoshop-dithered PNG (base ramp + teal/cobalt/violet
-     blooms), band-free on bright external displays. The whole Simple field lives in
-     the image now; the old radial-gradient stack + body::before blooms are gone.
-     --canvas (#0B0F14) is the fallback canvas behind it. cover = scale to fill,
-     never upscaling the 2560×1600 art past native. */
-  background: var(--canvas) url("bg_simple.png") center / cover no-repeat fixed;
+  /* Solid canvas fallback ONLY. The baked Simple atmosphere paints on the
+     fixed-POSITIONED body::before layer below — NOT as a background-attachment:fixed
+     image here, which Chromium mis-composites under the panels' backdrop-filter
+     (ghost halo + hard seam at every .glass edge). */
+  background: var(--canvas);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -243,11 +242,21 @@ body {
 }
 .mono, code, kbd, .qfoot, .qhead, .qrow .mono { font-family: var(--font-mono); font-feature-settings: "zero", "ss01"; letter-spacing: 0; }
 
-/* Simple atmosphere is now a single baked PNG on the body background (above) —
-   the old body::before colored-bloom layer + the body::after overlay dither (with
-   its temporal-shuffle rAF and --dpr/--dither-pos/--grain-opacity tokens) are gone.
-   The PNG is Photoshop-dithered, so it's band-free on bright external displays with
-   zero runtime cost. */
+/* Baked Simple atmosphere — full Simple field as a Photoshop-dithered PNG on a
+   fixed-POSITIONED layer (mirrors the original v2.5.1 body::before bloom structure,
+   image swapped for the gradient stack). position:fixed + a plain center/cover url()
+   composites cleanly under the .glass panels' backdrop-filter; background-attachment:
+   fixed does NOT — Chromium samples a mis-composited copy of an attachment-fixed bg,
+   producing a ghost halo + hard seam at every panel edge. z-index:0 sits behind .app
+   content (z1) yet is still sampled as backdrop. Static opacity 1 — the Nerd layer
+   (#pro-atmosphere, bg_nerd) crossfades OVER it. The old dither apparatus stays gone. */
+body::before {
+  content: "";
+  position: fixed; inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: url("bg_simple.png") center / cover no-repeat;
+}
 
 /* TWEAK 2 (v2.2.0 fix): real top BLUR band — content blurs and dissolves into the
    frosted atmosphere as it scrolls up (no dark vignette). Fixed, masked to fade
@@ -2254,8 +2263,11 @@ svg { display: block; }
   pointer-events: none;
   z-index: 0;
   opacity: 0;
-  /* cover = scale to fill, never upscaling the 2560×1600 art past native. */
-  background: url("bg_nerd.png") center / cover no-repeat fixed;
+  /* #pro-atmosphere is ALREADY a position:fixed full-viewport element, so the bg
+     just needs a plain center/cover url() — NO background-attachment:fixed (same
+     Chromium backdrop-filter mis-composite that haloed/seamed the panels). cover =
+     scale to fill, never upscaling the 2560×1600 art past native. */
+  background: url("bg_nerd.png") center / cover no-repeat;
 }
 /* The crossfade: bg_nerd rises over bg_simple. Opacity-only — every .glass panel
    re-tints through its own backdrop sampling. */
