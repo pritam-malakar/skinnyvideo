@@ -159,7 +159,10 @@
      the falloff so each quantization step is smaller + flatter (banding much reduced).
      NOTE: this is 8-bit — banding is reduced, NOT provably eliminated on the brightest
      external display. A truly band-free lift needs a baked, dithered shadow sprite. */
-  --glass-shadow:inset 0 1px 0 var(--hi-edge), 0 2px 12px -3px var(--shadow-45), 0 24px 64px -28px var(--shadow-55);
+  /* v2.5.5: outer drops removed — CSS box-shadow is 8-bit and its falloff terminated
+     with a hard stepped edge against the bright baked bitmap on 10-bit panels. Panels
+     now separate by fill luminance + the lit top edge alone. Lit inset edge kept. */
+  --glass-shadow:inset 0 1px 0 var(--hi-edge);
   /* solid frosted button chips — a touch more opaque than panels so they read as pressable controls */
   --btn-glass-hi:rgba(255,255,255,.13);
   --btn-glass-lo:rgba(255,255,255,.07);
@@ -274,8 +277,8 @@ body::before {
   pointer-events: none;
   /* FIX A (v2.2.0): pure blur, NO saturate — the top band must not shift the
      atmosphere's tone/chroma, so it can't read as a "different" strip. */
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
+  /* v2.5.5: live backdrop-filter removed (8-bit compositor banding/fringe/halo on
+     bright displays). Band now inert — geometry + mask kept. */
   -webkit-mask-image: linear-gradient(to bottom, black 0, black 28%, transparent 100%);
   mask-image: linear-gradient(to bottom, black 0, black 28%, transparent 100%);
 }
@@ -402,8 +405,6 @@ body::before {
   padding: 28px 32px;
   border-radius: 14px;
   background: var(--glass-bg);                 /* v3 .glass: flat translucent fill */
-  -webkit-backdrop-filter: blur(28px) saturate(120%);
-  backdrop-filter: blur(28px) saturate(120%);
   border: none;                                /* v3 .glass has no border */
   box-shadow: var(--glass-shadow);             /* v3 --glass-shadow */
   overflow: hidden;
@@ -553,8 +554,6 @@ body::before {
   align-items: center;
   padding: 12px 14px;
   background: var(--glass-bg);                 /* v3 .glass: flat translucent fill */
-  -webkit-backdrop-filter: blur(28px) saturate(120%);
-  backdrop-filter: blur(28px) saturate(120%);
   border: none;                                /* v3 .glass has no border */
   border-radius: 10px;
   box-shadow: var(--glass-shadow);             /* v3 --glass-shadow */
@@ -669,8 +668,6 @@ body::before {
   display: flex; align-items: center; gap: 12px;
   padding: 0 14px; height: 46px;
   background: var(--glass-bg);                 /* v3 .glass: flat translucent fill */
-  -webkit-backdrop-filter: blur(28px) saturate(120%);
-  backdrop-filter: blur(28px) saturate(120%);
   border: none;                                /* v3 .glass has no border */
   border-radius: 10px;
   box-shadow: var(--glass-shadow);             /* v3 --glass-shadow */
@@ -694,8 +691,6 @@ body::before {
      scaled to button size, + a cyan accent tint in the fill + a cyan own-glow. */
   background: linear-gradient(180deg, color-mix(in srgb, var(--operational) 16%, transparent), color-mix(in srgb, var(--operational) 10%, transparent)), var(--glass-bg);
   border: none;
-  -webkit-backdrop-filter: blur(28px) saturate(120%);
-  backdrop-filter: blur(28px) saturate(120%);
   box-shadow: var(--glass-shadow), 0 0 16px -6px color-mix(in srgb, var(--operational) 42%, transparent);
   cursor: pointer;
   padding: 6px 12px;
@@ -733,8 +728,6 @@ body::before {
      backdrop blur + lit top edge + the panel drop shadow. No bespoke button styling. */
   border: none;
   background: var(--glass-bg);
-  -webkit-backdrop-filter: blur(28px) saturate(120%);
-  backdrop-filter: blur(28px) saturate(120%);
   box-shadow: var(--glass-shadow);
   color: var(--fg);
   transition: background .15s ease, box-shadow .15s ease, filter .15s ease, transform var(--dur-micro) var(--ease-settle);
@@ -841,12 +834,8 @@ body::before {
      same --glass-bg milky body as the other glass panels; the accent ::before/::after
      now ride OVER that frost as a TINT, not as the whole fill. */
   background: var(--glass-bg);
-  -webkit-backdrop-filter: blur(28px) saturate(120%);
-  backdrop-filter: blur(28px) saturate(120%);
   border: none;
-  box-shadow:
-    inset 0 1px 0 var(--hi-edge),
-    0 22px 56px -28px var(--shadow-55);
+  box-shadow: inset 0 1px 0 var(--hi-edge);   /* v2.5.5: hard outer drop removed (8-bit stepped edge over bitmap); lit edge kept */
   cursor: pointer;
   text-align: left;
   color: inherit;
@@ -886,8 +875,7 @@ body::before {
   box-shadow:
     inset 0 1px 0 var(--raise),
     0 1px 0 var(--shadow-40),
-    0 18px 36px -28px var(--shadow-70),
-    0 0 20px -6px var(--accent-glow, transparent);   /* tier-tinted hover lift */
+    0 0 20px -6px var(--accent-glow, transparent);   /* v2.5.5: hard outer drop removed; lit edge + soft accent glow kept */
 }
 .tier input[type="radio"] { position: absolute; opacity: 0; pointer-events: none; }
 
@@ -935,7 +923,7 @@ body::before {
   /* Wash + inner glow + ring moved to ::after (crossfaded). The element keeps only
      the outer drop, which already transitions. v2.5.4: .80→.55 + wider, matching the
      softened --glass-shadow (less edge fringe + less banding over the baked bitmap). */
-  box-shadow: 0 24px 60px -28px var(--shadow-55);
+  box-shadow: inset 0 1px 0 var(--hi-edge);   /* v2.5.5: hard outer drop removed; lit edge kept (accent glow/ring ride ::after) */
 }
 .tier.selected::before { opacity: 0; }
 .tier.selected::after  { opacity: 1; }
@@ -994,10 +982,13 @@ body::before {
      without frost-on-frost mud. */
   border: none;
   border-radius: 12px;
-  background: var(--glass-bg);
-  -webkit-backdrop-filter: blur(28px) saturate(120%);
-  backdrop-filter: blur(28px) saturate(120%);
-  box-shadow: var(--glass-shadow), 0 24px 60px -12px var(--shadow-55);
+  /* v2.5.5: opaque lifted panel (was translucent --glass-bg). The queue uniquely
+     holds an opaque recessed file tray (.qbatch-files); over the translucent fill
+     the tray's edges met the bright baked bitmap showing through → hard luminance
+     fringe/banding on the tray border + spine. An opaque --bg-2 base gives the tray
+     a flat surface to sit on (tray --bg-1 still recesses below it). Sheen kept. */
+  background: linear-gradient(180deg, var(--sheen-hi), var(--sheen-lo)), var(--bg-2);
+  box-shadow: var(--glass-shadow);   /* v2.5.5: extra deep drop removed (hard edge over bitmap); opaque fill + lit edge carry it */
   overflow: hidden;
 }
 .qlist { list-style: none; margin: 0; padding: 0; }
@@ -1386,12 +1377,11 @@ body::before {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   margin-bottom: 16px;
   padding: 9px 12px;
-  /* TWEAK 3 (v2.2.0): quiet glass (v3 material) */
-  background: var(--glass-bg);
-  -webkit-backdrop-filter: blur(28px) saturate(120%);
-  backdrop-filter: blur(28px) saturate(120%);
-  border: none; border-radius: 8px;
-  box-shadow: var(--glass-shadow);
+  /* v2.5.5: solid recessed surface. Was translucent --glass-bg + wide --glass-shadow;
+     with frost removed, that white wash + 64px soft drop banded/fringed over the
+     baked bitmap. Now matches the .qbatch-files tray / .stat recessed pattern. */
+  background: var(--bg-1);
+  border: 1px solid var(--border-subtle); border-radius: 8px;
   min-height: 36px;
   display: flex; align-items: center;
 }
@@ -1493,7 +1483,7 @@ body::before {
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 22px 24px;
-  box-shadow: inset 0 1px 0 var(--raise-soft), 0 18px 36px -28px var(--shadow-70);
+  box-shadow: inset 0 1px 0 var(--raise-soft);   /* v2.5.5: hard outer drop removed; lit edge kept */
 }
 .summary-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .summary-badge {
@@ -1539,8 +1529,6 @@ svg { display: block; }
 .row-menu {
   position: absolute;
   background: linear-gradient(180deg, var(--sheen-hi), var(--sheen-lo));
-  -webkit-backdrop-filter: blur(28px) saturate(120%);
-  backdrop-filter: blur(28px) saturate(120%);
   border: 1px solid transparent; border-top-color: var(--lit-edge);   /* Pass 6 (v3): borderless sides, lit top edge only */
   border-radius: 10px;
   box-shadow:
@@ -1608,8 +1596,6 @@ svg { display: block; }
   padding: 11px 14px;
   /* TWEAK 3 (v2.2.0): quiet glass (v3 material) */
   background: var(--glass-bg);
-  -webkit-backdrop-filter: blur(28px) saturate(120%);
-  backdrop-filter: blur(28px) saturate(120%);
   border: none;
   border-radius: 10px;
   box-shadow: var(--glass-shadow);
@@ -1782,9 +1768,10 @@ svg { display: block; }
 @keyframes mb-in { from { opacity: 0; } to { opacity: 1; } }
 .modal-card {
   width: min(460px, 100%);
-  background: linear-gradient(180deg, var(--sheen-hi), var(--sheen-lo));
-  -webkit-backdrop-filter: blur(28px) saturate(120%);
-  backdrop-filter: blur(28px) saturate(120%);
+  /* v2.5.5: opaque lifted base under the sheen. Was a frost-dependent translucent
+     sheen gradient — once the card's backdrop-filter was removed it read see-through
+     over the queue/stats. --bg-2 makes the dialog solid + legible; sheen kept on top. */
+  background: linear-gradient(180deg, var(--sheen-hi), var(--sheen-lo)), var(--bg-2);
   border: 1px solid transparent; border-top-color: var(--lit-edge);   /* Pass 6 (v3): borderless sides, lit top edge only */
   border-radius: 16px;
   box-shadow:
@@ -2340,13 +2327,9 @@ body.pro-mode .mode-pill::after  { opacity: 1; }
   display: none;
   margin-top: 10px;
   background: linear-gradient(180deg, var(--sheen-hi), var(--sheen-lo));
-  -webkit-backdrop-filter: blur(28px) saturate(120%);
-  backdrop-filter: blur(28px) saturate(120%);
   border: 1px solid transparent; border-top-color: var(--lit-edge);
   border-radius: 16px;
-  box-shadow:
-    inset 0 1px 0 var(--sheen-18),
-    0 18px 44px -22px var(--shadow-78);
+  box-shadow: inset 0 1px 0 var(--sheen-18);   /* v2.5.5: hard outer drop removed; lit edge kept */
   padding: 12px 20px 14px;
 }
 body.pro-mode .pro-panel { display: block; }
