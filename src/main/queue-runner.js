@@ -66,10 +66,13 @@ async function runQueue(batches, { send, isStopRequested, rt }) {
        is kept live by the 'set-batch-skips' IPC; fall back to the payload's frozen
        skipped[] if no live update arrived. Skipped ORIGINAL paths are removed from
        fileSources before staging, and passed to runBatch as batch.skip for folder
-       batches. A skipped file is therefore never staged nor encoded, whenever the
-       skip was toggled. A skip is NOT a terminal-state hazard: the skipped file is
-       removed up front, so the batch simply finishes Done over its remaining files
-       and the loop auto-advances exactly as a no-skip batch does. */
+       batches. TRUE BOUNDARY (v2.7.1): skips are honored only for batches NOT
+       YET at their turn — this read happens exactly once, here; after staging,
+       the running batch's list is fixed and a later skip toggle does NOT apply
+       to it (the renderer no longer offers the control on a running batch's
+       rows). A skip is NOT a terminal-state hazard: the skipped file is removed
+       up front, so the batch simply finishes Done over its remaining files and
+       the loop auto-advances exactly as a no-skip batch does. */
     const skipSet = (state.skips instanceof Set)
       ? state.skips
       : new Set(Array.isArray(batch.skipped) ? batch.skipped : []);

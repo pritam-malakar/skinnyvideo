@@ -1642,7 +1642,7 @@ function buildBatchGroup(batch, idx) {
   filesUl.appendChild(filesHead);
 
   batch.files.forEach((file, i) => {
-    filesUl.appendChild(buildFileRow(file, i, batch.id, isNewBatch));
+    filesUl.appendChild(buildFileRow(file, i, batch.id, isNewBatch, batch.status));
   });
   li.appendChild(filesUl);
 
@@ -1672,7 +1672,7 @@ function buildBatchGroup(batch, idx) {
   return li;
 }
 
-function buildFileRow(file, i, batchId, entering) {
+function buildFileRow(file, i, batchId, entering, batchStatus) {
   const li = document.createElement('li');
   li.className = `qrow status-${file.status}`;
   li.dataset.fpath = file.path;
@@ -1788,11 +1788,15 @@ function buildFileRow(file, i, batchId, entering) {
   li.appendChild(outCol);
 
   /* C: trailing skip control AFTER the output cell — a 6th column. Only
-     active while file.status === 'queued'. Renders an empty cell when
-     not actionable, so the grid stays aligned. */
+     active while file.status === 'queued' AND the batch itself is still
+     'queued' (v2.7.1): skips are honored at each batch's turn, so once a
+     batch is running/paused its staged list is fixed and a skip could not
+     apply — the control would be a lie. Matches the batch header, whose
+     edit controls also retire once the batch starts. Renders an empty cell
+     when not actionable, so the grid stays aligned. */
   const skipCell = document.createElement('div');
   skipCell.className = 'qrow-skip';
-  if (file.status === 'queued') {
+  if (file.status === 'queued' && batchStatus === 'queued') {
     const sk = document.createElement('button');
     sk.type = 'button';
     sk.className = 'qrow-skip-btn';
@@ -2165,7 +2169,10 @@ window.api.onProgress((d) => {
          differ from the row order (file-list temp readdir), and that defensive
          loop was marking files done with no output size, so their own
          file-done could no longer land. Every file gets its own start/done. */
-      let fi = batch.files.findIndex((f) => f.path === d.file);
+      /* v2.7.1: the exact-path match carries the SAME terminal guard as the
+         basename fallback — a row already settled (e.g. skipped) must never
+         be flipped back to running by a stray engine event. */
+      let fi = batch.files.findIndex((f) => f.path === d.file && !isTerminalFileStatus(f.status));
       if (fi < 0) fi = batch.files.findIndex(
         (f) => f.name === d.basename && !isTerminalFileStatus(f.status)
       );
@@ -2242,7 +2249,11 @@ window.api.onProgress((d) => {
          then the running index from file-start, then a basename match among
          not-yet-terminal rows. Then assign the REAL output size the pipeline
          sent (d.outBytes). Order-independent → every done file gets its size. */
-      let ti = d.file ? batch.files.findIndex((f) => f.path === d.file) : -1;
+      /* v2.7.1: exact-path match guarded like the basename fallback below —
+         a terminal row (skipped/cancelled/…) is never overwritten to Done
+         with an output size by an event for a file the engine encoded
+         against a stale staged list. */
+      let ti = d.file ? batch.files.findIndex((f) => f.path === d.file && !isTerminalFileStatus(f.status)) : -1;
       if (ti < 0 && Number.isFinite(batch.runningFileIdx) && batch.files[batch.runningFileIdx]
           && !isTerminalFileStatus(batch.files[batch.runningFileIdx].status)) {
         ti = batch.runningFileIdx;

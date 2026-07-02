@@ -14,9 +14,21 @@
    MODE=skipthree   batch 03 ends done+failed+skipped → still auto-advances.
    MODE=allskipped  a MIDDLE all-skipped batch shows Done (not stuck Queued) and
                     the queue advances past it.
+   MODE=skipui      v2.7.1: the RUNNING batch's rows expose NO active skip
+                    control (skips can't apply once the batch is staged);
+                    waiting batches keep theirs.
+   MODE=terminaldone v2.7.1: a row already in a TERMINAL status (skipped) is
+                    never overwritten by an exact-path file-start/file-done
+                    event (the "skipped row flips to Done + size" bug).
 
    Run:  MODE=<mode> ./node_modules/.bin/electron test/skip_remove_test.js
-   Skips cleanly if the fixture clip or bundled ffmpeg is missing. */
+   Fixture: SQUEEZE_TEST_CLIP env var, else test/fixtures/tiny_clip.mov, else
+   the legacy CompressorTest path. Generate the local fixture with the
+   bundled engine (from the repo root):
+     ./resources/bin/ffmpeg -f lavfi -i testsrc=duration=2:size=640x360:rate=15 \
+       -f lavfi -i sine=frequency=440:duration=2 \
+       -c:v h264_videotoolbox -b:v 800k -c:a aac test/fixtures/tiny_clip.mov
+   Skips cleanly if no fixture clip or the bundled ffmpeg is missing. */
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -29,7 +41,14 @@ const { flattenRunDir } = require(path.join(ROOT, 'src/encoder/flatten'));
 const { stageFileList } = require(path.join(ROOT, 'src/encoder/stage'));
 
 const MODE = process.env.MODE || 'skip';
-const SMALL_CLIP = '/Users/macmini1/Downloads/CompressorTest/Source/Project A/C0224.mov';
+/* Fixture resolution: env override → repo-local generated clip → legacy path.
+   See the header for the one-line generation command. */
+const CLIP_CANDIDATES = [
+  process.env.SQUEEZE_TEST_CLIP,
+  path.join(__dirname, 'fixtures', 'tiny_clip.mov'),
+  '/Users/macmini1/Downloads/CompressorTest/Source/Project A/C0224.mov'
+].filter(Boolean);
+const SMALL_CLIP = CLIP_CANDIDATES.find((p) => fs.existsSync(p)) || CLIP_CANDIDATES[0];
 const DEST = path.join(os.tmpdir(), `squeeze-sr-out-${MODE}`);
 const SRCDIR = path.join(os.tmpdir(), `squeeze-sr-src-${MODE}`);
 
@@ -358,6 +377,75 @@ app.whenReady().then(async () => {
     check(pills.length === 3 && /Done/i.test(pills[1] || ''), `all-skipped batch 02 shows Done, not stuck Queued (pills: ${JSON.stringify(pills)})`);
     check(outs.some((f) => /as_a3/i.test(f)) && /Done/i.test(pills[2] || ''), 'queue advanced to batch 03 after the all-skipped batch');
     check(lastFinished != null, 'queue-finished fired');
+  } else if (MODE === 'skipui') {
+    /* v2.7.1 regression — skips are honored only for batches not yet at their
+       turn, so the RUNNING batch's rows must expose NO active skip control
+       (pre-fix: every 'queued' row rendered one, inviting a skip the engine
+       would ignore). Waiting batches keep theirs. */
+    BATCH_FILES = [[await mk('r1a.mov'), await mk('r1b.mov')], [await mk('w2a.mov')]];
+    await run(`document.getElementById('dz-browse').click(); true;`); await wait(900);
+    await run(`document.getElementById('choose-dest').click(); true;`); await wait(300);
+    await run(`document.getElementById('add-to-queue').click(); true;`); await wait(350);
+    await run(`document.getElementById('dz-browse').click(); true;`); await wait(900);
+    await run(`document.getElementById('add-to-queue').click(); true;`); await wait(350);
+    await run(`document.getElementById('start').click(); true;`);
+    // Batch 1 running (row 1 encoding, row 2 still queued), batch 2 waiting.
+    await wait(400);
+    const probe = await run(`(() => {
+      const bs = [...document.querySelectorAll('.qbatch')];
+      const pill = (b) => b.querySelector('.qbatch-status .pill')?.textContent.trim();
+      const btns = (b) => b.querySelectorAll('.qrow-skip-btn').length;
+      const queuedRows = (b) => b.querySelectorAll('.qrow.status-queued').length;
+      return bs.map((b) => ({ pill: pill(b), skipBtns: btns(b), queuedRows: queuedRows(b) }));
+    })()`);
+    console.log('  RESULT', JSON.stringify(probe));
+    const runningB = probe.find((b) => /Running|Paused/i.test(b.pill || ''));
+    const waitingB = probe.find((b) => /Queued/i.test(b.pill || ''));
+    check(!!runningB && runningB.queuedRows > 0,
+      `probe caught the running batch with a still-queued row (${JSON.stringify(runningB)})`);
+    check(!!runningB && runningB.skipBtns === 0,
+      `RUNNING batch rows expose no skip control (got ${runningB && runningB.skipBtns})`);
+    check(!!waitingB && waitingB.skipBtns > 0,
+      `WAITING batch rows keep their skip control (got ${waitingB && waitingB.skipBtns})`);
+    for (let k = 0; k < 120 && !lastFinished; k++) await wait(700);
+    check(lastFinished != null, 'queue-finished fired');
+  } else if (MODE === 'terminaldone') {
+    /* v2.7.1 regression — a row in a TERMINAL status must never be overwritten
+       by exact-path file-start/file-done events (pre-fix: the exact-path
+       findIndex had no isTerminalFileStatus guard, so a skipped row flipped
+       Running and then Done + output size when the engine encoded it anyway).
+       Pure renderer test: events are injected, no encode runs. */
+    BATCH_FILES = [[await mk('keepA.mov'), await mk('skipMe.mov')]];
+    const skipPath = path.join(SRCDIR, 'skipMe.mov');
+    await run(`document.getElementById('dz-browse').click(); true;`); await wait(900);
+    await run(`document.getElementById('choose-dest').click(); true;`); await wait(300);
+    await run(`document.getElementById('add-to-queue').click(); true;`); await wait(350);
+    const sk = await run(`(() => {
+      const row = [...document.querySelectorAll('.qrow')].find(r => /skipMe/.test(r.textContent));
+      const btn = row && row.querySelector('.qrow-skip-btn');
+      if (btn) { btn.click(); return true; } return false;
+    })()`); await wait(250);
+    check(sk === true, 'setup: skipMe row skipped before Start');
+    const rowState = () => run(`queue[0].files.find(f => /skipMe/.test(f.name)) && (() => { const f = queue[0].files.find(f => /skipMe/.test(f.name)); return { status: f.status, outputSize: f.outputSize }; })()`);
+    const before = await rowState();
+    check(before && before.status === 'skipped', `setup: row is terminal 'skipped' (got ${before && before.status})`);
+    // Simulate the engine encoding it anyway (the pre-fix reality): Running
+    // batch + exact-path file-start, then exact-path file-done with a size.
+    send('batch-status', { id: 1, status: 'Running' });
+    await wait(150);
+    send('progress', { type: 'file-start', file: skipPath, basename: 'skipMe.mov', index: 1, total: 2 });
+    await wait(150);
+    const afterStart = await rowState();
+    check(afterStart && afterStart.status === 'skipped',
+      `terminal row NOT flipped by exact-path file-start (got ${afterStart && afterStart.status})`);
+    send('progress', { type: 'file-done', file: skipPath, basename: 'skipMe.mov', index: 1, total: 2,
+      outcome: 'ok', outBytes: 42000, inBytes: 56079, processed: 1, failed: 0, alreadyDone: 0, reclaimed: 14000 });
+    await wait(150);
+    const afterDone = await rowState();
+    check(afterDone && afterDone.status === 'skipped',
+      `terminal row NOT overwritten by exact-path file-done (got ${afterDone && afterDone.status})`);
+    check(afterDone && afterDone.outputSize == null,
+      `terminal row gained NO output size (got ${afterDone && afterDone.outputSize})`);
   }
 
   check(errs.length === 0, 'no renderer console errors: ' + (errs[0] || 'none'));
