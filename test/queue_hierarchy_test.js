@@ -76,12 +76,13 @@ app.whenReady().then(async () => {
   await addBatch('regular');    // batch 1 → cobalt
   await addBatch('preserve');   // batch 2 → iris violet
 
-  // ---- resolve --tier-fast / --tier-arch to rgb via a probe (fix 6) ----
+  // ---- resolve --tier-fast / --tier-arch / --card-2 to rgb via a probe (fix 6) ----
   const probe = await run(`(() => {
     const e = document.createElement('span'); document.body.appendChild(e);
     e.style.color = 'var(--tier-fast)'; const fast = getComputedStyle(e).color;
     e.style.color = 'var(--tier-arch)'; const arch = getComputedStyle(e).color;
-    e.remove(); return { fast, arch };
+    e.style.color = 'var(--card-2)';   const card2 = getComputedStyle(e).color;
+    e.remove(); return { fast, arch, card2 };
   })()`);
   check(/^rgb/.test(probe.fast) && /^rgb/.test(probe.arch),
     `tier tokens resolve to rgb (fast=${probe.fast}, arch=${probe.arch})`);
@@ -104,7 +105,8 @@ app.whenReady().then(async () => {
         firstChildOfTray: !!(tray && tray.firstElementChild === strip),  // above the rows
         bg: sc && sc.backgroundColor,
         gridMatchesRow: !!(sc && rc && sc.gridTemplateColumns === rc.gridTemplateColumns),
-        padLeft: sc && sc.paddingLeft
+        padLeft: sc && sc.paddingLeft,
+        trayPadLeft: tray && getComputedStyle(tray).paddingLeft
       };
     });
     return { qfile: document.querySelectorAll('.qfile-head').length,
@@ -119,25 +121,36 @@ app.whenReady().then(async () => {
     check(s.insideTray && s.firstChildOfTray, `batch ${i + 1}: strip is first child INSIDE .qbatch-files tray`);
     check(s.bg === 'rgba(0, 0, 0, 0)', `batch ${i + 1}: strip has no own background — sits on tray fill (got ${s.bg})`);
     check(s.gridMatchesRow, `batch ${i + 1}: strip grid-template-columns matches .qrow`);
-    check(s.padLeft === '14px', `batch ${i + 1}: strip padding-left 14px → content origin 40px (got ${s.padLeft})`);
+    /* Reskin v3e: the strip carries no own left padding — the content origin
+       is the tray's 22px padding-left, clear of the 3px spine at left:9px. */
+    check(s.padLeft === '0px' && s.trayPadLeft === '22px',
+      `batch ${i + 1}: strip pad-left 0 on tray pad-left 22px → content origin 22px (got ${s.padLeft} / ${s.trayPadLeft})`);
   });
 
-  // ---- (a)+(b) per-batch tier modifier + spined tray, by computed style ----
+  // ---- (a)+(b) per-batch tier modifier + spined tray, by computed style.
+  //      Reskin v3e ground truth: the tray is a FULL-WIDTH recessed card-2
+  //      surface (margin-left 0); the spine is a ::before pseudo — 3px wide,
+  //      absolute at left:9px, border-radius 2px, painted the batch's frozen
+  //      tier color (--spine). Swapped tiers must fail the color checks. ----
   const batches = await run(`(() => {
     const norm = (s) => s.replace(/\\s+/g, '');
     return [...document.querySelectorAll('#queue .qbatch')].map((b) => {
       const files = b.querySelector('.qbatch-files');
       const chip = b.querySelector('.tierchip');
       const cs = getComputedStyle(files);
+      const sp = getComputedStyle(files, '::before');
       return {
         regular: b.classList.contains('qbatch--regular'),
         archival: b.classList.contains('qbatch--archival'),
         chipRegular: chip.classList.contains('regular'),
         chipArchival: chip.classList.contains('archival'),
         marginLeft: cs.marginLeft,
-        borderW: cs.borderLeftWidth,
-        borderStyle: cs.borderLeftStyle,
-        borderColor: norm(cs.borderLeftColor)
+        trayBg: norm(cs.backgroundColor),
+        spineW: sp.width,
+        spinePos: sp.position,
+        spineLeft: sp.left,
+        spineRadius: sp.borderRadius,
+        spineColor: norm(sp.backgroundColor)
       };
     });
   })()`);
@@ -152,28 +165,37 @@ app.whenReady().then(async () => {
 
   for (const [b, label, want] of [[reg, 'regular', probe.fast], [arc, 'archival', probe.arch]]) {
     if (!b) { check(false, `${label} batch present`); continue; }
-    check(b.marginLeft === '24px', `${label} .qbatch-files inset (margin-left ${b.marginLeft} === 24px)`);
-    check(b.borderW === '2px', `${label} spine width 2px (got ${b.borderW})`);
-    check(b.borderStyle === 'solid', `${label} spine style solid (got ${b.borderStyle})`);
-    check(b.borderColor === norm(want),
-      `${label} spine color === resolved tier token (got ${b.borderColor}, want ${norm(want)})`);
+    check(b.marginLeft === '0px' && b.trayBg === norm(probe.card2),
+      `${label} tray full-width recessed card-2 (margin-left ${b.marginLeft}, bg ${b.trayBg})`);
+    check(b.spineW === '3px', `${label} spine ::before width 3px (got ${b.spineW})`);
+    check(b.spinePos === 'absolute' && b.spineLeft === '9px' && b.spineRadius === '2px',
+      `${label} spine ::before inset at left 9px, radius 2px (got ${b.spinePos}/${b.spineLeft}/${b.spineRadius})`);
+    check(b.spineColor === norm(want),
+      `${label} spine ::before color === resolved tier token (got ${b.spineColor}, want ${norm(want)})`);
   }
 
-  // ---- (d) file-row pill de-weighted; batch pill keeps its chrome ----
+  // ---- (d) reskin v3e pill language: BOTH levels are solid borderless pills
+  //      (file row = card-2 in its queued state); batch > file hierarchy is
+  //      carried by a measurable type step (batch name 19px vs file name 15px) ----
   const pills = await run(`(() => {
-    const TRANSPARENT = 'rgba(0,0,0,0)';
-    const fp = document.querySelector('.qrow .status .pill');
+    const norm = (s) => s.replace(/\\s+/g, '');
+    const fp = document.querySelector('.qrow .status.queued .pill');
     const bp = document.querySelector('.qbatch-status .pill');
+    const bn = document.querySelector('.qbatch-name');
+    const fn = document.querySelector('.qrow .file .name');
     const fc = getComputedStyle(fp), bc = getComputedStyle(bp);
     return {
-      file: { bw: fc.borderTopWidth, bg: fc.backgroundColor },
-      batch: { bw: bc.borderTopWidth, bg: bc.backgroundColor, transparent: TRANSPARENT }
+      file:  { bw: fc.borderTopWidth, bg: norm(fc.backgroundColor) },
+      batch: { bw: bc.borderTopWidth, bg: norm(bc.backgroundColor) },
+      batchNameSize: getComputedStyle(bn).fontSize,
+      fileNameSize: getComputedStyle(fn).fontSize
     };
   })()`);
-  check(pills.file.bw === '0px' && pills.file.bg === 'rgba(0, 0, 0, 0)',
-    `file-row pill de-weighted: no border (${pills.file.bw}) + transparent bg (${pills.file.bg})`);
-  check(pills.batch.bw !== '0px' && pills.batch.bg !== 'rgba(0, 0, 0, 0)',
-    `batch pill keeps its chrome: border ${pills.batch.bw}, bg ${pills.batch.bg}`);
+  check(pills.file.bw === '0px' && pills.file.bg === norm(probe.card2),
+    `file-row queued pill is a solid borderless card-2 pill (border ${pills.file.bw}, bg ${pills.file.bg})`);
+  check(pills.batch.bw === '0px' && pills.batch.bg === norm(probe.card2)
+      && pills.batchNameSize === '19px' && pills.fileNameSize === '15px',
+    `batch pill same solid language; hierarchy via type step 19px > 15px (got ${pills.batchNameSize}/${pills.fileNameSize})`);
 
   // ---- captures: default + fullscreen width, queue scrolled into view so
   //      both batches (cobalt + violet) + their per-tray label strips show ----

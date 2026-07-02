@@ -27,6 +27,22 @@
           <div class="wm-name">Squeeze</div>
         </div>
       </div>
+      <!-- Theme toggle — session-only (never persisted; same precedent as the
+           Nerd toggle). renderer.js seeds html[data-theme] from the system
+           appearance at startup and live-follows it until a manual click. -->
+      <div class="mode-toggle theme-toggle" role="group" aria-label="Theme">
+        <button type="button" id="theme-light" class="mode-seg theme-seg" aria-label="Light theme" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="4"/>
+            <path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41m11.32-11.32 1.41-1.41"/>
+          </svg>
+        </button>
+        <button type="button" id="theme-dark" class="mode-seg theme-seg" aria-label="Dark theme" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>
+          </svg>
+        </button>
+      </div>
       <!-- Pro Mode toggle — session-only (never persisted; every launch starts
            Simple). Flipping it mid-run cannot affect queued/running batches:
            each batch freezes its settings snapshot at enqueue time. -->
@@ -40,18 +56,10 @@
     <!-- dropzone -->
     <div id="dropzone" class="dropzone">
       <div class="dz-inner">
-        <button id="dz-browse" class="dz-icon" type="button" aria-label="Browse for a source folder" title="Browse for a source folder">
-          <svg class="icon" style="width:28px;height:28px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" />
-          </svg>
-        </button>
         <div class="dz-text">
-          <div class="dz-title" id="dz-title">Drop a <em>folder or files</em> to begin</div>
-          <div class="dz-sub">or <button type="button" id="dz-browse-text" class="linkish">click to browse</button></div>
-          <div class="dz-reassure">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-            Your originals are never moved, changed, or deleted.
-          </div>
+          <div class="dz-title" id="dz-title">Drop footage.<br><em>We&rsquo;ll shrink it.</em></div>
+          <div class="dz-sub">or <button type="button" id="dz-browse-text" class="linkish">click to browse</button> — a folder or individual files</div>
+          <div><span class="dz-reassure">Originals are never moved, changed, or deleted</span></div>
           <!-- First-run teaching hint: quiet, empty-state only. The renderer
                hides it once the queue has content or a run has completed. -->
           <div class="dz-steps" id="dz-steps" aria-label="How it works">
@@ -62,24 +70,32 @@
             <span class="dz-step"><span class="n">3</span>Add to queue, then Start</span>
           </div>
         </div>
+        <button id="dz-browse" class="dz-icon" type="button" aria-label="Browse for a source folder" title="Browse for a source folder">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3v11m0 0 4.5-4.5M12 14l-4.5-4.5M4 21h16"/>
+          </svg>
+          <span class="dz-well-label">Drop anywhere</span>
+        </button>
       </div>
       <div id="drop-status" class="dz-loaded hidden">
-        <div class="dz-loaded-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/>
-          </svg>
-        </div>
-        <div class="dz-loaded-text">
-          <div class="dz-loaded-folder">
-            <span class="folder" id="drop-status-path">—</span>
+        <div class="dz-loaded-strip">
+          <div class="dz-loaded-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/>
+            </svg>
           </div>
-          <div class="dz-loaded-meta">
-            <span class="count" id="drop-status-count">0 files</span>
-            <span class="sep">·</span>
-            <span class="total" id="drop-status-extra">—</span>
+          <div class="dz-loaded-text">
+            <div class="dz-loaded-folder">
+              <span class="folder" id="drop-status-path">—</span>
+            </div>
+            <div class="dz-loaded-meta">
+              <span class="count" id="drop-status-count">0 files</span>
+              <span class="sep">·</span>
+              <span class="total" id="drop-status-extra">—</span>
+            </div>
           </div>
         </div>
-        <button id="drop-clear" class="dz-clear" type="button" aria-label="Clear staged files" title="Clear staged files">Clear</button>
+        <button id="drop-clear" class="dz-clear rail-pill" type="button" aria-label="Clear staged files" title="Clear staged files">Clear</button>
       </div>
     </div>
 
@@ -117,7 +133,7 @@
 
     <!-- Staging tier: applies to the batch currently being composed. -->
     <div class="section-head" id="tier-head">
-      <h2>Quality tier</h2>
+      <h2>Quality</h2>
       <span class="hint" id="tier-hint">Applies to this batch only — change before adding</span>
     </div>
     <div class="tiers">

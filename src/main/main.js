@@ -109,7 +109,7 @@ function createWindow() {
        transparent window over a near-black desktop, which made the frosted panels
        sample a dark backdrop and read flat/sunken. An opaque painted backdrop is
        what gives the milky floating panels. backgroundColor = the mockup canvas. */
-    backgroundColor: '#05070a',
+    backgroundColor: '#111111',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 18 },
     show: false,

@@ -96,7 +96,7 @@ app.whenReady().then(async () => {
     `after Clear: current reset to empty (files=${cleared.filesLen}, scanned=${cleared.scanned})`);
   check(cleared.hasSource === false && cleared.innerDisplay === 'flex',
     `after Clear: has-source removed → .dz-inner prompt shown`);
-  check(/Drop a .*folder or files.* to begin/.test(cleared.titleText) || /Drop .*another/.test(cleared.titleText),
+  check(/Drop a .*folder or files.* to begin/.test(cleared.titleText) || /Drop .*another/.test(cleared.titleText) || /Drop footage/.test(cleared.titleText),
     `after Clear: #dz-title prompt restored ("${cleared.titleText}")`);
   check(cleared.dropStatusDisplay === 'none' && cleared.clearVisible === false,
     `after Clear: #drop-status (and Clear button) hidden`);

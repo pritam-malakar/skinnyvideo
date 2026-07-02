@@ -418,6 +418,33 @@ function setProMode(on) {
 if (modeSimpleBtn) modeSimpleBtn.addEventListener('click', () => setProMode(false));
 if (modeProBtn) modeProBtn.addEventListener('click', () => setProMode(true));
 
+/* ───── Theme toggle (reskin v3e) ─────
+   Session-only, same precedent as the Nerd toggle: html[data-theme] is seeded
+   from the system appearance at startup and live-follows appearance changes
+   UNTIL the operator clicks a segment — then the manual choice holds for this
+   session. Never persisted (no prefs, no localStorage); every launch follows
+   the system again. Purely presentational: only the data-theme attribute and
+   the segments' own active state change. */
+const themeLightBtn = document.getElementById('theme-light');
+const themeDarkBtn = document.getElementById('theme-dark');
+const themeMedia = window.matchMedia('(prefers-color-scheme: dark)');
+let themeOverridden = false;   // manual click → stop following the system
+function applyTheme(dark) {
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  if (themeLightBtn) {
+    themeLightBtn.classList.toggle('active', !dark);
+    themeLightBtn.setAttribute('aria-pressed', String(!dark));
+  }
+  if (themeDarkBtn) {
+    themeDarkBtn.classList.toggle('active', dark);
+    themeDarkBtn.setAttribute('aria-pressed', String(dark));
+  }
+}
+applyTheme(themeMedia.matches);
+themeMedia.addEventListener('change', (e) => { if (!themeOverridden) applyTheme(e.matches); });
+if (themeLightBtn) themeLightBtn.addEventListener('click', () => { themeOverridden = true; applyTheme(false); });
+if (themeDarkBtn) themeDarkBtn.addEventListener('click', () => { themeOverridden = true; applyTheme(true); });
+
 /* Last-CONFIRMED sheet values per tier — session memory only (plain variable,
    never written to disk; relaunch returns to pure defaults). */
 const sessionSheetMemory = {};
@@ -1000,9 +1027,12 @@ function clearDrop({ resetTier = true } = {}) {
    "Drop another folder or files". */
 function updateIdleCopy() {
   if (!dzTitle) return;
+  /* Reskin (mockup v3e): the fresh-state headline is the mockup's two-line
+     hero. The after-run copy keeps its established wording (mockup doesn't
+     show that state). Purely presentational — same element, same states. */
   dzTitle.innerHTML = hasCompletedRun
     ? 'Drop <em>another folder or files</em>'
-    : 'Drop a <em>folder or files</em> to begin';
+    : 'Drop footage.<br><em>We’ll shrink it.</em>';
 }
 
 ['dragenter', 'dragover'].forEach((e) => {
