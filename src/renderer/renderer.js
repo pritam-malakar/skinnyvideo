@@ -720,8 +720,14 @@ function showNotice(text) {
 
 // ----- Row action popover ---------------------------------------
 let activeRowMenu = null;
+/* The menu is a document.body child positioned once from the trigger's
+   viewport rect; the real scroller is .app, so on scroll the trigger moves out
+   from under the (unmoved) menu. Repositioning isn't wanted — dismiss instead,
+   mirroring the click/Esc close below. Listener added on open, removed on close. */
+const appScroller = document.querySelector('.app');
 function closeRowMenu() {
   if (activeRowMenu) { activeRowMenu.remove(); activeRowMenu = null; }
+  if (appScroller) appScroller.removeEventListener('scroll', closeRowMenu);
 }
 function openRowMenu(anchorEl, item) {
   closeRowMenu();
@@ -781,6 +787,8 @@ function openRowMenu(anchorEl, item) {
   menu.style.top = `${top}px`;
 
   activeRowMenu = menu;
+  // Close on .app scroll: the fixed one-time position goes stale otherwise.
+  if (appScroller) appScroller.addEventListener('scroll', closeRowMenu);
 }
 document.addEventListener('click', (e) => {
   if (activeRowMenu && !activeRowMenu.contains(e.target)) closeRowMenu();
