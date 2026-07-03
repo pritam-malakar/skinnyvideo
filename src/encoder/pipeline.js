@@ -741,7 +741,7 @@ class StopSignal {
 
 async function runBatch(batch, controlOrFn, onProgress) {
   // controlOrFn may be a legacy shouldStopFn function, or a control object:
-  //   { shouldStop(), isCancelled(), onSpawn(child) }
+  //   { shouldStop(), isCancelled(), onSpawn(child), isSkipped(file) }
   const ctl = typeof controlOrFn === 'function'
     ? { shouldStop: controlOrFn, isCancelled: () => false, onSpawn: null }
     : (controlOrFn || {});
@@ -749,6 +749,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
   const isCancelled = ctl.isCancelled || (() => false);
   const onSpawn     = ctl.onSpawn     || null;
   const isPaused    = ctl.isPaused    || (() => false);
+  const isSkipped   = ctl.isSkipped   || (() => false);
 
   const { src, dest, tier } = batch;
   /* Pro Mode foundation: the batch carries fully-resolved encode settings
@@ -911,6 +912,24 @@ async function runBatch(batch, controlOrFn, onProgress) {
       break;
     }
     const v = scan.videos[i];
+    /* v2.8.0 LIVE SKIP — consult the live skip set at THIS file's boundary,
+       before any dest/probe/spawn work. A skipped file never "starts": no
+       file-start, no encoder, no pipeline counter bucket (operator skips are
+       accounted by the renderer's row state, exactly like turn-boundary
+       skips). The file already encoding is never re-checked — that is what
+       Stop/cancel are for. Emits a 'skip-user' file-done so batch progress
+       advances and the renderer can settle the row. */
+    if (isSkipped(v.file)) {
+      done++;
+      log(`# SKIP-USER ${v.file} (skipped by user mid-run)`);
+      onProgress && onProgress({
+        type: 'file-done', index: i + 1, total: totalFiles,
+        file: v.file, basename: path.basename(v.file),
+        reclaimed, processed, failed, alreadyDone,
+        elapsedMs: Date.now() - startTs, outcome: 'skip-user'
+      });
+      continue;
+    }
     const { finalPath, tmpPath, dir } = destForInput(runDir, scan.rootKind, scan.root, v.file);
     /* BUG 3: is the destination still reachable? If it vanished, fail this
        file fast and stop the batch — every remaining file would fail the same

@@ -127,6 +127,23 @@ async function runQueue(batches, { send, isStopRequested, rt }) {
 
     const wrappedBatch = (runSrc === batch.src) ? batch : { ...batch, src: runSrc };
 
+    /* v2.8.0 LIVE SKIP — consulted by the pipeline at every file boundary,
+       before it spawns that file's encoder. Re-reads rt().skips on EVERY call
+       (the 'set-batch-skips' IPC replaces the Set live), so a skip — or an
+       un-skip — toggled mid-run applies to any not-yet-started file of THIS
+       running batch. The pipeline iterates STAGED paths for file-list batches;
+       skips store ORIGINAL paths, so translate through stageMap first (folder
+       batches iterate originals — passthrough). The turn-boundary pre-filter
+       above still runs: files skipped before the turn are never staged at all. */
+    control.isSkipped = (file) => {
+      const live = (state.skips instanceof Set)
+        ? state.skips
+        : new Set(Array.isArray(batch.skipped) ? batch.skipped : []);
+      if (live.size === 0) return false;
+      const orig = stageMap.get(file) || file;
+      return live.has(orig);
+    };
+
     /* Forward progress to the renderer, translating staged temp paths back to
        original source paths so file rows resolve by exact path (BUG A). */
     const forward = (progress) => {

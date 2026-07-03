@@ -1787,29 +1787,49 @@ function buildFileRow(file, i, batchId, entering, batchStatus) {
   }
   li.appendChild(outCol);
 
-  /* C: trailing skip control AFTER the output cell — a 6th column. Only
-     active while file.status === 'queued' AND the batch itself is still
-     'queued' (v2.7.1): skips are honored at each batch's turn, so once a
-     batch is running/paused its staged list is fixed and a skip could not
-     apply — the control would be a lie. Matches the batch header, whose
-     edit controls also retire once the batch starts. Renders an empty cell
-     when not actionable, so the grid stays aligned. */
+  /* C: trailing skip control AFTER the output cell — a 6th column.
+     v2.8.0 LIVE SKIP: the pipeline consults the skip set at every file
+     boundary, so a skip works on ANY not-yet-started file — including rows
+     of the RUNNING batch. The row currently encoding never gets the control
+     (its status is 'running'; Stop/cancel own that case). A skipped row can
+     be UN-skipped (toggle back) while it can still take effect: always on a
+     waiting batch; on a running batch only if it was skipped mid-run
+     (skippedLive) and the pipeline hasn't passed its slot (skipFinal).
+     Renders an empty cell when not actionable, so the grid stays aligned. */
   const skipCell = document.createElement('div');
   skipCell.className = 'qrow-skip';
-  if (file.status === 'queued' && batchStatus === 'queued') {
+  const batchLive = batchStatus === 'running' || batchStatus === 'paused';
+  const canSkip = file.status === 'queued' && (batchStatus === 'queued' || batchLive);
+  const canUnskip = file.status === 'skipped' && !file.skipFinal
+    && (batchStatus === 'queued' || (batchLive && file.skippedLive));
+  if (canSkip || canUnskip) {
     const sk = document.createElement('button');
     sk.type = 'button';
     sk.className = 'qrow-skip-btn';
-    sk.title = 'Skip this file';
+    sk.title = canSkip ? 'Skip this file' : 'Restore this file';
     sk.setAttribute('aria-label', sk.title);
-    sk.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+    sk.innerHTML = canSkip
+      ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;"><path d="M6 6l12 12M18 6L6 18"/></svg>'
+      : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;"><path d="M3 12h13a5 5 0 0 1 0 10h-3M3 12l4-4M3 12l4 4"/></svg>';
     sk.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (file.status !== 'queued') return;
-      file.status = 'skipped';
+      if (file.status === 'queued') {
+        file.status = 'skipped';
+        /* Mid-run skips are only PROVISIONALLY terminal (the pipeline may
+           have already passed this file's boundary — the lost-race rule
+           resolves that); mark them so un-skip stays offered and a real
+           file-start can reclaim the row. */
+        file.skippedLive = batchLive;
+      } else if (file.status === 'skipped' && !file.skipFinal) {
+        file.status = 'queued';
+        file.skippedLive = false;
+      } else {
+        return;
+      }
       /* BUG 2 (v2.1.15): push this batch's live skipped set to main so a skip
-         toggled AFTER Start (on a batch not yet at its turn) is still honored —
-         the start-of-queue payload is a frozen snapshot. */
+         toggled AFTER Start is honored — for a batch not yet at its turn (the
+         turn-boundary filter) AND, v2.8.0, for the running batch (the
+         pipeline's per-file isSkipped read). Un-skip converges the same way. */
       try {
         const b = queue.find((q) => q.id === batchId);
         if (b) window.api.setBatchSkips(batchId, b.files.filter((f) => f.status === 'skipped').map((f) => f.path));
@@ -2169,6 +2189,26 @@ window.api.onProgress((d) => {
          differ from the row order (file-list temp readdir), and that defensive
          loop was marking files done with no output size, so their own
          file-done could no longer land. Every file gets its own start/done. */
+      /* v2.8.0 LOST-RACE RULE — the pipeline is ground truth. A skip clicked
+         in the same window the pipeline passed that file's boundary check
+         lost the race: the file IS encoding. A row that is skipped only
+         PROVISIONALLY (skippedLive && !skipFinal) is reclaimed by a real
+         file-start for its exact path: flip back to queued (the normal
+         resolution below then marks it running), prune it from the skips
+         set and re-push so main's state converges. Scoped EXCLUSIVELY to
+         skippedLive && !skipFinal — skipFinal rows and every other terminal
+         row keep the v2.7.1 guards verbatim. */
+      const ri = batch.files.findIndex(
+        (f) => f.path === d.file && f.status === 'skipped' && f.skippedLive && !f.skipFinal
+      );
+      if (ri >= 0) {
+        const rf = batch.files[ri];
+        rf.status = 'queued';
+        rf.skippedLive = false;
+        try {
+          window.api.setBatchSkips(batch.id, batch.files.filter((f) => f.status === 'skipped').map((f) => f.path));
+        } catch {}
+      }
       /* v2.7.1: the exact-path match carries the SAME terminal guard as the
          basename fallback — a row already settled (e.g. skipped) must never
          be flipped back to running by a stray engine event. */
@@ -2242,6 +2282,26 @@ window.api.onProgress((d) => {
       batch.processed = (d.processed || 0);
       batch.skipped = d.alreadyDone || 0;
       batch.failed = d.failed || 0;
+
+      /* v2.8.0 LIVE SKIP — the pipeline honored a mid-run skip at this file's
+         boundary. May settle a row only FROM queued|skipped TO skipped (the
+         common case is a no-op: the click already marked it). Stamps
+         skipFinal: the slot has passed, so un-skip retires. Every other
+         terminal row keeps the v2.7.1 guards below untouched. */
+      if (d.outcome === 'skip-user') {
+        const sf = batch.files.find(
+          (f) => f.path === d.file && (f.status === 'skipped' || f.status === 'queued')
+        );
+        if (sf) {
+          sf.status = 'skipped';
+          sf.skipFinal = true;
+          sf.outputSize = null;
+        }
+        batch.runningFileIdx = -1;
+        renderQueue();
+        updateOverallProgressEta();
+        return;
+      }
 
       /* BUG A — resolve which file this completion belongs to by EXACT source
          path first (main maps file-list temp paths back to originals, so this

@@ -14,12 +14,22 @@
    MODE=skipthree   batch 03 ends done+failed+skipped → still auto-advances.
    MODE=allskipped  a MIDDLE all-skipped batch shows Done (not stuck Queued) and
                     the queue advances past it.
-   MODE=skipui      v2.7.1: the RUNNING batch's rows expose NO active skip
-                    control (skips can't apply once the batch is staged);
-                    waiting batches keep theirs.
+   MODE=skipui      v2.8.0 spec: within the RUNNING batch only the row
+                    CURRENTLY ENCODING lacks the skip control; its queued
+                    rows and all waiting-batch rows keep theirs.
    MODE=terminaldone v2.7.1: a row already in a TERMINAL status (skipped) is
                     never overwritten by an exact-path file-start/file-done
                     event (the "skipped row flips to Done + size" bug).
+   MODE=liveskip    v2.8.0: skip a not-yet-started file of the RUNNING batch
+                    → never encoded (no output on disk), row Skipped, summary
+                    counts it, batch ends Done.
+   MODE=unskip      v2.8.0: skip then UN-skip a file of the running batch
+                    before its turn → it IS encoded.
+   MODE=skiprace    v2.8.0 lost-race rule: a skip pushed AFTER the pipeline
+                    passed that file's boundary (its file-start already fired)
+                    loses — the pipeline is ground truth. The row must flip
+                    back to running and end Done with a real output; the skip
+                    set converges (path pruned + re-pushed).
 
    Run:  MODE=<mode> ./node_modules/.bin/electron test/skip_remove_test.js
    Fixture: SQUEEZE_TEST_CLIP env var, else test/fixtures/tiny_clip.mov, else
@@ -28,6 +38,11 @@
      ./resources/bin/ffmpeg -f lavfi -i testsrc=duration=2:size=640x360:rate=15 \
        -f lavfi -i sine=frequency=440:duration=2 \
        -c:v h264_videotoolbox -b:v 800k -c:a aac test/fixtures/tiny_clip.mov
+   LONG fixture (liveskip/unskip/skipui need a wide first-file encode window;
+   SQUEEZE_TEST_CLIP_LONG env var, else test/fixtures/long_clip.mov):
+     ./resources/bin/ffmpeg -f lavfi -i testsrc=duration=60:size=3840x2160:rate=15 \
+       -f lavfi -i sine=frequency=440:duration=60 \
+       -c:v h264_videotoolbox -b:v 12M -c:a aac test/fixtures/long_clip.mov
    Skips cleanly if no fixture clip or the bundled ffmpeg is missing. */
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
@@ -49,6 +64,12 @@ const CLIP_CANDIDATES = [
   '/Users/macmini1/Downloads/CompressorTest/Source/Project A/C0224.mov'
 ].filter(Boolean);
 const SMALL_CLIP = CLIP_CANDIDATES.find((p) => fs.existsSync(p)) || CLIP_CANDIDATES[0];
+const LONG_CANDIDATES = [
+  process.env.SQUEEZE_TEST_CLIP_LONG,
+  path.join(__dirname, 'fixtures', 'long_clip.mov')
+].filter(Boolean);
+const LONG_CLIP = LONG_CANDIDATES.find((p) => fs.existsSync(p)) || LONG_CANDIDATES[0];
+const NEEDS_LONG = new Set(['skipui', 'liveskip', 'unskip']);
 const DEST = path.join(os.tmpdir(), `squeeze-sr-out-${MODE}`);
 const SRCDIR = path.join(os.tmpdir(), `squeeze-sr-src-${MODE}`);
 
@@ -64,11 +85,19 @@ const batchStatuses = [];  // {id, status, result}
 const progressEvents = []; // every forwarded progress event (for file-start spawn proxy)
 const rtm = new Map();
 const rt = (id) => { if (!rtm.has(id)) rtm.set(id, {}); return rtm.get(id); };
-const send = (ch, p) => {
+/* v2.8.0 race harness: a mode may install interceptSend to HOLD one event
+   (returning true) and later release it via rawSend — this reproduces the
+   skip-vs-file-start race deterministically. Null = passthrough. */
+let interceptSend = null;
+const rawSend = (ch, p) => {
   if (ch === 'batch-status') batchStatuses.push(p);
   if (ch === 'queue-finished') lastFinished = p;
   if (ch === 'progress') progressEvents.push(p);
   if (win && !win.isDestroyed()) win.webContents.send(ch, p);
+};
+const send = (ch, p) => {
+  if (interceptSend && interceptSend(ch, p)) return;
+  rawSend(ch, p);
 };
 
 // ---- IPC: real handlers; only native dialogs stubbed ----
@@ -116,11 +145,25 @@ app.whenReady().then(async () => {
   if (!fs.existsSync(SMALL_CLIP) || !fs.existsSync(getBinaries().ffmpeg)) {
     console.log('(skipped — fixture clip or bundled ffmpeg not present)'); app.quit(); return;
   }
+  if (NEEDS_LONG.has(MODE) && !fs.existsSync(LONG_CLIP)) {
+    console.log('(skipped — long fixture clip not present; see header for the generation command)'); app.quit(); return;
+  }
   await fsp.rm(DEST, { recursive: true, force: true });
   await fsp.rm(SRCDIR, { recursive: true, force: true });
   await fsp.mkdir(DEST, { recursive: true });
   await fsp.mkdir(SRCDIR, { recursive: true });
   const mk = async (n) => { const p = path.join(SRCDIR, n); await fsp.copyFile(SMALL_CLIP, p); return p; };
+  const mkLong = async (n) => { const p = path.join(SRCDIR, n); await fsp.copyFile(LONG_CLIP, p); return p; };
+  /* Poll until the REAL renderer reports a given file's row status. */
+  const waitRow = async (namePart, want, ms = 60000) => {
+    const t0 = Date.now();
+    while (Date.now() - t0 < ms) {
+      const st = await run(`(() => { const b = queue[0]; const f = b && b.files.find((x) => x.name.includes(${JSON.stringify(namePart)})); return f ? f.status : null; })()`);
+      if (want.includes(st)) return st;
+      await wait(150);
+    }
+    return null;
+  };
 
   win = new BrowserWindow({ width: 1100, height: 1000, show: false, backgroundColor: '#0c0e12',
     webPreferences: { preload: path.join(ROOT, 'src/main/preload.js'), contextIsolation: true, sandbox: false } });
@@ -378,37 +421,165 @@ app.whenReady().then(async () => {
     check(outs.some((f) => /as_a3/i.test(f)) && /Done/i.test(pills[2] || ''), 'queue advanced to batch 03 after the all-skipped batch');
     check(lastFinished != null, 'queue-finished fired');
   } else if (MODE === 'skipui') {
-    /* v2.7.1 regression — skips are honored only for batches not yet at their
-       turn, so the RUNNING batch's rows must expose NO active skip control
-       (pre-fix: every 'queued' row rendered one, inviting a skip the engine
-       would ignore). Waiting batches keep theirs. */
-    BATCH_FILES = [[await mk('r1a.mov'), await mk('r1b.mov')], [await mk('w2a.mov')]];
+    /* v2.8.0 spec — live skip: within the RUNNING batch only the row that is
+       CURRENTLY ENCODING lacks the skip control; its still-queued rows and
+       every waiting-batch row expose one. (v2.7.1 hid it on the whole running
+       batch; the live-skip feature reverses that for queued rows.) */
+    BATCH_FILES = [[await mkLong('r1a.mov'), await mk('r1b.mov')], [await mk('w2a.mov')]];
     await run(`document.getElementById('dz-browse').click(); true;`); await wait(900);
     await run(`document.getElementById('choose-dest').click(); true;`); await wait(300);
     await run(`document.getElementById('add-to-queue').click(); true;`); await wait(350);
     await run(`document.getElementById('dz-browse').click(); true;`); await wait(900);
     await run(`document.getElementById('add-to-queue').click(); true;`); await wait(350);
     await run(`document.getElementById('start').click(); true;`);
-    // Batch 1 running (row 1 encoding, row 2 still queued), batch 2 waiting.
-    await wait(400);
+    // r1a (long clip) encoding, r1b still queued, batch 2 waiting.
+    check((await waitRow('r1a', ['running'])) === 'running', 'probe: r1a row reached running');
     const probe = await run(`(() => {
       const bs = [...document.querySelectorAll('.qbatch')];
       const pill = (b) => b.querySelector('.qbatch-status .pill')?.textContent.trim();
-      const btns = (b) => b.querySelectorAll('.qrow-skip-btn').length;
-      const queuedRows = (b) => b.querySelectorAll('.qrow.status-queued').length;
-      return bs.map((b) => ({ pill: pill(b), skipBtns: btns(b), queuedRows: queuedRows(b) }));
+      const rowBtn = (b, part) => {
+        const row = [...b.querySelectorAll('.qrow')].find((r) => r.textContent.includes(part));
+        return row ? row.querySelectorAll('.qrow-skip-btn').length : -1;
+      };
+      return {
+        pills: bs.map(pill),
+        encodingRowBtns: rowBtn(bs[0], 'r1a.mov'),
+        queuedRowBtns: rowBtn(bs[0], 'r1b.mov'),
+        waitingRowBtns: rowBtn(bs[1], 'w2a.mov')
+      };
     })()`);
     console.log('  RESULT', JSON.stringify(probe));
-    const runningB = probe.find((b) => /Running|Paused/i.test(b.pill || ''));
-    const waitingB = probe.find((b) => /Queued/i.test(b.pill || ''));
-    check(!!runningB && runningB.queuedRows > 0,
-      `probe caught the running batch with a still-queued row (${JSON.stringify(runningB)})`);
-    check(!!runningB && runningB.skipBtns === 0,
-      `RUNNING batch rows expose no skip control (got ${runningB && runningB.skipBtns})`);
-    check(!!waitingB && waitingB.skipBtns > 0,
-      `WAITING batch rows keep their skip control (got ${waitingB && waitingB.skipBtns})`);
-    for (let k = 0; k < 120 && !lastFinished; k++) await wait(700);
+    check(/Running/i.test(probe.pills[0] || ''), `batch 1 pill is Running (got ${probe.pills[0]})`);
+    check(probe.encodingRowBtns === 0,
+      `the CURRENTLY ENCODING row exposes no skip control (got ${probe.encodingRowBtns})`);
+    check(probe.queuedRowBtns === 1,
+      `the running batch's QUEUED row exposes the skip control (got ${probe.queuedRowBtns})`);
+    check(probe.waitingRowBtns === 1,
+      `the WAITING batch's row keeps its skip control (got ${probe.waitingRowBtns})`);
+    for (let k = 0; k < 240 && !lastFinished; k++) await wait(700);
     check(lastFinished != null, 'queue-finished fired');
+  } else if (MODE === 'liveskip') {
+    /* v2.8.0 — skip a not-yet-started file of the RUNNING batch: consulted at
+       the file boundary, so it is never staged into an encode. FAILS pre-fix:
+       the running batch's rows have no skip control at all. */
+    BATCH_FILES = [[await mkLong('l1.mov'), await mk('l2.mov'), await mk('skip3.mov')]];
+    const skip3orig = path.join(SRCDIR, 'skip3.mov');
+    await run(`document.getElementById('dz-browse').click(); true;`); await wait(900);
+    await run(`document.getElementById('choose-dest').click(); true;`); await wait(300);
+    await run(`document.getElementById('add-to-queue').click(); true;`); await wait(350);
+    await run(`document.getElementById('start').click(); true;`);
+    check((await waitRow('l1', ['running'])) === 'running', 'l1 (long clip) is encoding');
+    const clicked = await run(`(() => {
+      const row = [...document.querySelectorAll('.qrow')].find((r) => r.textContent.includes('skip3'));
+      const btn = row && row.querySelector('.qrow-skip-btn');
+      if (btn) { btn.click(); return true; } return false;
+    })()`);
+    check(clicked === true, 'skip control clicked on skip3 while the batch RUNS');
+    for (let k = 0; k < 240 && !lastFinished; k++) await wait(700);
+    const outs = outFiles();
+    const startedSkip3 = progressEvents.some((p) => p.type === 'file-start' && p.file === skip3orig);
+    const rowPill = await run(`(() => {
+      const row = [...document.querySelectorAll('.qrow')].find((r) => r.textContent.includes('skip3'));
+      return row ? row.querySelector('.status .pill')?.textContent.trim() : null;
+    })()`);
+    const counts = await run(`(() => { let s = 0; for (const b of queue) for (const f of b.files) if (f.status === 'skipped') s++; return s; })()`);
+    const batchPill = await run(`document.querySelector('.qbatch-status .pill')?.textContent.trim()`);
+    console.log('  RESULT', JSON.stringify({ outs, startedSkip3, rowPill, counts, batchPill }));
+    check(!outs.some((f) => /skip3/i.test(f)), `live-skipped file has NO output on disk — outputs: [${outs.join(', ')}]`);
+    check(startedSkip3 === false, 'live-skipped file never emitted a real file-start');
+    check(rowPill === 'Skipped', `row resolves to Skipped (got ${rowPill})`);
+    check(counts === 1, `summary skip count includes it (got ${counts})`);
+    check(/Done/i.test(batchPill || ''), `batch ends Done (got ${batchPill})`);
+    check(outs.some((f) => /l1/i.test(f)) && outs.some((f) => /l2/i.test(f)), 'the kept files encoded');
+  } else if (MODE === 'unskip') {
+    /* v2.8.0 — skip then UN-skip a running batch's file before its turn: the
+       live set converges and the file IS encoded. FAILS pre-fix: no controls. */
+    BATCH_FILES = [[await mkLong('u1.mov'), await mk('u2.mov'), await mk('u3flip.mov')]];
+    await run(`document.getElementById('dz-browse').click(); true;`); await wait(900);
+    await run(`document.getElementById('choose-dest').click(); true;`); await wait(300);
+    await run(`document.getElementById('add-to-queue').click(); true;`); await wait(350);
+    await run(`document.getElementById('start').click(); true;`);
+    check((await waitRow('u1', ['running'])) === 'running', 'u1 (long clip) is encoding');
+    const clickRow = (part) => run(`(() => {
+      const row = [...document.querySelectorAll('.qrow')].find((r) => r.textContent.includes(${JSON.stringify(part)}));
+      const btn = row && row.querySelector('.qrow-skip-btn');
+      if (btn) { btn.click(); return true; } return false;
+    })()`);
+    const skippedClick = await clickRow('u3flip'); await wait(300);
+    const midStatus = await run(`queue[0].files.find((f) => f.name.includes('u3flip')).status`);
+    const unskipClick = await clickRow('u3flip'); await wait(300);
+    const backStatus = await run(`queue[0].files.find((f) => f.name.includes('u3flip')).status`);
+    check(skippedClick === true && midStatus === 'skipped', `skip toggled ON mid-run (clicked=${skippedClick}, status=${midStatus})`);
+    check(unskipClick === true && backStatus === 'queued', `skip toggled OFF (un-skip) mid-run (clicked=${unskipClick}, status=${backStatus})`);
+    for (let k = 0; k < 240 && !lastFinished; k++) await wait(700);
+    const outs = outFiles();
+    const rowPill = await run(`(() => {
+      const row = [...document.querySelectorAll('.qrow')].find((r) => r.textContent.includes('u3flip'));
+      return row ? row.querySelector('.status .pill')?.textContent.trim() : null;
+    })()`);
+    console.log('  RESULT', JSON.stringify({ outs, rowPill }));
+    check(outs.some((f) => /u3flip/i.test(f)), `un-skipped file WAS encoded — outputs: [${outs.join(', ')}]`);
+    check(/Done/.test(rowPill || ''), `un-skipped row ends Done (got ${rowPill})`);
+  } else if (MODE === 'skiprace') {
+    /* v2.8.0 lost-race rule — the skip lands AFTER the pipeline passed the
+       file's boundary check (its file-start already fired main-side). The
+       pipeline is ground truth: the row must flip back to running and end
+       Done with a REAL output; the skips set converges. Reproduced
+       deterministically: HOLD raceMe's file-start at the harness boundary,
+       click skip while the renderer still shows the row queued, release.
+       FAILS on the naive implementation: row stuck Skipped while the output
+       exists on disk (the exact lie 2.7.1 fixed, recreated). */
+    BATCH_FILES = [[await mk('r1.mov'), await mk('raceMe.mov')]];
+    let heldEvent = null;
+    let heldDone = null;
+    interceptSend = (ch, p) => {
+      if (ch === 'progress' && p && p.type === 'file-start' && /raceMe/.test(p.basename || '') && !heldEvent) {
+        heldEvent = p;
+        return true;   // hold: renderer does not yet know raceMe started
+      }
+      /* Also hold raceMe's file-done so the "flipped back to running" sample
+         is deterministic (a tiny clip finishes in under the sampling wait). */
+      if (ch === 'progress' && p && p.type === 'file-done' && /raceMe/.test(p.basename || '') && !heldDone) {
+        heldDone = p;
+        return true;
+      }
+      return false;
+    };
+    await run(`document.getElementById('dz-browse').click(); true;`); await wait(900);
+    await run(`document.getElementById('choose-dest').click(); true;`); await wait(300);
+    await run(`document.getElementById('add-to-queue').click(); true;`); await wait(350);
+    await run(`document.getElementById('start').click(); true;`);
+    // Wait until the pipeline actually reached raceMe's boundary (event held).
+    for (let k = 0; k < 200 && !heldEvent; k++) await wait(100);
+    check(heldEvent != null, 'harness holds raceMe file-start (pipeline passed its boundary)');
+    const clicked = await run(`(() => {
+      const row = [...document.querySelectorAll('.qrow')].find((r) => r.textContent.includes('raceMe'));
+      const btn = row && row.querySelector('.qrow-skip-btn');
+      if (btn) { btn.click(); return true; } return false;
+    })()`); await wait(250);
+    check(clicked === true, 'skip clicked while raceMe already encodes (row still showed queued)');
+    const midStatus = await run(`queue[0].files.find((f) => f.name.includes('raceMe')).status`);
+    check(midStatus === 'skipped', `renderer provisionally shows Skipped (got ${midStatus})`);
+    // Release the held file-start — ground truth arrives. file-done is still
+    // held, so the row must read exactly 'running' at this sample.
+    rawSend('progress', heldEvent);
+    await wait(300);
+    const afterStart = await run(`queue[0].files.find((f) => f.name.includes('raceMe')).status`);
+    // Wait for the encode to finish (its file-done gets captured), then stop
+    // intercepting and forward it so the row resolves normally.
+    for (let k = 0; k < 300 && !heldDone; k++) await wait(100);
+    interceptSend = null;
+    if (heldDone) rawSend('progress', heldDone);
+    for (let k = 0; k < 240 && !lastFinished; k++) await wait(700);
+    const outs = outFiles();
+    const fin = await run(`(() => { const f = queue[0].files.find((x) => x.name.includes('raceMe')); return { status: f.status, outputSize: f.outputSize }; })()`);
+    const skipsPruned = !(rt(1).skips instanceof Set) || !rt(1).skips.has(path.join(SRCDIR, 'raceMe.mov'));
+    console.log('  RESULT', JSON.stringify({ afterStart, fin, outs, skipsPruned }));
+    check(afterStart === 'running', `held file-start flips the provisional row back to running (got ${afterStart})`);
+    check(outs.some((f) => /raceMe/i.test(f)), `raceMe output EXISTS on disk — outputs: [${outs.join(', ')}]`);
+    check(fin.status === 'done' && Number.isFinite(fin.outputSize) && fin.outputSize > 0,
+      `row ends Done with a real output size (got ${fin.status}/${fin.outputSize})`);
+    check(skipsPruned === true, 'skips set converged (raceMe pruned + re-pushed)');
   } else if (MODE === 'terminaldone') {
     /* v2.7.1 regression — a row in a TERMINAL status must never be overwritten
        by exact-path file-start/file-done events (pre-fix: the exact-path

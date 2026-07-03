@@ -3,3 +3,4 @@ dist/
 .DS_Store
 *.log
 test/fixtures/tiny_clip.mov
+test/fixtures/long_clip.mov
