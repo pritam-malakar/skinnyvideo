@@ -243,6 +243,27 @@ function computeQueueWork() {
   return { totalBytes, doneBytes, remainMs, hasRemaining, completed, failedCount, reclaimedBytes };
 }
 
+/* Whole-queue file position + the file currently encoding, for the progress
+   card TEXT ("Running: <file>" / "File X of Y"). Reads the SAME `queue` per-file
+   state the bar's computeQueueWork does, so the counter and the bar tell one
+   story: skipped files are excluded from the total (mirrors computeQueueWork's
+   `continue`), and the position/name are whole-queue, never per-batch. */
+function computeQueueFileText() {
+  let total = 0, terminal = 0, runningName = '', runningBatchName = '', running = false;
+  for (const b of queue) {
+    for (const f of b.files) {
+      if (f.status === 'skipped') continue;
+      total++;
+      if (f.status === 'running') { runningName = f.name; runningBatchName = b.srcName || ''; running = true; }
+      else if (f.status === 'done' || f.status === 'existed' || f.status === 'failed' || f.status === 'cancelled') terminal++;
+    }
+  }
+  // The running file is the (terminal + 1)-th non-skipped file queue-wide; in a
+  // between-files gap fall back to the completed count so X never regresses.
+  const index = running ? terminal + 1 : terminal;
+  return { index, total, runningName, runningBatchName, running };
+}
+
 /* Paint the overall bar, the ETA strip, AND the whole-queue stat counters from
    current queue state. Pure observation — it reads per-file state, never
    consumes or mutates the progress events (FIX: keeps the throughput model from
@@ -260,6 +281,20 @@ function updateOverallProgressEta() {
     statFailed.classList.toggle('has-failures', w.failedCount > 0);
   }
   if (reclaimedEl) reclaimedEl.textContent = humanBytes(w.reclaimedBytes);
+
+  /* Whole-queue card TEXT — same `queue` source as the bar above, so the header
+     names the currently-encoding BATCH (its job name) and "File X of Y" counts
+     across ALL non-skipped files in ALL batches. The file basename lives on the
+     #current-file sub-line. GRACEFUL FALLBACK: a single loose-file drop labels
+     the batch with the file's own basename (fileListDisplayName), so if the
+     batch name is empty or just echoes the running file, show the file here
+     instead of stacking the same basename twice. */
+  const t = computeQueueFileText();
+  if (progressBatch && t.running) {
+    const label = (t.runningBatchName && t.runningBatchName !== t.runningName) ? t.runningBatchName : t.runningName;
+    progressBatch.textContent = `Running: ${label}`;
+  }
+  if (progressCounts && t.total > 0 && t.index > 0) progressCounts.textContent = `File ${t.index} of ${t.total}`;
 
   // Re-evaluate the "finishing up" heuristic each tick (running file pinned
   // ≳99% with no fresh progress) before deciding what the ETA strip shows.
@@ -2129,7 +2164,8 @@ window.api.onBatchStatus(({ id, status, result }) => {
       currentBatchId = id;
       perFileTimes = [];
       batchPrevReclaimed = 0;
-      progressBatch.textContent = `Running: ${item.srcName}`;
+      // The "Running:" header is painted whole-queue by updateOverallProgressEta
+      // from the currently-encoding batch's name — not pinned to this batch here.
     }
   } else if (status === 'Paused') {
     item.status = 'paused';
@@ -2187,7 +2223,8 @@ window.api.onProgress((d) => {
     // New file → not finalizing; reset the staleness trackers.
     lastFileProgressTs = 0; lastFileProgressVal = 0;
     setFinalizing(false, false);
-    progressCounts.textContent = `File ${d.index} of ${d.total}`;
+    // "File X of Y" is painted whole-queue by updateOverallProgressEta (called
+    // below, after this file's row flips to running) — not per-batch d.index/d.total.
     if (batch) {
       batch.progress = ((d.index - 1) / d.total) * 100;
       /* BUG A — resolve THIS file by exact source path first (main now maps
