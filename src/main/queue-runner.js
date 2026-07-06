@@ -5,6 +5,19 @@ const { runBatch, dryRunBatch } = require('../encoder/pipeline');
 const { flattenRunDir } = require('../encoder/flatten');
 const { stageFileList } = require('../encoder/stage');
 
+/* Release a pipeline parked on the pre-spawn pause gate. The gate (waitWhilePaused)
+   parks on a bare unresolved promise — ZERO timers/polls while held, so a
+   multi-hour pause idles the process — and stashes its resolver in
+   state.resumeWaiters. resume/cancel/stop call this to wake it exactly once. It
+   MUST be called by every path that clears paused / sets cancelled / requests
+   stop, or an event-based gate never wakes. Idempotent + drains-then-clears. */
+function releasePauseGate(state) {
+  const waiters = state.resumeWaiters;
+  if (!waiters || !waiters.length) return;
+  state.resumeWaiters = [];
+  for (const w of waiters) { try { w(); } catch {} }
+}
+
 /* The queue runner — extracted verbatim from main.js's start-queue handler so it
    can be exercised by tests against the REAL code (not a mirror). main.js owns
    the IPC wrapper, prefs/orphan bookkeeping, queueRunning flag, and the final
@@ -43,13 +56,31 @@ async function runQueue(batches, { send, isStopRequested, rt }) {
     const isDry = !!batch.dryRun;
     const state = rt(batch.id);
     state.child = null; state.paused = false; state.cancelled = false; state.resolved = false;
+    state.resumeWaiters = [];   // fresh gate per batch — no stale resolver leaks in
 
     const control = {
       shouldStop: () => isStopRequested(),
       isCancelled: () => state.cancelled,
       isPaused: () => state.paused,
+      /* DEFECT 2 — pre-spawn pause gate, EVENT-BASED. A pause landing in the
+         between-files / ffprobe window has no live child to SIGSTOP, so the
+         encoder would spawn straight through it. The pipeline awaits this right
+         before spawning each file's encoder: if paused, park on a bare promise
+         (no timer/poll — idle for hours) whose resolver is stashed in
+         state.resumeWaiters. resume/cancel/stop call releasePauseGate to wake it
+         exactly once; the caller then re-checks stop/cancel. Never captured →
+         resolves immediately when not paused. */
+      waitWhilePaused: () => new Promise((resolve) => {
+        if (!state.paused || state.cancelled || isStopRequested()) return resolve();
+        (state.resumeWaiters || (state.resumeWaiters = [])).push(resolve);
+      }),
       onSpawn: (child) => {
         state.child = child;
+        /* DEFECT 1 — drop the reference the moment this child exits (i.e. when
+           runCmd resolves), so a pause landing in the next between-files window
+           never SIGSTOPs an exited pid. Guarded by identity: a late exit of an
+           old child must not null a newer one already spawned for the next file. */
+        child.once('exit', () => { if (state.child === child) state.child = null; });
         if (state.cancelled) {
           try { child.kill('SIGTERM'); } catch {}
           setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, 1200);
@@ -253,4 +284,4 @@ async function runQueue(batches, { send, isStopRequested, rt }) {
   return totals;
 }
 
-module.exports = { runQueue };
+module.exports = { runQueue, releasePauseGate };

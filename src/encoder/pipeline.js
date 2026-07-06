@@ -750,6 +750,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
   const onSpawn     = ctl.onSpawn     || null;
   const isPaused    = ctl.isPaused    || (() => false);
   const isSkipped   = ctl.isSkipped   || (() => false);
+  const waitWhilePaused = ctl.waitWhilePaused || (() => Promise.resolve());
 
   const { src, dest, tier } = batch;
   /* Pro Mode foundation: the batch carries fully-resolved encode settings
@@ -1022,6 +1023,12 @@ async function runBatch(batch, controlOrFn, onProgress) {
       file: v.file,
       basename: path.basename(v.file)
     });
+    /* DEFECT 2 — hold here if paused, so a pause that landed in this file's
+       between-files / ffprobe window (no live child to SIGSTOP) prevents its
+       encoder from starting. Releases on resume/cancel/stop. A mid-encode pause
+       (past this point) is still handled by SIGSTOP parking the live child. */
+    await waitWhilePaused();
+    if (shouldStop() || isCancelled()) break;
     const result = await runCmd(ffmpeg, args, {
       signal: null,
       onSpawn,

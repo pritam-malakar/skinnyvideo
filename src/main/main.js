@@ -7,7 +7,7 @@ const { runBatch, dryRunBatch, scanFolder, isVideoFile, getBinaries, ffmpegStatu
 const { flattenRunDir } = require('../encoder/flatten');
 const { findOrphanPartials, deletePartials } = require('../encoder/orphans');
 const { stageFileList } = require('../encoder/stage');
-const { runQueue } = require('./queue-runner');
+const { runQueue, releasePauseGate } = require('./queue-runner');
 const { revealInFinder } = require('./reveal');
 const { QUIT_DIALOG, handleCloseAttempt, applyProgressToQuitState } = require('./close-guard');
 
@@ -368,6 +368,9 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
 
 ipcMain.handle('stop-queue', async () => {
   stopRequested = true;
+  // Wake any pipeline parked on the pause gate so it re-checks shouldStop and
+  // tears down — the event gate has no poll to notice the stop on its own.
+  for (const state of runtime.values()) releasePauseGate(state);
   return { ok: true };
 });
 
@@ -431,28 +434,30 @@ function sendBatchUpdate(batchId, status) {
 
 ipcMain.handle('pause-batch', async (_evt, batchId) => {
   const state = rt(batchId);
-  if (!state.child || state.paused) return { ok: false };
-  try {
-    state.child.kill('SIGSTOP');
-    state.paused = true;
-    sendBatchUpdate(batchId, 'Paused');
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e.message };
-  }
+  // Already paused, or the batch has resolved (nothing left to pause) → no-op.
+  if (state.paused || state.resolved) return { ok: false };
+  /* Set the flag FIRST, independent of a live child. Between files (the ffprobe
+     window) there is no child to SIGSTOP, but the pre-spawn gate in queue-runner
+     reads state.paused to hold the next encoder — so pause must register even
+     with no child. SIGSTOP only when a child is actually encoding. */
+  state.paused = true;
+  if (state.child) { try { state.child.kill('SIGSTOP'); } catch {} }
+  sendBatchUpdate(batchId, 'Paused');
+  return { ok: true };
 });
 
 ipcMain.handle('resume-batch', async (_evt, batchId) => {
   const state = rt(batchId);
-  if (!state.child || !state.paused) return { ok: false };
-  try {
-    state.child.kill('SIGCONT');
-    state.paused = false;
-    sendBatchUpdate(batchId, 'Running');
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e.message };
-  }
+  if (!state.paused) return { ok: false };
+  /* Clear the flag unconditionally — a probe-window pause stopped no child, so
+     resume must NOT require a SIGCONT-able child. Clearing state.paused releases
+     the queue-runner gate; SIGCONT only when a child was actually suspended. The
+     queue can't hang: the gate polls this flag. */
+  state.paused = false;
+  releasePauseGate(state);   // wake a probe-window (no-child) gated pipeline
+  if (state.child) { try { state.child.kill('SIGCONT'); } catch {} }
+  sendBatchUpdate(batchId, 'Running');
+  return { ok: true };
 });
 
 const CANCEL_HARD_MS = 4000;   // pill must resolve within this, no matter what
@@ -461,11 +466,14 @@ ipcMain.handle('cancel-batch', async (_evt, batchId) => {
   const state = rt(batchId);
   state.cancelled = true;
   const child = state.child;
-  // If paused, unpause first so the child can react to SIGTERM.
-  if (child && state.paused) {
-    try { child.kill('SIGCONT'); } catch {}
+  // If paused, unpause first: SIGCONT a live child so it can react to SIGTERM,
+  // and clear the flag. Then wake a probe-window (no-child) gated pipeline so it
+  // re-checks isCancelled and tears down — otherwise the event gate never wakes.
+  if (state.paused) {
+    if (child) { try { child.kill('SIGCONT'); } catch {} }
     state.paused = false;
   }
+  releasePauseGate(state);
   if (child) {
     try { child.kill('SIGTERM'); } catch {}
     /* Bounded SIGKILL fallback: if the child hasn't died on SIGTERM shortly,
