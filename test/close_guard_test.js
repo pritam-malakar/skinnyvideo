@@ -8,7 +8,7 @@
    file cannot even require() → FAIL. Pass-on-new.
    Run:  node test/close_guard_test.js */
 const path = require('path');
-const { shouldBlockClose, handleCloseAttempt, applyProgressToQuitState } =
+const { shouldBlockClose, handleCloseAttempt, applyProgressToQuitState, RUN_DIALOG } =
   require(path.join(__dirname, '..', 'src/main/close-guard'));
 
 const PASS = [], FAIL = [];
@@ -47,18 +47,73 @@ check(shouldBlockClose({ isFinalizing: true,  forceQuit: true  }) === false, 'al
     `finalizing + Wait → blocked (out=${out}, prevent=${d.calls.preventDefault}, proceed=${d.calls.proceed}, force=${st.forceQuit})`);
 }
 
-// ── finalizing + "Quit anyway" → forced (prevent + proceed + forceQuit set) ──
+/* ── confirm → forced. v2.9.6 CONTRACT CHANGE: forceQuit is NOT set here.
+   Teardown is async (await the encoder's real exit), so the module only marks
+   state.closing and hands off; the caller sets forceQuit once the encoder has
+   actually exited. Setting it synchronously would let a second red-button
+   click through MID-TEARDOWN — the exact race this guard exists to prevent. */
 {
-  const st = { isFinalizing: true, forceQuit: false };
+  const st = { queueRunning: true, isFinalizing: false, forceQuit: false };
   const d = deps(true);
   const out = handleCloseAttempt(st, d);
-  check(out === 'forced' && d.calls.preventDefault === 1 && d.calls.proceed === 1 && st.forceQuit === true,
-    `finalizing + Quit anyway → forced (out=${out}, proceed=${d.calls.proceed}, force=${st.forceQuit})`);
-  // the re-entrant close it triggers must now pass straight through
-  const d2 = deps(false);
+  check(out === 'forced' && d.calls.preventDefault === 1 && d.calls.proceed === 1
+        && st.closing === true && st.forceQuit === false,
+    `confirm → forced, teardown owns forceQuit (out=${out}, proceed=${d.calls.proceed}, closing=${st.closing}, force=${st.forceQuit})`);
+  // RE-ENTRY: a close arriving while teardown runs is swallowed — no second
+  // dialog, no second proceed(), no force-kill.
+  const d2 = deps(true);
   const out2 = handleCloseAttempt(st, d2);
-  check(out2 === 'allowed' && d2.calls.preventDefault === 0,
-    `after force, re-entrant close allowed (out=${out2})`);
+  check(out2 === 'suppressed' && d2.calls.preventDefault === 1
+        && d2.calls.confirmQuit === 0 && d2.calls.proceed === 0,
+    `close during teardown → suppressed, no stacked dialog (out=${out2}, confirm=${d2.calls.confirmQuit}, proceed=${d2.calls.proceed})`);
+  // once teardown completes the caller sets forceQuit → the real close passes
+  st.forceQuit = true; st.closing = false;
+  const d3 = deps(false);
+  const out3 = handleCloseAttempt(st, d3);
+  check(out3 === 'allowed' && d3.calls.preventDefault === 0,
+    `after teardown sets forceQuit, real close allowed (out=${out3})`);
+}
+
+/* ── v2.9.6 THE BUG: mid-encode (running, NOT finalizing) must block. ──
+   Pre-fix these all FAIL: shouldBlockClose only consulted isFinalizing, so the
+   red button sailed through the entire encode, killed ffmpeg, and left a
+   partial with no moov atom. */
+{
+  check(shouldBlockClose({ queueRunning: true, isFinalizing: false, forceQuit: false }) === true,
+    'BUG v2.9.6: block mid-encode (queueRunning, not finalizing)');
+  check(shouldBlockClose({ queueRunning: false, isFinalizing: false, forceQuit: false }) === false,
+    'idle → allow (no run, no finalize)');
+  check(shouldBlockClose({ queueRunning: true, isFinalizing: false, forceQuit: true }) === false,
+    'queueRunning but forceQuit → allow (teardown done)');
+
+  // A PAUSED run needs no special case: queueRunning stays true across pause,
+  // and a paused batch still holds a suspended child + a partial on disk.
+  const paused = { queueRunning: true, isFinalizing: false, forceQuit: false };
+  const dp = deps(false);
+  const outp = handleCloseAttempt(paused, dp);
+  check(outp === 'blocked' && dp.calls.preventDefault === 1 && dp.calls.confirmQuit === 1,
+    `paused run guarded identically to running (out=${outp})`);
+
+  // mid-encode close is CONFIRMED, not silently allowed
+  const st = { queueRunning: true, isFinalizing: false, forceQuit: false };
+  const d = deps(false);
+  const out = handleCloseAttempt(st, d);
+  check(out === 'blocked' && d.calls.preventDefault === 1 && d.calls.proceed === 0,
+    `mid-encode + Keep compressing → blocked, run untouched (out=${out}, proceed=${d.calls.proceed})`);
+}
+
+/* ── dialog copy is the operator-facing contract ── */
+{
+  check(RUN_DIALOG.message === 'A compression run is in progress',
+    `RUN_DIALOG message (got "${RUN_DIALOG.message}")`);
+  check(RUN_DIALOG.buttons[0] === 'Keep compressing' && RUN_DIALOG.buttons[1] === 'Stop and quit'
+        && RUN_DIALOG.defaultId === 0 && RUN_DIALOG.cancelId === 0,
+    `RUN_DIALOG buttons: Keep compressing (default) / Stop and quit (got ${JSON.stringify(RUN_DIALOG.buttons)}, default=${RUN_DIALOG.defaultId})`);
+  /* Copy states the CANCEL contract: the current file stops, finished ones
+     survive. The earlier graceful wording ("leaves the file unfinished") is
+     wrong now — quit no longer waits out the file. */
+  check(RUN_DIALOG.detail === 'Quitting stops the current file — finished videos are kept.',
+    `RUN_DIALOG detail matches cancel semantics (got "${RUN_DIALOG.detail}")`);
 }
 
 // ── progress stream → isFinalizing flag ──

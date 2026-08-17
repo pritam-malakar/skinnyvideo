@@ -9,15 +9,23 @@ const { findOrphanPartials, deletePartials } = require('../encoder/orphans');
 const { stageFileList } = require('../encoder/stage');
 const { runQueue, releasePauseGate } = require('./queue-runner');
 const { revealInFinder } = require('./reveal');
-const { QUIT_DIALOG, handleCloseAttempt, applyProgressToQuitState } = require('./close-guard');
+const { RUN_DIALOG, handleCloseAttempt, applyProgressToQuitState } = require('./close-guard');
+const { beginCancel, quitViaCancel } = require('./quit-teardown');
 
 let mainWindow = null;
 let stopRequested = false;
 let queueRunning = false;
-/* Soft close-guard state: isFinalizing is raised by the finalizing progress
-   signal (a file flushing to disk) and read by the close/quit handlers so a
-   quit mid-write asks for confirmation instead of corrupting the output. */
-const quitState = { isFinalizing: false, forceQuit: false };
+/* Close-guard state. v2.9.6: queueRunning mirrors the run flag for the WHOLE
+   run — guarding on isFinalizing alone (the flush sub-window) let the red
+   button through for the entire encode, killing ffmpeg and leaving a partial
+   with no moov atom. dialogOpen/closing are the re-entry guards. */
+const quitState = {
+  queueRunning: false, isFinalizing: false,
+  forceQuit: false, dialogOpen: false, closing: false
+};
+/* The in-flight runQueue promise, held so "Stop and quit" can await REAL
+   encoder exit + cleanup instead of guessing at a timeout. */
+let runPromise = null;
 /* The LIVE batch list the running queue is draining (the same array object
    passed to runQueue). Mid-run drops are appended here via 'enqueue-batch', and
    runQueue's loop re-reads `.length` each turn so it absorbs them in the SAME
@@ -123,26 +131,50 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
   mainWindow.once('ready-to-show', () => mainWindow.show());
 
-  /* Soft close-guard: a red-button close while a file is flushing to disk asks
-     for confirmation first. When not finalizing, close is untouched. */
+  /* Close-guard: a red-button close during a run (running OR paused) confirms
+     first. Idle → close is untouched, zero friction. */
   mainWindow.on('close', (e) => {
     handleCloseAttempt(quitState, {
       preventDefault: () => e.preventDefault(),
-      confirmQuit: confirmQuitAnyway,
-      proceed: () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close(); }
+      confirmQuit: confirmStopAndQuit,
+      proceed: () => stopRunThenQuit(() => {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+      })
     });
   });
 }
 
 /* Native confirm for the close-guard. Returns true iff the operator chose
-   "Quit anyway" (button index 1). Synchronous so it can answer Electron's
-   close/before-quit events inline. */
-function confirmQuitAnyway() {
+   "Stop and quit" (button index 1). Synchronous so it can answer Electron's
+   close/before-quit events inline — those events cannot be awaited. */
+function confirmStopAndQuit() {
   const parent = (mainWindow && !mainWindow.isDestroyed()) ? mainWindow : null;
   const choice = parent
-    ? dialog.showMessageBoxSync(parent, QUIT_DIALOG)
-    : dialog.showMessageBoxSync(QUIT_DIALOG);
+    ? dialog.showMessageBoxSync(parent, RUN_DIALOG)
+    : dialog.showMessageBoxSync(RUN_DIALOG);
   return choice === 1;
+}
+
+/* "Stop and quit": the CANCEL path, not the Stop button's graceful
+   stop-after-current-file — see quit-teardown.js for why the two differ.
+   Reuses the same beginCancel() the cancel-batch IPC handler uses, so there is
+   one kill implementation. Awaits the held run promise so the encoder has
+   really exited and the run's finally (partial cleanup, prefs) has completed
+   before we close — no fixed timeout, and no waiting out the current file.
+   quitState.closing (set by handleCloseAttempt) makes any close attempt
+   arriving while this runs a no-op, so nothing stacks or re-kills. */
+function stopRunThenQuit(finish) {
+  quitViaCancel({
+    runtime,
+    releasePauseGate,
+    stopQueue: () => { stopRequested = true; },
+    runPromise: () => runPromise,
+    onSettled: () => {
+      quitState.forceQuit = true;   // set only now — teardown is genuinely done
+      quitState.closing = false;
+      finish();
+    }
+  });
 }
 
 app.whenReady().then(() => {
@@ -201,14 +233,14 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-/* Soft close-guard for ⌘Q / app-level quit: same confirmation as the red
-   button when a file is still flushing to disk. forceQuit (set by the dialog)
-   lets the re-entrant quit through. */
+/* Close-guard for ⌘Q / app-level quit — IDENTICAL behavior to the red button:
+   same predicate, same dialog, same teardown. forceQuit (set once teardown
+   finishes) lets the re-entrant quit through. */
 app.on('before-quit', (e) => {
   handleCloseAttempt(quitState, {
     preventDefault: () => e.preventDefault(),
-    confirmQuit: confirmQuitAnyway,
-    proceed: () => app.quit()
+    confirmQuit: confirmStopAndQuit,
+    proceed: () => stopRunThenQuit(() => app.quit())
   });
 });
 
@@ -320,6 +352,7 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
   const engine = ffmpegStatus();
   if (!engine.ok) return { ok: false, engineMissing: true, error: ENGINE_MISSING_MESSAGE };
   queueRunning = true;
+  quitState.queueRunning = true;   // arm the close-guard for the WHOLE run
   stopRequested = false;
 
   /* Mark this run's real (non-dry) destinations as in-flight so a crash
@@ -351,10 +384,15 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
     // Per-batch loop + auto-advance live in the shared, test-covered runner.
     // `batches` is the SAME array 'enqueue-batch' appends to → mid-run drops drain.
     liveBatches = batches;
-    totals = await runQueue(batches, { send, isStopRequested: () => stopRequested, rt });
+    /* Hold the promise so the close-guard's "Stop and quit" can await REAL
+       encoder exit + this finally block, rather than a guessed timeout. */
+    runPromise = runQueue(batches, { send, isStopRequested: () => stopRequested, rt });
+    totals = await runPromise;
   } finally {
     liveBatches = null;   // run over → further drops start a fresh run
     queueRunning = false;
+    runPromise = null;
+    quitState.queueRunning = false;   // run ended → guard disarms, close is instant
     quitState.isFinalizing = false;   // run ended → never leave the guard armed
     // Run reached a clean end — no orphaned partials to recover next launch.
     try { prefs.pendingDests = []; savePrefs(); } catch { /* non-fatal */ }
@@ -464,24 +502,13 @@ const CANCEL_HARD_MS = 4000;   // pill must resolve within this, no matter what
 
 ipcMain.handle('cancel-batch', async (_evt, batchId) => {
   const state = rt(batchId);
-  state.cancelled = true;
-  const child = state.child;
-  // If paused, unpause first: SIGCONT a live child so it can react to SIGTERM,
-  // and clear the flag. Then wake a probe-window (no-child) gated pipeline so it
-  // re-checks isCancelled and tears down — otherwise the event gate never wakes.
-  if (state.paused) {
-    if (child) { try { child.kill('SIGCONT'); } catch {} }
-    state.paused = false;
-  }
-  releasePauseGate(state);
-  if (child) {
-    try { child.kill('SIGTERM'); } catch {}
-    /* Bounded SIGKILL fallback: if the child hasn't died on SIGTERM shortly,
-       force-kill it. (pipeline's runCmd also resolves immediately on the
-       cancel flag, so the batch loop never waits for the child to confirm
-       death — see runCmd's cancel poll.) */
-    setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, 1000);
-  }
+  /* Shared with "Stop and quit" (quit-teardown.js) so there is ONE kill
+     implementation: flag cancelled, SIGCONT+unpause so a suspended child can
+     receive the signal, wake the pause gate so a probe-window (no-child)
+     pipeline re-checks isCancelled, SIGTERM, then a bounded SIGKILL.
+     (pipeline's runCmd also resolves immediately on the cancel flag, so the
+     batch loop never waits for the child to confirm death.) */
+  beginCancel(state, { releasePauseGate });
   sendBatchUpdate(batchId, 'Cancelling');
 
   /* BUG C hard guarantee: the pill must NEVER stick on "Cancelling". If the
