@@ -1014,13 +1014,14 @@ function updateFlowState() {
     el.classList.toggle('step-dim', !reachable);
     el.toggleAttribute('inert', !reachable);
   };
-  /* Queue joins the gated sequence on the SAME term as the tier step — it
-     unlocks once a destination exists, not merely once files are detected.
-     But a POPULATED queue is real state and is never dimmed, whatever the
-     staging/destination situation. Covers all three of its siblings (heading,
-     tray, Start/Stop bar) so they can't disagree. Progress card, summary card
-     and Lifetime are siblings too and stay ungated on purpose. */
-  const queueActive = tierReachable || queue.length >= 1;
+  /* The queue section is gated on ITS OWN content, nothing else: an empty
+     queue is always dimmed (there is nothing to look at yet), and one or more
+     batches wake it permanently — real state is never dimmed, whatever the
+     staging/destination situation. Staging progress points at Add batch via
+     the next-action cue, not at the sleeping queue. Covers all three of its
+     siblings (heading, tray, Start/Stop bar) so they can't disagree. Progress
+     card, summary card and Lifetime are siblings too and stay ungated. */
+  const queueActive = queue.length >= 1;
   lockStep(outputRow, outputReachable);
   lockStep(safetyBar, outputReachable);
   lockStep(tierHead,  tierReachable);

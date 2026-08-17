@@ -555,6 +555,7 @@ body.pro-mode .safety-bar { display: flex; }
   display: flex; align-items: center; justify-content: center;
   font-size: 15px; font-weight: 800;
   opacity: 1;
+  transition: opacity .15s;   /* matches .tier's own opacity tween — see the step-dim override */
 }
 .tier .tier-mark { display: none; }
 .tier .badge-row { display: flex; align-items: center; gap: 8px; min-height: 29px; margin-bottom: 14px; }
@@ -594,7 +595,16 @@ body.pro-mode .safety-bar { display: flex; }
   pointer-events: none;
   transition: opacity .28s ease;
 }
-.tiers.step-dim .tier:not(.selected) { opacity: .34; }   /* keep relative reading */
+/* Flow-gated tier pair gives away NOTHING about the current choice: both cards
+   sit at the SAME luminance and the ✓ badge is withheld until the section
+   wakes. Selection is expressed purely as opacity here (.tier.selected{1} vs
+   :not(.selected){.34}), so equalising opacity is the whole fix — the fills
+   are per-tier hues, not selection state. Presentation only: the radio stays
+   checked and renderer.js is untouched. Beats .tier.selected (0,2,0) on
+   specificity (0,3,0); the :hover bump can't fire because .step-dim sets
+   pointer-events:none. */
+.tiers.step-dim .tier { opacity: .34; }
+.tiers.step-dim .tier.selected::after { opacity: 0; }
 
 /* the single "act here" cue — mint fill + ink text, same language as Start */
 .next-action { position: relative; }
