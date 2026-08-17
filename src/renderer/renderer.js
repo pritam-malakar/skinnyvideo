@@ -1090,14 +1090,18 @@ function clearDrop({ resetTier = true } = {}) {
 }
 
 /* P7: dz-title copy reflects the screen's coherent state.
-   Fresh: "Drop a folder or files to begin". After a completed run:
-   "Drop another folder or files". */
+   First launch: the two-line pitch. Once the session has ANY batch to its
+   name — queued, running, or finished — the pitch has landed and the prompt
+   becomes "Drop another folder or files".
+   The condition is reversible (removing every batch with no completed run
+   returns the pitch), so every path that changes queue.length must call this
+   — see addCurrentToQueue -> clearDrop and the batch Remove handler. */
 function updateIdleCopy() {
   if (!dzTitle) return;
   /* Reskin (mockup v3e): the fresh-state headline is the mockup's two-line
-     hero. The after-run copy keeps its established wording (mockup doesn't
-     show that state). Purely presentational — same element, same states. */
-  dzTitle.innerHTML = hasCompletedRun
+     hero. Purely presentational — same element, same states. */
+  const sessionHasBatches = hasCompletedRun || queue.length >= 1;
+  dzTitle.innerHTML = sessionHasBatches
     ? 'Drop <em>another folder or files</em>'
     : 'Drop videos.<br><em>Get smaller files.</em>';
 }
@@ -1673,6 +1677,12 @@ function buildBatchGroup(batch, idx) {
       if (batch.status === 'queued') window.api.removeBatch(batch.id);
       queue = queue.filter((x) => x.id !== batch.id);
       renderQueue();
+      /* queue.length now feeds the idle headline, and the condition is
+         reversible — removing the last batch (with no completed run) must
+         return the first-launch pitch instead of stranding the "Drop another
+         folder or files" variant. Add batch refreshes via clearDrop; this is
+         the other half. */
+      updateIdleCopy();
     });
     actionsCell.appendChild(rm);
   } else if (batch.status === 'running' || batch.status === 'paused') {

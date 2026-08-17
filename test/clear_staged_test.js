@@ -126,6 +126,14 @@ app.whenReady().then(async () => {
   check(afterClear.runActive === true, `Clear mid-run: runActive flag untouched`);
   check(calls['stop-queue'] === 0 && calls['cancel-batch'] === 0 && calls['remove-batch'] === 0,
     `Clear mid-run: no stop/cancel/remove IPC fired (stop=${calls['stop-queue']}, cancel=${calls['cancel-batch']}, remove=${calls['remove-batch']})`);
+  /* v2.9.5: the idle headline has TWO states. Section 3 pins the first-launch
+     pitch (queue empty); here the queue holds a batch, so the variant must be
+     showing. Exact equality — this fails on the pitch AND on any reworded
+     variant, and catches the trigger regressing to hasCompletedRun-only
+     (no run has completed at this point, so only queue.length can flip it). */
+  const queuedTitle = await run(`document.getElementById('dz-title').textContent.replace(/\\s+/g,' ').trim()`);
+  check(queuedTitle === 'Drop another folder or files',
+    `Clear with a batch queued: #dz-title shows the variant ("${queuedTitle}")`);
   await run(`runActive = false; true;`);
 
   // ── 5. Nerd mode: after Clear, the pro panel returns to disabled "Drop files…" ──
