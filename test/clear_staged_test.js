@@ -96,8 +96,13 @@ app.whenReady().then(async () => {
     `after Clear: current reset to empty (files=${cleared.filesLen}, scanned=${cleared.scanned})`);
   check(cleared.hasSource === false && cleared.innerDisplay === 'flex',
     `after Clear: has-source removed → .dz-inner prompt shown`);
-  check(/Drop a .*folder or files.* to begin/.test(cleared.titleText) || /Drop .*another/.test(cleared.titleText) || /Drop footage/.test(cleared.titleText),
-    `after Clear: #dz-title prompt restored ("${cleared.titleText}")`);
+  /* v2.9.4: exact idle headline. No run has executed at this point, so this is
+     unambiguously updateIdleCopy()'s else-branch — assert the whole string
+     rather than an alternation, so a copy change (or a stale sync point in
+     index.html vs renderer.js) fails loudly instead of slipping through a
+     permissive regex. textContent has no separator across the <br>. */
+  check(cleared.titleText === 'Drop videos.Get smaller files.',
+    `after Clear: #dz-title idle headline restored ("${cleared.titleText}")`);
   check(cleared.dropStatusDisplay === 'none' && cleared.clearVisible === false,
     `after Clear: #drop-status (and Clear button) hidden`);
   check(cleared.dest === destBefore && cleared.dest === DEST,
