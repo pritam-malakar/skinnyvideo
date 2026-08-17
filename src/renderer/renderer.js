@@ -16,6 +16,12 @@ const dzStepsEl = document.getElementById('dz-steps');
 const outputRow = document.querySelector('.output-row');
 const tierHead = document.getElementById('tier-head');
 const tiersEl = document.querySelector('.tiers');
+/* Queue "section" is THREE siblings, not one wrapper: its heading strip, the
+   list tray, and the Start/Stop bar (which sits after the progress card).
+   All three take the same gate so they can never disagree. */
+const queueHead = document.getElementById('queue-head');
+const queueWrap = document.getElementById('queue-wrap');
+const startBar = document.querySelector('.actions');   // not `actionsEl` — that name is taken by a local in the modal builder
 const dzTitle = document.getElementById('dz-title');
 const dzBrowseBtn = document.getElementById('dz-browse');
 const dzBrowseTextBtn = document.getElementById('dz-browse-text');
@@ -1008,10 +1014,20 @@ function updateFlowState() {
     el.classList.toggle('step-dim', !reachable);
     el.toggleAttribute('inert', !reachable);
   };
+  /* Queue joins the gated sequence on the SAME term as the tier step — it
+     unlocks once a destination exists, not merely once files are detected.
+     But a POPULATED queue is real state and is never dimmed, whatever the
+     staging/destination situation. Covers all three of its siblings (heading,
+     tray, Start/Stop bar) so they can't disagree. Progress card, summary card
+     and Lifetime are siblings too and stay ungated on purpose. */
+  const queueActive = tierReachable || queue.length >= 1;
   lockStep(outputRow, outputReachable);
   lockStep(safetyBar, outputReachable);
   lockStep(tierHead,  tierReachable);
   lockStep(tiersEl,   tierReachable);
+  lockStep(queueHead, queueActive);
+  lockStep(queueWrap, queueActive);
+  lockStep(startBar,  queueActive);
 
   // Exactly one orange cue.
   if (chooseDestBtn) chooseDestBtn.classList.toggle('next-action', next === 'location');
