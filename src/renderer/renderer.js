@@ -1075,7 +1075,7 @@ function updateIdleCopy() {
      show that state). Purely presentational — same element, same states. */
   dzTitle.innerHTML = hasCompletedRun
     ? 'Drop <em>another folder or files</em>'
-    : 'Drop footage.<br><em>We’ll shrink it.</em>';
+    : 'Drop footage.<br><em>Squeeze the file size.</em>';
 }
 
 ['dragenter', 'dragover'].forEach((e) => {

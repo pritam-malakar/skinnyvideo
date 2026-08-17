@@ -273,6 +273,18 @@ body.pro-mode #mode-pro.active { background: var(--fill-primary); color: var(--o
   overflow: hidden;
   transition: background .18s ease;
 }
+/* Staged: the compact loaded strip REPLACES the tall prompt rather than
+   stacking under it. renderer.js has toggled .has-source since v2.3 and its
+   comments assume these rules exist; they were lost in the flat reskin. */
+.dropzone.has-source { padding: 22px var(--pad-x); }
+.dropzone.has-source .dz-inner { display: none; }
+/* .dz-loaded's margin-top dates from when the strip rendered BELOW the prompt.
+   With the prompt hidden it just pushes the strip off-centre, so drop it here
+   only. The scan-error paths keep #drop-status visible while REMOVING
+   .has-source (renderer.js 1286 / 1339) — there the prompt is still on screen
+   and the base offset is still doing its job. */
+.dropzone.has-source .dz-loaded { margin-top: 0; }
+
 .dz-inner { display: flex; align-items: stretch; gap: 24px; }
 .dz-text { flex: 1; min-width: 0; }
 .dz-title {
@@ -363,7 +375,6 @@ body.pro-mode #mode-pro.active { background: var(--fill-primary); color: var(--o
 
 /* shared trailing rail control */
 .rail-pill,
-.dz-clear,
 .dest-picker .change,
 .safety-toggle {
   margin-left: auto;
@@ -376,8 +387,26 @@ body.pro-mode #mode-pro.active { background: var(--fill-primary); color: var(--o
   white-space: nowrap;
   transition: background .15s ease, color .15s ease, transform var(--dur-micro) var(--ease-settle);
 }
-.dz-clear { background: var(--paper); color: var(--ink); }
-.dz-clear:hover { background: #FFFFFF; }
+/* Demoted to a muted text link — Remove is a quiet escape hatch, not a peer of
+   the primary actions. The element still carries .rail-pill, so every property
+   the rail rule sets is re-stated here; source order (this block is later,
+   equal specificity) is what makes the override land. margin-left:auto is
+   re-added explicitly — it was the rail rule that used to supply it. */
+.dz-clear {
+  background: none; border: 0;
+  margin-left: auto;
+  padding: 8px 10px; min-height: 40px;
+  display: inline-flex; align-items: center;
+  cursor: pointer; white-space: nowrap;
+  font-family: var(--font-main); font-size: 13px; font-weight: 500;
+  color: var(--hero-muted);
+}
+.dz-clear:hover {
+  background: none;
+  color: var(--hero-fg);
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.dz-clear:focus-visible { outline: 2px solid var(--mint); outline-offset: 2px; }
 
 /* scan-error detail disclosure (on the hero surface) */
 .dz-error-details { margin-top: 6px; font-size: 13px; }
@@ -553,7 +582,6 @@ body.pro-mode #mode-pro.active { background: var(--fill-primary); color: var(--o
   background: var(--mint);
   color: var(--ink);
 }
-.next-action::after { content: none; }
 
 /* ============================================================
    Buttons
@@ -1328,7 +1356,6 @@ body.pro-mode #tier-head #tier-hint { display: none; }
 /* ============================================================
    Motion — one-shot classes gated by JS id Sets; reduced-motion strips all
    ============================================================ */
-@keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
 @keyframes shake-x {
   0%   { transform: translateX(0); }
   14%  { transform: translateX(-4px); }
@@ -1358,6 +1385,22 @@ body.pro-mode #tier-head #tier-hint { display: none; }
   .qrow.shake-fail { animation: shake-x 320ms linear; }
   .qbatch.batch-enter { animation: batch-enter var(--dur-base) var(--ease-settle) backwards; }
   .qrow.row-enter { animation: row-enter var(--dur-base) var(--ease-settle) var(--enter-delay, 0ms) backwards; }
+
+  /* the one "act here" cue breathes — a mint ring on the SAME three hosts that
+     take the mint fill. Opacity only: the hosts transition `transform` for
+     :active, and soft shadows band on 10-bit displays. Under reduced motion
+     this whole block is absent and the mint fill alone carries the cue. */
+  .dest-picker .change.next-action::after,
+  .btn.add-batch.next-action::after,
+  .btn.cta.next-action::after {
+    content: "";
+    position: absolute; inset: -3px;
+    border-radius: inherit;
+    border: 2px solid var(--mint);
+    pointer-events: none;
+    animation: sq-cue-pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes sq-cue-pulse { 0%, 100% { opacity: 0; } 50% { opacity: .65; } }
 
   /* hidden→shown reveals animate height 0↔auto so siblings glide (kept) */
   #progress-card,
