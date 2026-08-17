@@ -447,6 +447,13 @@ function setProMode(on) {
     const checked = document.querySelector('input[name="tier"]:checked');
     armTier(checked ? checked.value : 'regular');
   } else {
+    /* Leaving Nerd: the safety bar goes away with it, so dry-run must never
+       stay armed behind a hidden control. Force-disarm through the SAME
+       writer the toggle uses, so aria-pressed / data-mode / the mode + sub
+       copy / #dry-state all reset together and Nerd reopens telling the
+       truth. STAGING ONLY — queued batches froze dryRun at enqueue
+       (addCurrentToQueue) and keep it, marker and all. */
+    setDryRun(false);
     updateArmedChips();   // chips are a Pro-only signal
   }
 }
@@ -1375,10 +1382,11 @@ document.querySelectorAll('.tier').forEach((wrap) => {
   });
 });
 
-// P2 Preview/Writes toggle — updates the safety bar mode + label + sub copy.
-dryRunBtn.addEventListener('click', () => {
-  const on = dryRunBtn.getAttribute('aria-pressed') === 'true';
-  const next = !on;
+/* P2 Preview/Writes — the DOM IS the state (aria-pressed is read at enqueue).
+   SINGLE writer: both the toggle click and the Nerd→Simple force-disarm in
+   setProMode go through here, so the flag and its four UI reflections can
+   never drift apart. */
+function setDryRun(next) {
   dryRunBtn.setAttribute('aria-pressed', next ? 'true' : 'false');
   safetyBar.setAttribute('data-mode', next ? 'preview' : 'write');
   safetyModeEl.textContent = next ? 'Preview only' : 'Writes files';
@@ -1388,6 +1396,9 @@ dryRunBtn.addEventListener('click', () => {
   // Make the toggle's own on/off state explicit (text paired with the switch
   // position, never colour alone) so the active mode is unmistakable.
   if (dryStateEl) dryStateEl.textContent = next ? 'On' : 'Off';
+}
+dryRunBtn.addEventListener('click', () => {
+  setDryRun(dryRunBtn.getAttribute('aria-pressed') !== 'true');
 });
 
 /* Pro Mode foundation: per-tier encode defaults, fetched once from main at

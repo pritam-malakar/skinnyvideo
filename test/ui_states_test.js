@@ -66,6 +66,22 @@ app.whenReady().then(async () => {
   check(reg.name === 'Make It Fast' && arc.name === 'Slow But Better', 'tier NAMES locked to the v2.9.0 strings');
 
   // ---------- Item 3: toggle state clarity ----------
+  /* v2.9.1: the safety bar is Nerd-only (body.pro-mode gate, same as
+     .pro-panel). Simple must never show it, and leaving Nerd force-disarms
+     dry-run so it can't sit armed behind a hidden control. */
+  const safeSimple = await run(`(() => {
+    const b = document.getElementById('safety-bar');
+    return { display: getComputedStyle(b).display, visible: b.offsetParent !== null };
+  })()`);
+  check(safeSimple.display === 'none' && safeSimple.visible === false,
+    `Simple mode: safety bar hidden (display=${safeSimple.display})`);
+  await run(`document.getElementById('mode-pro').click(); true;`); await wait(200);
+  const safeNerd = await run(`(() => {
+    const b = document.getElementById('safety-bar');
+    return { display: getComputedStyle(b).display, visible: b.offsetParent !== null };
+  })()`);
+  check(safeNerd.display === 'flex' && safeNerd.visible === true,
+    `Nerd mode: safety bar shown (display=${safeNerd.display})`);
   const tog0 = await run(`(() => {
     const b = document.getElementById('dry-run');
     return { state: document.getElementById('dry-state')?.textContent.trim(),
@@ -83,17 +99,34 @@ app.whenReady().then(async () => {
     modeText: document.getElementById('safety-mode').textContent.trim() }))()`);
   check(tog1.state === 'On' && tog1.pressed === 'true' && tog1.mode === 'preview' && /preview only/i.test(tog1.modeText),
     `toggled state unmistakable: Preview only / toggle On (got ${JSON.stringify(tog1)})`);
-  await run(`document.getElementById('dry-run').click(); true;`); await wait(120); // back to write for the screenshot
+  /* Leave dry-run ARMED and drop to Simple: the force-disarm must reset the
+     flag and every UI reflection, so Nerd reopens telling the truth. */
+  await run(`document.getElementById('mode-simple').click(); true;`); await wait(200);
+  const disarmed = await run(`(() => ({
+    barVisible: document.getElementById('safety-bar').offsetParent !== null,
+    pressed: document.getElementById('dry-run').getAttribute('aria-pressed'),
+    mode: document.getElementById('safety-bar').getAttribute('data-mode'),
+    state: document.getElementById('dry-state').textContent.trim(),
+    modeText: document.getElementById('safety-mode').textContent.trim() }))()`);
+  check(disarmed.barVisible === false && disarmed.pressed === 'false' &&
+        disarmed.mode === 'write' && disarmed.state === 'Off' && /writes files/i.test(disarmed.modeText),
+    `Nerd→Simple force-disarms dry-run and resets every reflection (got ${JSON.stringify(disarmed)})`);
+  await run(`document.getElementById('mode-pro').click(); true;`); await wait(200);
+  const reopened = await run(`document.getElementById('dry-run').getAttribute('aria-pressed')`);
+  check(reopened === 'false', `Nerd reopens showing dry-run OFF (got ${reopened})`);
+  await run(`document.getElementById('mode-simple').click(); true;`); await wait(200); // back to Simple for the geometry checks
 
   // ---------- Item 5: tiers full-width; nothing else shifted ----------
   const geo = await run(`(() => {
     const r = (sel) => { const e = document.querySelector(sel); const b = e.getBoundingClientRect(); return { l: Math.round(b.left), rt: Math.round(b.right) }; };
-    return { dropzone: r('.dropzone'), output: r('.output-row'), safety: r('.safety-bar'),
+    return { dropzone: r('.dropzone'), output: r('.output-row'),
              tierHead: r('#tier-head'), tiers: r('.tiers') };
   })()`);
-  const box = geo.safety; // a full-width sibling = the content box
+  /* v2.9.1: reference box moved off .safety-bar — it is display:none in Simple
+     mode now, so its rect is all zeros and can't anchor the content width. */
+  const box = geo.output; // a full-width sibling = the content box
   const sameBox = (g) => Math.abs(g.l - box.l) <= 1 && Math.abs(g.rt - box.rt) <= 1;
-  check(sameBox(geo.dropzone) && sameBox(geo.output) && sameBox(geo.tierHead),
+  check(sameBox(geo.dropzone) && sameBox(geo.tierHead),
     `non-tier sections share one content box (drop/output/tier-head all = [${box.l},${box.rt}])`);
   // Pass 5 (Issue 2): the tier pair now spans the FULL content width — the
   // 720px centered cap (max-width + margin-inline:auto) was dropped so the cards

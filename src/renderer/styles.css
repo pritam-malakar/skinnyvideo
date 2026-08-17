@@ -440,6 +440,12 @@ body.pro-mode #mode-pro.active { background: var(--fill-primary); color: var(--o
   margin-bottom: 10px;
   transition: background .18s ease;
 }
+/* Nerd-only control. Dry-run is an expert affordance, so the bar rides the
+   SAME body.pro-mode gate as .pro-panel — Simple mode never shows it, and
+   renderer.js force-disarms dry-run on the way out of Nerd so it can never
+   sit armed behind a hidden bar. */
+.safety-bar { display: none; }
+body.pro-mode .safety-bar { display: flex; }
 .output-row { margin-top: 0; }
 .output-row .dest-picker { display: flex; align-items: center; gap: 16px; width: 100%; min-width: 0; }
 .dest-picker .label { font-size: 16px; font-weight: 700; min-width: 104px; color: var(--fg); }
