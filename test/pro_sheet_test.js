@@ -215,7 +215,7 @@ app.whenReady().then(async () => {
     check(subWhileDisabled === true, 'panel subtitle hidden while disabled (never both messages at once)');
     const chip = await panelChipText();
     const name = await cardName('regular');
-    check(chip === name && chip === 'Who Cares…',
+    check(chip === name && chip === 'Make It Fast',
       `panel chip shows the REAL tier name from the shared constant (got "${chip}")`);
     check(await panelModified() === false, 'untouched panel shows no modified indicator');
     await browse();                        // files land → panel enables LIVE
@@ -248,7 +248,7 @@ app.whenReady().then(async () => {
     await browse();                        // stage files FIRST — panel enables
     await run(`document.getElementById('choose-dest').click(); true;`); await wait(300);
     await cardClick('preserve');           // plain selection — panel re-renders
-    check((await panelChipText()) === 'Probably Need It Later', 'panel switched to the preserve tier');
+    check((await panelChipText()) === 'Slow But Better', 'panel switched to the preserve tier');
     const resetShownDef = await run(`getComputedStyle(document.getElementById('pro-panel-reset')).display !== 'none'`);
     check(resetShownDef === false, 'Reset hidden while values equal defaults');
     check(await modalPresent() === false, 'no modal on tier selection');

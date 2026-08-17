@@ -151,7 +151,7 @@ async function freshDest(name) {
 
   // Test 5 ("Compress AF") removed — that tier no longer exists in the app.
 
-  header('Test 6: "Probably Need It Later" tier (libx265, keep resolution)');
+  header('Test 6: "Slow But Better" tier (libx265, keep resolution)');
   const dest6 = await freshDest('test6_preserve');
   const r6 = await runBatch({ src: SMALL_CLIP, dest: dest6, tier: 'preserve' }, () => false, () => {});
   check(r6.processed === 1 && r6.failed === 0, 'preserve tier processed clip');

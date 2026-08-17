@@ -16,8 +16,8 @@ machine.
   Homebrew dylibs** — verify with `otool -L resources/bin/ffmpeg`; nothing under
   `/opt/homebrew` or `/usr/local` may appear.
 - **Required encoders (both must be present):**
-  - `hevc_videotoolbox` — hardware HEVC ("Who Cares…" / `regular` tier)
-  - `libx265` — software HEVC ("Probably Need It Later" / `preserve` tier)
+  - `hevc_videotoolbox` — hardware HEVC ("Make It Fast" / `regular` tier)
+  - `libx265` — software HEVC ("Slow But Better" / `preserve` tier)
   - verify: `resources/bin/ffmpeg -hide_banner -encoders | grep -E 'hevc_videotoolbox|libx265'`
 
 ## Integrity (sha256)

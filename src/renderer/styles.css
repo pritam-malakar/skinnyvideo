@@ -33,8 +33,8 @@
 
   /* accents — identical in both themes */
   --mint:#5EE39B;          /* THE UI accent */
-  --tier-fast:#6B8AFF;     /* Who Cares… */
-  --tier-arch:#A97DFF;     /* Probably Need It Later */
+  --tier-fast:#6B8AFF;     /* Make It Fast */
+  --tier-arch:#A97DFF;     /* Slow But Better */
   --lemon:#FFD84D;
   --coral:#FF6B6B;
   --orange:#FFAA5E;        /* interrupt actions ONLY (Stop) — never status pills */
@@ -449,8 +449,24 @@ body.pro-mode #mode-pro.active { background: var(--fill-primary); color: var(--o
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .dest-picker .path.placeholder { color: var(--fg-2); }
-.dest-picker .change { background: var(--card-2); color: var(--fg); }
-.dest-picker .change:hover:not(:disabled) { background: var(--track); }
+.dest-picker .change {
+  background: var(--card-2); color: var(--fg);
+  /* rail rule omits opacity; Add batch fades it, so match that feel too */
+  transition: background .15s ease, color .15s ease, opacity .15s ease,
+              transform var(--dur-micro) var(--ease-settle);
+}
+/* Hover matches Add batch EXACTLY: the same --fill-primary/--on-primary pair
+   at .9 opacity. Tokens rather than a literal #FFFFFF so the light theme
+   inverts the way Add batch does instead of going white-on-near-white. */
+.dest-picker .change:hover:not(:disabled) {
+  background: var(--fill-primary); color: var(--on-primary); opacity: .9;
+}
+/* Cue state keeps the mint. Start (.btn.cta) re-asserts mint on hover; Add
+   batch does NOT (its own hover fill outranks .next-action). Following Start:
+   dropping the "act here" colour on hover defeats the cue. */
+.dest-picker .change.next-action:hover:not(:disabled) {
+  background: var(--mint); color: var(--ink); opacity: .92;
+}
 .dest-picker .change:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .safety-icon { display: none; }   /* mode is carried by the words + switch */
@@ -626,6 +642,8 @@ body.pro-mode #mode-pro.active { background: var(--fill-primary); color: var(--o
   padding: 15px 30px;
 }
 .btn.add-batch:hover:not(:disabled) { background: var(--fill-primary); opacity: .9; }
+/* Cue state: fixes ink-on-ink (invisible label) in light theme and unifies cue-state hover with Start. */
+.btn.add-batch.next-action:hover:not(:disabled) { background: var(--mint); color: var(--ink); opacity: .92; }
 .btn.add-batch:disabled { background: var(--card-2); color: var(--fg-3); opacity: 1; }
 
 .actions {

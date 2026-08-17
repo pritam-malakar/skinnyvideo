@@ -68,7 +68,7 @@ const _easeSettle = () => _rootStyle.getPropertyValue('--ease-settle').trim() ||
 const DEST_PLACEHOLDER = 'Choose a folder — a run subfolder is created automatically';
 // Maps pipeline tier id → CSS class + display label
 const TIER_CSS = { regular: 'regular', preserve: 'archival' };
-const TIER_LABEL = { regular: 'Who Cares…', preserve: 'Probably Need It Later' };
+const TIER_LABEL = { regular: 'Make It Fast', preserve: 'Slow But Better' };
 /* Tier names render from this ONE constant everywhere — the cards' .name
    nodes are stamped here at boot (keyed by data-tier), so the queue chips,
    the Pro settings panel, and the cards can never drift apart. */
@@ -79,7 +79,7 @@ document.querySelectorAll('.tier[data-tier]').forEach((card) => {
 
 /* Staging area = the batch currently being composed. Tier and dryRun are
    sticky on the UI controls; on Add they get FROZEN into the batch and the
-   tier UI resets to the default (RECOMMENDED / "Who Cares…"). */
+   tier UI resets to the default (RECOMMENDED / "Make It Fast"). */
 let current = {
   src: null,           // folder path for 'folder' kind; null for 'files' kind
   srcName: null,       // display name in dropzone + batch header
@@ -1017,7 +1017,7 @@ function updateFlowState() {
 }
 
 function resetStagingTier() {
-  /* Per spec: tier resets to the RECOMMENDED default ("Who Cares…") after
+  /* Per spec: tier resets to the RECOMMENDED default ("Make It Fast") after
      each Add — so each new batch starts from the safe default. */
   const reg = document.querySelector('input[name="tier"][value="regular"]');
   if (!reg) return;
@@ -1031,7 +1031,7 @@ function resetStagingTier() {
 }
 
 function updateTierHint() {
-  /* Tier is OPTIONAL — "Who Cares…" is already selected by default. Once the
+  /* Tier is OPTIONAL — "Make It Fast" is already selected by default. Once the
      tier step is live (files staged), say so softly so the zero-thinking
      default isn't contradicted and no tier action is forced. */
   if (current.scanned && current.videoCount > 0) {

@@ -56,11 +56,14 @@ app.whenReady().then(async () => {
       desc: el.querySelector('.desc')?.textContent.trim() }));
     return t;
   })()`);
-  const reg = descs.find((d) => d.name.startsWith('Who Cares'));
-  const arc = descs.find((d) => d.name.startsWith('Probably'));
-  check(reg && /smaller files/i.test(reg.desc) && /fast/i.test(reg.desc), `recommended desc shows speed/size tradeoff (got: "${reg?.desc}")`);
-  check(arc && /best/i.test(arc.desc) && /(larger)/i.test(arc.desc) && /slow/i.test(arc.desc), `archival desc shows quality/size/slow tradeoff (got: "${arc?.desc}")`);
-  check(reg.name === 'Who Cares…' && arc.name === 'Probably Need It Later', 'tier NAMES unchanged (locked)');
+  const reg = descs.find((d) => d.name.startsWith('Make It Fast'));
+  const arc = descs.find((d) => d.name.startsWith('Slow But Better'));
+  /* v2.9.0: taglines are SIZE-FREE — asserted as exact strings so a stray
+     "smaller files" / "larger files" edit fails loudly instead of passing a
+     loose regex. */
+  check(reg && reg.desc === 'Quick — great for most footage.', `recommended desc is the exact size-free tagline (got: "${reg?.desc}")`);
+  check(arc && arc.desc === 'Best possible quality — takes much longer.', `archival desc is the exact size-free tagline (got: "${arc?.desc}")`);
+  check(reg.name === 'Make It Fast' && arc.name === 'Slow But Better', 'tier NAMES locked to the v2.9.0 strings');
 
   // ---------- Item 3: toggle state clarity ----------
   const tog0 = await run(`(() => {
