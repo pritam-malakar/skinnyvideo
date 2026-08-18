@@ -2892,7 +2892,12 @@ function renderHistory(entries) {
   }
   historySection.classList.remove('hidden');
   if (historyCount) {
-    historyCount.textContent = `${list.length} run${list.length === 1 ? '' : 's'}`;
+    /* "batches", not "runs": an entry is appended per completed BATCH (the
+       add-reclaimed call fires at each batch's terminal status), so a queue of
+       three batches started once lands three entries. Calling those "runs"
+       overstated what a row is. Same inline-ternary shape as the Lifetime
+       hint's drive count; 'es' plural per the queue header and run summary. */
+    historyCount.textContent = `${list.length} batch${list.length === 1 ? '' : 'es'}`;
   }
 
   // Entries arrive newest-first from the store; the compact view is simply

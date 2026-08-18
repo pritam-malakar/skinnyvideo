@@ -190,7 +190,10 @@ app.whenReady().then(async () => {
 
   const shown = await sectionState();
   check(shown.hidden === false, '(e) section becomes visible once an entry exists');
-  check(shown.rows === 1 && shown.hint === '1 run', `one row, hint "1 run" (rows=${shown.rows}, hint=${JSON.stringify(shown.hint)})`);
+  check(shown.rows === 1 && shown.hint === '1 batch', `one row, hint is exactly "1 batch" (rows=${shown.rows}, hint=${JSON.stringify(shown.hint)})`);
+  /* An entry is one BATCH, not one run — a single Start over three batches
+     lands three entries. The hint must never say "run"/"runs" again. */
+  check(!/runs?\b/i.test(shown.hint), `singular hint carries no "run" wording (got ${JSON.stringify(shown.hint)})`);
   check(shown.labels[0] === 'Wedding rushes', 'row shows the run name');
   check(/2 videos/.test(shown.metas[0]), `meta names the video count (got ${JSON.stringify(shown.metas[0])})`);
   check(shown.tiers[0] === 'hs-tier regular|Make It Fast',
@@ -256,7 +259,8 @@ app.whenReady().then(async () => {
 
   const compact = await sectionState();
   check(compact.rows === 5, `compact view shows 5 of 7 (got ${compact.rows})`);
-  check(compact.hint === '7 runs', `hint counts ALL runs, not the visible ones (got ${JSON.stringify(compact.hint)})`);
+  check(compact.hint === '7 batches', `hint is exactly "7 batches" — counts ALL entries, not the visible 5 (got ${JSON.stringify(compact.hint)})`);
+  check(!/runs?\b/i.test(compact.hint), `plural hint carries no "run" wording (got ${JSON.stringify(compact.hint)})`);
   check(compact.footText === 'Show all (7)', `foot control reads "Show all (7)" (got ${JSON.stringify(compact.footText)})`);
   check(compact.labels[0] === 'Seeded run 7', `newest first in the UI too (got ${compact.labels[0]})`);
   check(compact.tiers.some(t => /archival\|Slow But Better/.test(t)), 'preserve rows render the violet "Slow But Better" chip');
