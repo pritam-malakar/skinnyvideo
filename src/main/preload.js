@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld('api', {
   getLifetimeDrives: () => ipcRenderer.invoke('get-lifetime-drives'),
   addReclaimed: (payload) => ipcRenderer.invoke('add-reclaimed', payload),
   resetDrive: (driveKey) => ipcRenderer.invoke('reset-drive', driveKey),
+  getHistory: () => ipcRenderer.invoke('get-history'),
+  revealFolder: (p) => ipcRenderer.invoke('reveal-folder', p),
   openPath: (p) => ipcRenderer.invoke('open-path', p),
   revealPath: (p) => ipcRenderer.invoke('reveal-path', p),
   revealInFinder: (p) => ipcRenderer.invoke('reveal-in-finder', p),

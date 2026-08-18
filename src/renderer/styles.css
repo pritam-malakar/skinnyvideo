@@ -80,6 +80,12 @@
   --run-muted:#6E6E6E;
   --run-track:#CFCFCF;
   --run-stat:#D6D6D6;
+  /* Text-legible mint. NOT a second accent: same hue as --mint (147.5°), only
+     dark enough to be readable as TYPE. On the dark card --mint itself reads at
+     10.4:1, so the two are identical there; on the light card (#F7F7F7) raw
+     --mint measures 1.52:1 — below even the large-text floor — so light theme
+     overrides this to a deep mint at 5.5:1. Fills only; never re-point --mint. */
+  --mint-text:#5EE39B;
 
   /* legacy aliases — renderer.js sets these inline (setDropStatus / scan
      states paint on the always-dark hero strip). No cyan anywhere: the old
@@ -91,6 +97,7 @@
   --red:var(--coral);
 }
 html[data-theme="dark"] {
+  --mint-text:#5EE39B;
   --canvas:#111111;
   --card:#1D1D1D;
   --card-2:#161616;
@@ -108,6 +115,7 @@ html[data-theme="dark"] {
   --run-stat:#D6D6D6;
 }
 html[data-theme="light"] {
+  --mint-text:#11743E;   /* hsl(147.5, 75%, 26%) — 5.46:1 on --card */
   --canvas:#E3E3E3;
   --card:#F7F7F7;
   --card-2:#EAEAEA;
@@ -518,7 +526,7 @@ body.pro-mode .safety-bar { display: flex; }
 }
 .section-head .hint { font-family: var(--font-sub); font-size: 14px; color: var(--fg-2); font-weight: 500; }
 /* queue counts + lifetime total carry digits → Geist, never Poppins */
-#queue-count, #lifetime-total { font-family: var(--font-main); }
+#queue-count, #lifetime-total, #history-count { font-family: var(--font-main); }
 .section-head .hint .red { color: var(--coral); }
 
 /* ============================================================
@@ -1137,6 +1145,118 @@ body.pro-mode .safety-bar { display: flex; }
 .lt-reset:hover { color: var(--fg); background: var(--track); }
 
 /* ============================================================
+   History — one row per completed real run.
+   Deliberately the SAME anatomy as .lt-* above (icon plate / info /
+   right-aligned amount / trailing pill) so the two stacked sections read as
+   one family. Only additions: a tier chip in the meta line, a before → after
+   sub-line under the amount, and the expander foot row.
+   ============================================================ */
+.history-section { margin-top: 34px; }
+.history-section .section-head h2 { font-size: 22px; }
+.history-section .section-head .hint { color: var(--fg-2); }
+.hs-list {
+  list-style: none; margin: 0; padding: 8px var(--pad-x);
+  background: var(--card);
+  border-radius: 18px;
+  display: flex; flex-direction: column;
+}
+.hs-row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+}
+.hs-row + .hs-row { border-top: 1px solid var(--track); }   /* mirrors .lt-row */
+.hs-icon {
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  background: var(--card-2);
+  display: grid; place-items: center;
+  color: var(--fg-2);
+}
+.hs-icon svg { width: 16px; height: 16px; }
+.hs-info { min-width: 0; }
+.hs-label {
+  color: var(--fg-2);
+  font-weight: 500;
+  font-size: 15px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Meta carries digits (date, counts) → Geist, never Poppins. */
+.hs-meta {
+  font-family: var(--font-main);
+  margin-top: 3px;
+  font-size: 13px;
+  color: var(--fg-3);
+  display: flex; align-items: center; gap: 7px;
+  min-width: 0;
+}
+.hs-meta .hs-sep { color: var(--fg-3); }
+.hs-meta .hs-date, .hs-meta .hs-files { white-space: nowrap; }
+/* Tier chip — TEXT-coloured (locked semantics: periwinkle = Make It Fast,
+   violet = Slow But Better). Not the queue's filled .tierchip: History is a
+   muted, secondary surface and a saturated fill would out-shout it. */
+.hs-tier {
+  font-size: 12px; font-weight: 700;
+  padding: 3px 9px; border-radius: var(--r-pill);
+  background: var(--card-2);
+  white-space: nowrap;
+  color: var(--fg-2);
+}
+.hs-tier.regular  { color: var(--tier-fast); }
+.hs-tier.archival { color: var(--tier-arch); }
+.hs-amount {
+  font-family: var(--font-main);
+  text-align: right;
+  padding-left: 8px;
+  min-width: 0;
+}
+.hs-reclaimed {
+  font-size: 16px; font-weight: 700;
+  color: var(--mint-text);      /* savings read as mint — see the token */
+  white-space: nowrap;
+}
+.hs-delta {
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--fg-3);
+  white-space: nowrap;
+}
+.hs-reveal {
+  font-family: var(--font-main);
+  font-size: 13px; font-weight: 600;
+  color: var(--fg-2);
+  background: var(--card-2);
+  border: 0;
+  border-radius: var(--r-pill);
+  padding: 7px 16px;
+  cursor: pointer;
+  transition: color .15s ease, background .15s ease;
+  white-space: nowrap;
+}
+.hs-reveal:hover { color: var(--fg); background: var(--track); }
+/* Expander foot — an li so it lives INSIDE the list card, sharing the row
+   divider. Only rendered when there are more than 5 entries. */
+.hs-foot {
+  display: flex; justify-content: center;
+  padding: 12px 0 4px;
+  border-top: 1px solid var(--track);
+}
+.hs-more {
+  font-family: var(--font-main);
+  font-size: 13px; font-weight: 600;
+  color: var(--fg-2);
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-pill);
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: color .15s ease, background .15s ease;
+}
+.hs-more:hover { color: var(--fg); background: var(--card-2); }
+
+/* ============================================================
    Modal — card surface, flat scrim, tone-warn = lemon accents
    ============================================================ */
 .modal-backdrop {
@@ -1228,8 +1348,11 @@ body.pro-mode .safety-bar { display: flex; }
   max-width: 440px;
   padding: 10px 20px;
   border-radius: var(--r-pill);
-  background: var(--card-2);
-  color: var(--fg);
+  /* Orange is the caution colour for notices (owner's call — not lemon).
+     Theme-invariant, like every accent: ink on --orange is 9.79:1 in both
+     themes. Every showNotice call site is a failed-reveal caution. */
+  background: var(--orange);
+  color: var(--ink);
   font-size: 14px; font-weight: 600;
   opacity: 0;
   pointer-events: none;
@@ -1445,7 +1568,8 @@ body.pro-mode #tier-head #tier-hint { display: none; }
       padding-top .30s ease, padding-bottom .30s ease,
       display .30s allow-discrete;
   }
-  #lifetime-section {
+  #lifetime-section,
+  #history-section {
     overflow: hidden;
     transition:
       height .30s ease, opacity .30s ease, margin-top .30s ease,
@@ -1457,7 +1581,8 @@ body.pro-mode #tier-head #tier-hint { display: none; }
       height: 0; opacity: .3; margin-top: 0;
       padding-top: 0; padding-bottom: 0;
     }
-    #lifetime-section {
+    #lifetime-section,
+    #history-section {
       height: 0; opacity: .3; margin-top: 0;
     }
   }

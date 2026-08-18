@@ -23,17 +23,35 @@ const fsp = fs.promises;
    in tests while the stat gate runs against REAL files on disk:
      stat   — defaults to fsp.stat (real disk check)
      reveal — defaults to shell.showItemInFolder (real Finder reveal) */
-async function revealInFinder(p, deps = {}) {
+async function revealInFinder(p, deps = {}, opts = {}) {
   const stat = deps.stat || fsp.stat;
   const reveal = deps.reveal || ((x) => shell.showItemInFolder(x));
   if (!p || typeof p !== 'string') return { ok: false, reason: 'invalid-path' };
+  let st;
   try {
-    await stat(p);              // throws ENOENT/EACCES if the original is gone
+    st = await stat(p);         // throws ENOENT/EACCES if the target is gone
   } catch {
     return { ok: false, reason: 'missing' };
   }
-  reveal(p);                    // reached ONLY when the original really exists
+  /* Directory targets (v2.10.0 History) additionally assert it IS a
+     directory: a run folder whose name was later taken by a plain file must
+     not be revealed as though the run folder were still there. */
+  if (opts.expectDir && st && typeof st.isDirectory === 'function' && !st.isDirectory()) {
+    return { ok: false, reason: 'not-a-directory' };
+  }
+  reveal(p);                    // reached ONLY when the target really exists
   return { ok: true };
 }
 
-module.exports = { revealInFinder };
+/* ─── Reveal a run FOLDER in Finder (History rows) ────────────────────────
+   Same async, stat-gated path as above — deliberately NOT main's legacy
+   'reveal-path' handler, which guards with a SYNCHRONOUS fs.existsSync on
+   the main thread (an unresponsive NAS mount freezes the whole UI) and
+   returns nothing, so the renderer cannot tell success from silence. A
+   History row's runDir can easily point at an unmounted volume, so it gets
+   the non-blocking check and an {ok:false} the renderer can surface. */
+function revealFolder(p, deps = {}) {
+  return revealInFinder(p, deps, { expectDir: true });
+}
+
+module.exports = { revealInFinder, revealFolder };

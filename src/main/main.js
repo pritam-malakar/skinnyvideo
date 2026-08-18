@@ -8,7 +8,9 @@ const { flattenRunDir } = require('../encoder/flatten');
 const { findOrphanPartials, deletePartials } = require('../encoder/orphans');
 const { stageFileList } = require('../encoder/stage');
 const { runQueue, releasePauseGate } = require('./queue-runner');
-const { revealInFinder } = require('./reveal');
+const { revealInFinder, revealFolder } = require('./reveal');
+const { writeJsonAtomic } = require('./prefs-store');
+const { appendHistoryEntry, readHistory } = require('./history-store');
 const { RUN_DIALOG, handleCloseAttempt, applyProgressToQuitState } = require('./close-guard');
 const { beginCancel, quitViaCancel } = require('./quit-teardown');
 
@@ -43,11 +45,13 @@ function loadPrefs() {
   try { prefs = JSON.parse(fs.readFileSync(prefsPath(), 'utf8')); }
   catch { prefs = {}; }
 }
+/* v2.10.0: ATOMIC. Every caller is unchanged — the write itself moved to
+   temp+fsync+rename in ./prefs-store so a crash mid-write can no longer leave
+   a truncated prefs.json (which loadPrefs' catch would silently reset to {},
+   taking lifetimeDrives and history with it). See prefs-store.js for the
+   full rationale. */
 function savePrefs() {
-  try {
-    fs.mkdirSync(path.dirname(prefsPath()), { recursive: true });
-    fs.writeFileSync(prefsPath(), JSON.stringify(prefs, null, 2));
-  } catch (e) { /* non-fatal */ }
+  writeJsonAtomic(prefsPath(), prefs);   // never throws; false = old file kept
 }
 
 /* ─────────── Lifetime reclaimed: drive resolution ───────────
@@ -558,7 +562,19 @@ ipcMain.handle('save-last-src', async (_evt, p) => {
      is the renderer; it has already excluded dry-run batches and filtered
      to files that finished with status 'done', so we just accumulate.
      New drives are auto-created on first credit.
-   - reset-drive → zeroes counters for ONE drive (no file effects). */
+   - reset-drive → zeroes counters for ONE drive (no file effects).
+   - get-history → the run ledger (see below), newest first. */
+
+/* ─────────── History (v2.10.0) ───────────
+   One entry per completed REAL run. It rides the SAME add-reclaimed call that
+   credits the lifetime ledger — one channel, one savePrefs write, and the two
+   can never disagree about which runs counted. Both policy gates live in the
+   renderer (dry-run excluded at maybeCreditBatch; zero done files → no call);
+   the cap, the ordering and the shape guard live in ./history-store so tests
+   can exercise them directly. */
+
+ipcMain.handle('get-history', async () => readHistory(prefs));
+
 ipcMain.handle('get-lifetime-drives', async () => {
   const drives = prefs.lifetimeDrives || {};
   return Object.values(drives).sort((a, b) => (b.totalReclaimed || 0) - (a.totalReclaimed || 0));
@@ -596,6 +612,11 @@ ipcMain.handle('add-reclaimed', async (_evt, payload) => {
   rec.filesProcessed += filesAdded;
   rec.runsCount += 1;        // one batch with real work = one run
   rec.lastUsed = now;
+
+  /* History rides along on this same call — appended before the single
+     savePrefs below so the ledger and the run list are written together. */
+  appendHistoryEntry(prefs, payload.historyEntry, now);
+
   savePrefs();
   return rec;
 });
@@ -651,3 +672,9 @@ ipcMain.handle('reveal-path', async (_evt, p) => {
    showItemInFolder; returns {ok} so the renderer can show a non-blocking
    "may have moved" notice on failure. */
 ipcMain.handle('reveal-in-finder', async (_evt, p) => revealInFinder(p));
+
+/* Reveal a run FOLDER in Finder, clicked from a History row. Async
+   stat-gated + isDirectory-checked in ../main/reveal — never the sync
+   existsSync of 'reveal-path' above, which would block the main thread on an
+   unmounted/slow volume and tells the renderer nothing. */
+ipcMain.handle('reveal-folder', async (_evt, p) => revealFolder(p));

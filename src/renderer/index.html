@@ -336,6 +336,20 @@
       <ul id="lifetime-list" class="lt-list"></ul>
     </section>
 
+    <!-- History: one row per completed REAL run (dry runs never appear).
+         Same anatomy and same gating as Lifetime directly above — hidden
+         until the first entry exists, renderer-built rows, ungated by
+         Simple/Pro mode. Newest first; the newest 5 show by default and an
+         in-card foot control expands to the full list (ephemeral — always
+         compact again on launch). -->
+    <section id="history-section" class="history-section hidden">
+      <div class="section-head">
+        <h2>History</h2>
+        <span class="hint" id="history-count"></span>
+      </div>
+      <ul id="history-list" class="hs-list"></ul>
+    </section>
+
     <!-- Footer: app version, right-aligned. Single source of truth via
          app.getVersion() (renderer fills #app-version at startup). -->
     <footer class="app-footer">

@@ -57,6 +57,9 @@ const appVersionEl = document.getElementById('app-version');
 const lifetimeSection = document.getElementById('lifetime-section');
 const lifetimeList = document.getElementById('lifetime-list');
 const lifetimeTotal = document.getElementById('lifetime-total');
+const historySection = document.getElementById('history-section');
+const historyList = document.getElementById('history-list');
+const historyCount = document.getElementById('history-count');
 
 /* ───── Pass 4 motion: visual-haptic helpers ─────
    renderQueue() rebuilds the whole queue DOM on structural changes, so one-shot
@@ -2602,21 +2605,53 @@ function maybeCreditBatch(batch) {
 
   let addedBytes = 0;
   let filesAdded = 0;
+  /* v2.10.0 — the History entry is built from this SAME pass so the run row
+     and the drive ledger can never disagree about what counted. before/after
+     accumulate only inside the finite guard below: a file with no recorded
+     output size contributes to neither sum, so the pair always balances. */
+  let beforeBytes = 0;
+  let afterBytes = 0;
+  let failedCount = 0;
+  let skippedCount = 0;
   for (const f of batch.files) {
+    if (f.status === 'failed') { failedCount += 1; continue; }
+    if (f.status === 'skipped' || f.status === 'existed') { skippedCount += 1; continue; }
     if (f.status !== 'done') continue;
     filesAdded += 1;
     if (Number.isFinite(f.outputSize) && Number.isFinite(f.size)) {
       const delta = f.size - f.outputSize;
       if (delta > 0) addedBytes += delta;
       // negative delta (output bigger than source) contributes 0
+      beforeBytes += f.size;
+      afterBytes += f.outputSize;
     }
   }
   if (filesAdded === 0) return;
+  /* Name is frozen HERE, at terminal time, so it reflects any inline rename
+     the operator made while the batch was queued or running. Tier is the
+     internal key — never a label; the store must not hold display strings. */
+  const historyEntry = {
+    name: batch.srcName || 'Untitled',
+    tier: batch.tier,
+    files: filesAdded,
+    failed: failedCount,
+    skipped: skippedCount,
+    before: beforeBytes,
+    after: afterBytes,
+    reclaimed: addedBytes,
+    // Degenerate paths (stage failure, all-skipped) leave runDir null — the
+    // row then renders with no Reveal button rather than a dead one.
+    runDir: (batch.lastResult && batch.lastResult.runDir) || null
+  };
   window.api.addReclaimed({
     dest: batch.dest,
     addedBytes,
-    filesAdded
-  }).then(refreshLifetime).catch(() => { /* non-fatal */ });
+    filesAdded,
+    historyEntry
+  }).then(() => {
+    refreshLifetime();
+    refreshHistory();
+  }).catch(() => { /* non-fatal */ });
 }
 
 async function refreshLifetime() {
@@ -2717,9 +2752,185 @@ function renderLifetime(drives) {
   }
 }
 
+/* ─────────── History ───────────
+   The persisted run ledger (main's prefs.history), newest first. Same shape
+   of code as the Lifetime pair directly above: one render fn that owns the
+   section's visibility, one refresh fn that fetches and hands off.
+
+   The fetch is wrapped in the same swallow-everything catch as
+   refreshLifetime for a concrete reason: the test harnesses register their
+   own fixed set of ipcMain handlers and do NOT register 'get-history', so
+   invoke() rejects there. That must degrade to an empty (hidden) section in
+   silence — reveal_in_finder_test fails the whole run on any renderer
+   console error. */
+const HISTORY_COMPACT = 5;
+/* Ephemeral by design: expansion is a glance, not a preference. Always
+   compact again on the next launch — nothing about it is persisted. */
+let historyExpanded = false;
+
+const FOLDER_ICON_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
+  + '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>'
+  + '</svg>';
+
+/* Compact, glanceable stamps — "Today 5:42 PM" / "Yesterday 5:42 PM" for the
+   recent runs an operator actually reasons about, a short date beyond that,
+   and the year only once it stops being obvious. */
+function fmtRunDate(ts) {
+  if (!Number.isFinite(ts)) return '—';
+  const d = new Date(ts);
+  const now = new Date();
+  const sameDay = (a, b) =>
+    a.getFullYear() === b.getFullYear()
+    && a.getMonth() === b.getMonth()
+    && a.getDate() === b.getDate();
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  if (sameDay(d, now)) return `Today ${time}`;
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (sameDay(d, yesterday)) return `Yesterday ${time}`;
+  if (d.getFullYear() === now.getFullYear()) {
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function historyRow(entry) {
+  const li = document.createElement('li');
+  li.className = 'hs-row';
+  li.dataset.at = String(entry.at);
+
+  const icon = document.createElement('div');
+  icon.className = 'hs-icon';
+  icon.innerHTML = FOLDER_ICON_SVG;
+  li.appendChild(icon);
+
+  const info = document.createElement('div');
+  info.className = 'hs-info';
+  const label = document.createElement('div');
+  label.className = 'hs-label';
+  label.textContent = entry.name;
+  if (entry.runDir) label.title = entry.runDir;
+  info.appendChild(label);
+
+  const meta = document.createElement('div');
+  meta.className = 'hs-meta';
+  const date = document.createElement('span');
+  date.className = 'hs-date';
+  date.textContent = fmtRunDate(entry.at);
+  const sep = document.createElement('span');
+  sep.className = 'hs-sep';
+  sep.textContent = '·';
+  const files = document.createElement('span');
+  files.className = 'hs-files';
+  files.textContent = `${entry.files} video${entry.files === 1 ? '' : 's'}`;
+  const sep2 = document.createElement('span');
+  sep2.className = 'hs-sep';
+  sep2.textContent = '·';
+  // Tier chip renders from TIER_CSS/TIER_LABEL — the same two constants the
+  // cards and queue chips use, so the three can never drift apart.
+  const tier = document.createElement('span');
+  tier.className = `hs-tier ${TIER_CSS[entry.tier] || 'regular'}`;
+  tier.textContent = TIER_LABEL[entry.tier] || entry.tier;
+  meta.appendChild(date);
+  meta.appendChild(sep);
+  meta.appendChild(files);
+  meta.appendChild(sep2);
+  meta.appendChild(tier);
+  info.appendChild(meta);
+  li.appendChild(info);
+
+  const amount = document.createElement('div');
+  amount.className = 'hs-amount';
+  const reclaimed = document.createElement('div');
+  reclaimed.className = 'hs-reclaimed';
+  reclaimed.textContent = humanBytes(entry.reclaimed);
+  const delta = document.createElement('div');
+  delta.className = 'hs-delta';
+  delta.textContent = `${humanBytes(entry.before)} → ${humanBytes(entry.after)}`;
+  amount.appendChild(reclaimed);
+  amount.appendChild(delta);
+  li.appendChild(amount);
+
+  /* No dead buttons: a run with no folder to open gets no button at all,
+     and a button that IS shown always stays enabled — whether the folder is
+     still reachable is answered by the stat gate at click time, not by a
+     guess made now. */
+  if (entry.runDir) {
+    const reveal = document.createElement('button');
+    reveal.className = 'hs-reveal';
+    reveal.type = 'button';
+    reveal.textContent = 'Reveal';
+    reveal.title = entry.runDir;
+    reveal.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      try {
+        const res = await window.api.revealFolder(entry.runDir);
+        if (!res || !res.ok) showNotice('This folder may have moved or been deleted.');
+      } catch {
+        showNotice('This folder may have moved or been deleted.');
+      }
+    });
+    li.appendChild(reveal);
+  }
+
+  return li;
+}
+
+function renderHistory(entries) {
+  if (!historySection || !historyList) return;
+  historyList.innerHTML = '';
+
+  const list = Array.isArray(entries) ? entries : [];
+  // Hidden until the first entry exists — same JS toggle as Lifetime, and the
+  // section ships with .hidden in the markup so there is no pre-data flash.
+  if (list.length === 0) {
+    historySection.classList.add('hidden');
+    if (historyCount) historyCount.textContent = '';
+    historyExpanded = false;
+    return;
+  }
+  historySection.classList.remove('hidden');
+  if (historyCount) {
+    historyCount.textContent = `${list.length} run${list.length === 1 ? '' : 's'}`;
+  }
+
+  // Entries arrive newest-first from the store; the compact view is simply
+  // the head of that list.
+  const shown = historyExpanded ? list : list.slice(0, HISTORY_COMPACT);
+  for (const entry of shown) historyList.appendChild(historyRow(entry));
+
+  if (list.length > HISTORY_COMPACT) {
+    const foot = document.createElement('li');
+    foot.className = 'hs-foot';
+    const btn = document.createElement('button');
+    btn.className = 'hs-more';
+    btn.type = 'button';
+    btn.id = 'history-toggle';
+    btn.textContent = historyExpanded ? 'Show less' : `Show all (${list.length})`;
+    btn.addEventListener('click', () => {
+      historyExpanded = !historyExpanded;
+      renderHistory(list);      // re-render in place; no refetch needed
+    });
+    foot.appendChild(btn);
+    historyList.appendChild(foot);
+  }
+}
+
+async function refreshHistory() {
+  let entries = [];
+  try {
+    entries = (window.api && typeof window.api.getHistory === 'function')
+      ? await window.api.getHistory()
+      : [];
+  } catch { entries = []; }
+  renderHistory(Array.isArray(entries) ? entries : []);
+}
+
 clearDrop();
 renderQueue();
 refreshLifetime();
+refreshHistory();
 
 /* Item 6: orphaned-partial recovery. On launch the main process scans the
    last interrupted run's destination(s) for leftover ".tmp.mp4" partials —
