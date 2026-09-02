@@ -24,8 +24,8 @@ const { handleCloseAttempt } = require(path.join(ROOT, 'src/main/close-guard'));
    this test drives the same function main.js calls. */
 const { quitViaCancel } = require(path.join(ROOT, 'src/main/quit-teardown'));
 const FFMPEG = path.join(ROOT, 'resources/bin/ffmpeg');
-const OUT = '/tmp/squeeze-closeguard-live.mp4';
-const DONE_FILE = '/tmp/squeeze-closeguard-done.mp4';
+const OUT = '/tmp/skinnyvideo-closeguard-live.mp4';
+const DONE_FILE = '/tmp/skinnyvideo-closeguard-done.mp4';
 
 const PASS = [], FAIL = [];
 const check = (c, l) => { (c ? PASS : FAIL).push(l); console.log((c ? 'PASS' : 'FAIL') + ': ' + l); };

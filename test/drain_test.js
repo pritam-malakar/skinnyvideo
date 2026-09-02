@@ -36,8 +36,8 @@ const { runQueue } = require(path.join(ROOT, 'src/main/queue-runner'));
 
 const MODE = process.env.MODE || 'drain';
 const SMALL_CLIP = '/Users/macmini1/Downloads/CompressorTest/Source/Project A/C0224.mov';
-const DEST = path.join(os.tmpdir(), `squeeze-drain-out-${MODE}`);
-const SRCDIR = path.join(os.tmpdir(), `squeeze-drain-src-${MODE}`);
+const DEST = path.join(os.tmpdir(), `skinnyvideo-drain-out-${MODE}`);
+const SRCDIR = path.join(os.tmpdir(), `skinnyvideo-drain-src-${MODE}`);
 
 const PASS = [], FAIL = [];
 const check = (c, l) => { (c ? PASS : FAIL).push(l); console.log((c ? 'PASS' : 'FAIL') + ': ' + l); };

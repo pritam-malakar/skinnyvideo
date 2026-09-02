@@ -16,7 +16,7 @@ const ROOT = path.join(__dirname, '..');
 const PASS = [], FAIL = [];
 const check = (c, l) => { (c ? PASS : FAIL).push(l); console.log((c ? 'PASS' : 'FAIL') + ': ' + l); };
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-const DEST = '/tmp/squeeze-clear-test';
+const DEST = '/tmp/skinnyvideo-clear-test';
 
 // Count run-affecting IPC so we can prove a clear never disturbs the queue/run.
 const calls = { 'stop-queue': 0, 'cancel-batch': 0, 'remove-batch': 0, 'start-queue': 0 };

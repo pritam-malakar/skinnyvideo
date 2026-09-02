@@ -22,7 +22,7 @@ ipcMain.handle('app-version', async () => '2.8.1-test');
 ipcMain.handle('check-engine', async () => ({ ok: true }));
 ipcMain.handle('get-lifetime-drives', async () => []);
 ipcMain.handle('free-space', async () => ({ free: 9e15 }));
-ipcMain.handle('choose-destination', async () => '/tmp/squeeze-verify-out');
+ipcMain.handle('choose-destination', async () => '/tmp/skinnyvideo-verify-out');
 ipcMain.handle('stat-path', async () => ({ isFile: false, isDirectory: true }));
 ipcMain.handle('scan-files', async () => ({ rootKind: 'files', root: '/fake', ignored: 0, totalSize: 0, videos: [] }));
 ['browse-source-files', 'scan-source', 'save-last-src', 'add-reclaimed', 'delete-orphans',

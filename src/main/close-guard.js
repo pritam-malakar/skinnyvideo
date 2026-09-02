@@ -38,8 +38,8 @@ const QUIT_DIALOG = {
   buttons: ['Wait', 'Quit anyway'],
   defaultId: 0,          // Enter → Wait (the safe choice)
   cancelId: 0,           // Esc → Wait
-  title: 'Squeeze',
-  message: 'Squeeze is still writing your file to disk.',
+  title: 'SkinnyVideo',
+  message: 'SkinnyVideo is still writing your file to disk.',
   detail: 'Quitting now will corrupt it. Quit anyway?'
 };
 
@@ -49,7 +49,7 @@ const RUN_DIALOG = {
   defaultId: 0,          // Enter → Keep compressing (the safe choice)
   cancelId: 0,           // Esc → Keep compressing
   noLink: true,          // render as plain buttons, not a "Stop and quit" link
-  title: 'Squeeze',
+  title: 'SkinnyVideo',
   message: 'A compression run is in progress',
   detail: 'Quitting stops the current file — finished videos are kept.'
 };

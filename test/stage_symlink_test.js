@@ -40,7 +40,7 @@ function makeSampleMp4(dest) {
 }
 
 (async () => {
-  const sandbox = await fsp.mkdtemp(path.join(os.tmpdir(), 'squeeze-symlink-'));
+  const sandbox = await fsp.mkdtemp(path.join(os.tmpdir(), 'skinnyvideo-symlink-'));
 
   /* ── 1. Same-volume source still HARDLINKS (no internal regression) ───────
      sandbox is under os.tmpdir() — same volume as stageFileList's temp — so
@@ -90,7 +90,7 @@ function makeSampleMp4(dest) {
   let nasMounted = false;
   try { nasMounted = (await fsp.stat(NAS)).isDirectory(); } catch {}
   if (nasMounted) {
-    const nasDir = path.join(NAS, '.squeeze-symlink-test-' + process.pid);
+    const nasDir = path.join(NAS, '.skinnyvideo-symlink-test-' + process.pid);
     let staged;
     try {
       await fsp.mkdir(nasDir, { recursive: true });

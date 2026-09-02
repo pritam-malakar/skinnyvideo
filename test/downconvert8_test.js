@@ -19,7 +19,7 @@ const { buildArgs, buildFallbackArgs, tierDefaults } = require(path.join(REPO, '
 const FFMPEG = path.join(REPO, 'resources/bin/ffmpeg');
 const FFPROBE = path.join(REPO, 'resources/bin/ffprobe');
 const CLIP = '/Users/macmini1/Downloads/IMG_0332.mov';
-const SCRATCH = '/tmp/squeeze_dc8';
+const SCRATCH = '/tmp/skinnyvideo_dc8';
 
 const PASS = [], FAIL = [];
 const check = (c, l) => { (c ? PASS : FAIL).push(l); console.log((c ? 'PASS' : 'FAIL') + ': ' + l); };

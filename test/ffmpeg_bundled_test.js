@@ -49,9 +49,9 @@ const execFileSync = cp.execFileSync;   // NOT spawn — won't pollute the spy
 
 (async () => {
   // ══ T1: resolution ══════════════════════════════════════════════════════
-  const packagedDir = resolveBinDir(true, '/Apps/Squeeze.app/Contents/Resources', '/some/where');
+  const packagedDir = resolveBinDir(true, '/Apps/SkinnyVideo.app/Contents/Resources', '/some/where');
   const devDir = resolveBinDir(false, '/ignored', path.join(ROOT, 'src', 'encoder'));
-  check(packagedDir === '/Apps/Squeeze.app/Contents/Resources/bin',
+  check(packagedDir === '/Apps/SkinnyVideo.app/Contents/Resources/bin',
     `packaged branch → Contents/Resources/bin (got "${packagedDir}")`);
   check(devDir === REPO_BIN, `dev branch → in-repo resources/bin (got "${devDir}")`);
 

@@ -40,6 +40,62 @@ let liveBatches = null;
 function prefsPath() {
   return path.join(app.getPath('userData'), 'prefs.json');
 }
+/* ─── v2.11.0 one-time userData migration: Squeeze → SkinnyVideo ───────────
+   The app was renamed, and Electron derives userData from productName — so a
+   fresh 2.11.0 launch points at .../Application Support/SkinnyVideo and would
+   silently start with empty prefs, an empty history ledger and a zeroed
+   lifetime-reclaimed total while the real data sat in the old Squeeze dir.
+
+   WHAT MOVES: the app's own JSON stores only (prefs.json today, and any
+   future *.json ledger sitting alongside it). Chromium's own state in that
+   directory — Cache, GPUCache, Local Storage, Preferences, Trust Tokens — is
+   deliberately NOT copied: it is keyed to the old app identity, and copying
+   it across is at best useless and at worst corrupting.
+
+   WHEN IT RUNS: only when the new dir holds no *.json of its own. Chromium
+   creates and populates the new userData dir before whenReady fires, so a
+   bare "is the directory empty" test would never be true on a real launch;
+   "has this app written any data here yet" is the honest first-run test.
+
+   NEVER DELETES the old directory — a 2.10.x build must keep working if the
+   operator rolls back. Wrapped end-to-end in try/catch: a migration that
+   fails must not stop the app from launching. */
+const OLD_USERDATA_NAME = 'Squeeze';
+function migrateLegacyUserData() {
+  try {
+    const newDir = app.getPath('userData');
+    const oldDir = path.join(path.dirname(newDir), OLD_USERDATA_NAME);
+    if (oldDir === newDir) return;                       // nothing to do
+    if (!fs.existsSync(oldDir)) return;                  // no legacy install
+
+    const listJson = (dir) => {
+      try {
+        return fs.readdirSync(dir, { withFileTypes: true })
+          .filter((e) => e.isFile() && e.name.toLowerCase().endsWith('.json'))
+          .map((e) => e.name);
+      } catch { return []; }
+    };
+
+    if (listJson(newDir).length) return;                 // already migrated
+    const carry = listJson(oldDir);
+    if (!carry.length) return;                           // nothing worth moving
+
+    fs.mkdirSync(newDir, { recursive: true });
+    const moved = [];
+    for (const name of carry) {
+      try {
+        fs.copyFileSync(path.join(oldDir, name), path.join(newDir, name));
+        moved.push(name);
+      } catch { /* skip this file, keep going */ }
+    }
+    if (moved.length) {
+      console.log(`[SkinnyVideo] Migrated ${moved.length} file(s) from ${oldDir} into ${newDir}: ${moved.join(', ')} — original left in place.`);
+    }
+  } catch (e) {
+    console.log(`[SkinnyVideo] userData migration skipped: ${(e && e.message) || e}`);
+  }
+}
+
 let prefs = {};
 function loadPrefs() {
   try { prefs = JSON.parse(fs.readFileSync(prefsPath(), 'utf8')); }
@@ -182,25 +238,26 @@ function stopRunThenQuit(finish) {
 }
 
 app.whenReady().then(() => {
+  migrateLegacyUserData();   // MUST precede any prefs/history read
   loadPrefs();
   /* Self-contained engine: verify the BUNDLED ffmpeg/ffprobe exist and are
      executable at launch. No fallback to any other binary — if it's gone the
      app cannot encode, so fail fast with plain-language wording. */
   const engine = ffmpegStatus();
   if (!engine.ok) {
-    dialog.showErrorBox('Squeeze', ENGINE_MISSING_MESSAGE);
+    dialog.showErrorBox('SkinnyVideo', ENGINE_MISSING_MESSAGE);
     app.quit();
     return;
   }
   createWindow();
 
   /* Orphaned-partial sweep (BUG 2 — intended scope, documented):
-     On every launch we scan EVERY output folder Squeeze has written to —
+     On every launch we scan EVERY output folder SkinnyVideo has written to —
      prefs.outputRoots accumulates each destination ever used — plus any
      in-flight pendingDests, for leftover .tmp.mp4 partials under their
      "Compressed_" run folders. This catches partials from ANY interrupted
      run, not just the most recent one. We deliberately do NOT walk the whole
-     filesystem: scope is "known Squeeze output locations". pendingDests is
+     filesystem: scope is "known SkinnyVideo output locations". pendingDests is
      cleared after the scan; outputRoots persists so a partial the operator
      chooses to keep is re-offered next launch until it's resolved. */
   const sweepRoots = [...new Set([
@@ -364,7 +421,7 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
      .tmp.mp4 partials. Cleared in the finally below once the run ends
      cleanly (whether finished or user-stopped).
      Also fold them into prefs.outputRoots — the persistent set of every
-     destination Squeeze has ever written to — so the launch sweep (BUG 2)
+     destination SkinnyVideo has ever written to — so the launch sweep (BUG 2)
      can find orphans under ANY past output location, not just the last run. */
   try {
     const runDests = [...new Set(

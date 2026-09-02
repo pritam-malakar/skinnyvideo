@@ -23,7 +23,7 @@ const SMALL_CLIP = '/Users/macmini1/Downloads/CompressorTest/Source/Project A/C0
     console.log('(skipped — fixture clip or bundled ffmpeg not present)');
     return;
   }
-  const sandbox = await fsp.mkdtemp(path.join(os.tmpdir(), 'squeeze-v219-'));
+  const sandbox = await fsp.mkdtemp(path.join(os.tmpdir(), 'skinnyvideo-v219-'));
 
   // ── A: folder mode, delete the encoding file's source mid-encode ──
   header('A: folder — currently-encoding source deleted → still finishes (open fd)');
@@ -70,7 +70,7 @@ const SMALL_CLIP = '/Users/macmini1/Downloads/CompressorTest/Source/Project A/C0
   {
     const orig = path.join(sandbox, 'C_original.mov'); await fsp.copyFile(SMALL_CLIP, orig);
     // Emulate main's staging: hardlink original into a temp "stage dir".
-    const stageRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'squeeze-fl-'));
+    const stageRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'skinnyvideo-fl-'));
     const stageDir = path.join(stageRoot, 'Selected files (1)'); await fsp.mkdir(stageDir, { recursive: true });
     const link = path.join(stageDir, 'C_original.mov'); await fsp.link(orig, link);
     const dest = path.join(sandbox, 'C_out'); await fsp.mkdir(dest, { recursive: true });

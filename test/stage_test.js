@@ -12,7 +12,7 @@ const PASS = [], FAIL = [];
 const check = (c, l) => { (c ? PASS : FAIL).push(l); console.log((c ? 'PASS' : 'FAIL') + ': ' + l); };
 
 (async () => {
-  const sandbox = await fsp.mkdtemp(path.join(os.tmpdir(), 'squeeze-stage-'));
+  const sandbox = await fsp.mkdtemp(path.join(os.tmpdir(), 'skinnyvideo-stage-'));
   const a = path.join(sandbox, 'a.mov'), b = path.join(sandbox, 'b.mov');
   await fsp.writeFile(a, 'AAA'); await fsp.writeFile(b, 'BBB');
 

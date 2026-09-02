@@ -1206,7 +1206,7 @@ function fileListDisplayName(paths) {
    shows codes or stack text on its face. */
 function showScanError(raw) {
   dropStatus.classList.remove('hidden');
-  dropStatusPath.textContent = 'Couldn’t read that — the file may be damaged or in a format Squeeze can’t open.';
+  dropStatusPath.textContent = 'Couldn’t read that — the file may be damaged or in a format SkinnyVideo can’t open.';
   dropStatusPath.style.color = 'var(--red)';
   dropStatusCount.textContent = '';
   dropStatusExtra.innerHTML = raw
@@ -1795,7 +1795,7 @@ function buildFileRow(file, i, batchId, entering, batchStatus) {
   /* Click the file NAME (not the batch name) → reveal the ORIGINAL source in
      Finder. file.path is the original source path for BOTH batch kinds: a
      folder batch's scan and a file-list batch's scan both store v.file (the
-     original). The run-time temp hardlink (squeeze-fl-XXXX/Selected files…)
+     original). The run-time temp hardlink (skinnyvideo-fl-XXXX/Selected files…)
      never lands in file.path — progress events are mapped back to originals —
      so we always reveal the original, never the temp link. The main side
      stat-gates: a moved/deleted original returns {ok:false} and we surface a
@@ -2079,7 +2079,7 @@ function diskShortageModal(shortages) {
     `<div>There may not be enough room to save the compressed copies:</div>`
     + `<ul>${lines}</ul>`
     + `<div class="fine">Compressed copies are usually smaller than the originals, so they may still `
-    + `fit — but Squeeze can’t promise it. Either way, your original files are never touched.</div>`;
+    + `fit — but SkinnyVideo can’t promise it. Either way, your original files are never touched.</div>`;
   return showModal({
     title: 'This drive may be too full',
     tone: 'warn',
@@ -2107,17 +2107,17 @@ startBtn.addEventListener('click', async () => {
     const eng = await window.api.checkEngine();
     if (!eng || !eng.ok) {
       await showModal({
-        title: 'Squeeze',
+        title: 'SkinnyVideo',
         tone: 'warn',
-        body: `<p>${escapeHtml((eng && eng.message) || "Squeeze's video engine is missing — please reinstall the app.")}</p>`,
+        body: `<p>${escapeHtml((eng && eng.message) || "SkinnyVideo's video engine is missing — please reinstall the app.")}</p>`,
         actions: [{ label: 'OK', value: true, kind: 'primary' }]
       });
       return;                                 // do NOT start the run
     }
   } catch {
     await showModal({
-      title: 'Squeeze', tone: 'warn',
-      body: `<p>Squeeze's video engine is missing — please reinstall the app.</p>`,
+      title: 'SkinnyVideo', tone: 'warn',
+      body: `<p>SkinnyVideo's video engine is missing — please reinstall the app.</p>`,
       actions: [{ label: 'OK', value: true, kind: 'primary' }]
     });
     return;
@@ -2540,7 +2540,7 @@ window.api.onQueueFinished(({ totals, stopped }) => {
   lines.push(
     `<div class="summary-trust">`
     + `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`
-    + `Your original files were not changed — Squeeze only wrote new compressed copies.</div>`
+    + `Your original files were not changed — SkinnyVideo only wrote new compressed copies.</div>`
   );
   summaryBody.innerHTML = lines.join('');
 
@@ -2947,7 +2947,7 @@ window.api.onOrphansFound(async ({ orphans } = {}) => {
   const n = orphans.length;
   const totalBytes = orphans.reduce((a, o) => a + (Number.isFinite(o.size) ? o.size : 0), 0);
   const body =
-    `<div>Squeeze found <strong>${n}</strong> unfinished file${n === 1 ? '' : 's'} left over from `
+    `<div>SkinnyVideo found <strong>${n}</strong> unfinished file${n === 1 ? '' : 's'} left over from `
     + `one or more interrupted runs (about <strong>${humanBytes(totalBytes)}</strong> in total). `
     + `${n === 1 ? 'It’s' : 'They’re'} incomplete and can’t be played.</div>`
     + `<div class="fine">Deleting ${n === 1 ? 'it' : 'them'} only removes the leftover, partly-written `

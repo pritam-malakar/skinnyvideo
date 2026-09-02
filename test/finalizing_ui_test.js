@@ -19,7 +19,7 @@ const check = (c, l) => { (c ? PASS : FAIL).push(l); console.log((c ? 'PASS' : '
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const FAKE = '/fake/clip.mov';
-const DEST = '/tmp/squeeze-finalizing-ui';
+const DEST = '/tmp/skinnyvideo-finalizing-ui';
 
 let win;
 const send = (ch, p) => { if (win && !win.isDestroyed()) win.webContents.send(ch, p); };

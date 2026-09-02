@@ -18,7 +18,7 @@ ipcMain.handle('scan-files', async () => ({
   rootKind: 'files', root: '/fake', ignored: 0, totalSize: 1234567,
   videos: [{ file: '/fake/clipA.mov', basename: 'clipA.mov', size: 1234567 }]
 }));
-ipcMain.handle('choose-destination', async () => '/tmp/squeeze-verify-out');
+ipcMain.handle('choose-destination', async () => '/tmp/skinnyvideo-verify-out');
 ipcMain.handle('stat-path', async () => ({ isFile: false, isDirectory: true }));
 ipcMain.handle('save-last-src', async () => {});
 ipcMain.handle('get-lifetime-drives', async () => []);

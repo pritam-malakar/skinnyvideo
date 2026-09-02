@@ -23,7 +23,7 @@ const { runQueue } = require(path.join(ROOT, 'src/main/queue-runner'));
 
 const SHORT = '/Users/macmini1/Downloads/CompressorTest/Source/Project A/C0224.mov';  // ~11s → finishes fast
 const LONG = '/Users/macmini1/Downloads/CompressorTest/gate/FAQs.mov';                // ~240s → still running
-const DEST = path.join(os.tmpdir(), 'squeeze-fileprog-out');
+const DEST = path.join(os.tmpdir(), 'skinnyvideo-fileprog-out');
 
 const PASS = [], FAIL = [];
 const check = (c, l) => { (c ? PASS : FAIL).push(l); console.log((c ? 'PASS' : 'FAIL') + ': ' + l); };

@@ -15,7 +15,7 @@ function header(t) { console.log('\n==== ' + t + ' ===='); }
 const SMALL_CLIP = '/Users/macmini1/Downloads/CompressorTest/Source/Project A/C0224.mov';
 
 (async () => {
-  const sandbox = await fsp.mkdtemp(path.join(os.tmpdir(), 'squeeze-reg-'));
+  const sandbox = await fsp.mkdtemp(path.join(os.tmpdir(), 'skinnyvideo-reg-'));
 
   // ── BUG B unit: isSourceReadable ───────────────────────────────
   header('BUG B: isSourceReadable');

@@ -1,7 +1,7 @@
 {
-  "name": "squeeze",
-  "productName": "Squeeze",
-  "version": "2.10.1",
+  "name": "skinnyvideo",
+  "productName": "SkinnyVideo",
+  "version": "2.11.0",
   "description": "Video archive compressor for macOS",
   "main": "src/main/main.js",
   "scripts": {
@@ -9,7 +9,7 @@
     "dist": "electron-builder --mac --arm64",
     "postinstall": "node scripts/fix-electron.js"
   },
-  "author": "Squeeze",
+  "author": "SkinnyVideo",
   "license": "UNLICENSED",
   "engines": {
     "node": "22.x"
@@ -19,8 +19,8 @@
     "electron-builder": "^25.1.8"
   },
   "build": {
-    "appId": "net.squeeze.app",
-    "productName": "Squeeze",
+    "appId": "com.pritammalakar.skinnyvideo",
+    "productName": "SkinnyVideo",
     "asar": true,
     "afterPack": "scripts/sign-ffmpeg.js",
     "files": [
@@ -36,7 +36,7 @@
     ],
     "mac": {
       "category": "public.app-category.video",
-      "icon": "build/squeeze.icns",
+      "icon": "build/skinnyvideo.icns",
       "target": [
         { "target": "dir", "arch": ["arm64"] }
       ],

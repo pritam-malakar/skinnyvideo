@@ -14,7 +14,7 @@ const ROOT = path.join(__dirname, '..');
 const PASS = [], FAIL = [];
 const check = (c, l) => { (c ? PASS : FAIL).push(l); console.log((c ? 'PASS' : 'FAIL') + ': ' + l); };
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-const DEST = '/tmp/squeeze-dc8-ui';
+const DEST = '/tmp/skinnyvideo-dc8-ui';
 
 // scan-files returns whatever the test currently stages (10-bit or 8-bit).
 let nextVideo = { file: '/fake/ten.mov', size: 1_000_000, duration: 60, pix_fmt: 'yuv420p10le' };

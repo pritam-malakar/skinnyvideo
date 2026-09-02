@@ -66,7 +66,7 @@ const NODE = process.execPath;
     let calls = 0;
     const r = await runCmd(NODE, ['-e', 'setTimeout(() => {}, 5000)'], {
       stallTimeoutMs: 150,
-      outPath: '/tmp/squeeze-finalizing-flat',
+      outPath: '/tmp/skinnyvideo-finalizing-flat',
       probeOutSize,
       getProgress: () => 0.4,            // not near complete → detector inert
       onFinalizing: () => { calls++; }

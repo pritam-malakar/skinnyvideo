@@ -34,7 +34,7 @@ function snapshotTree(root) {
 }
 
 async function stageFilesAsBatch(batchId, fileSources, dest, tier) {
-  const tmpRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'squeeze-fl-'));
+  const tmpRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'skinnyvideo-fl-'));
   const niceName = `Selected files (${batchId})`;
   const stageDir = path.join(tmpRoot, niceName);
   await fsp.mkdir(stageDir, { recursive: true });

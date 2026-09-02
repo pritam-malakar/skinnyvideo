@@ -1,7 +1,7 @@
 /* Repo regression (v2.10.0): ATOMIC PREFS WRITE — a torn write must never
    destroy the store.
 
-   WHY THIS EXISTS. prefs.json is the ONLY persistence Squeeze has: lastSrc,
+   WHY THIS EXISTS. prefs.json is the ONLY persistence SkinnyVideo has: lastSrc,
    outputRoots, pendingDests, lifetimeDrives — and, as of v2.10.0, `history`
    (up to 50 run entries). loadPrefs (main.js) turns ANY parse failure into
    `prefs = {}` silently: no error, no notice, no backup. So a file that is
@@ -35,7 +35,7 @@ const PASS = [], FAIL = [];
 const check = (c, l) => { (c ? PASS : FAIL).push(l); console.log((c ? 'PASS' : 'FAIL') + ': ' + l); };
 const header = (t) => console.log('\n==== ' + t + ' ====');
 
-const WORK = path.join(os.tmpdir(), 'squeeze-atomic-' + process.pid);
+const WORK = path.join(os.tmpdir(), 'skinnyvideo-atomic-' + process.pid);
 fs.mkdirSync(WORK, { recursive: true });
 
 /* ── The v2.9.6 writer, transcribed verbatim from cf2b260 main.js:46-51.

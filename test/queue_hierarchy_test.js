@@ -20,7 +20,7 @@ const path = require('path');
 const fs = require('fs');
 
 const ROOT = path.join(__dirname, '..');
-const OUT = '/tmp/squeeze-queue-hierarchy';
+const OUT = '/tmp/skinnyvideo-queue-hierarchy';
 const PASS = [], FAIL = [];
 const check = (c, l) => { (c ? PASS : FAIL).push(l); console.log((c ? 'PASS' : 'FAIL') + ': ' + l); };
 
@@ -32,7 +32,7 @@ ipcMain.handle('scan-files', async () => ({
   rootKind: 'files', root: '/fake', ignored: 0, totalSize: 3 * 1234567,
   videos: THREE.map((f, i) => ({ file: f, basename: f.split('/').pop(), size: 1234567 + i * 1000 }))
 }));
-ipcMain.handle('choose-destination', async () => '/tmp/squeeze-verify-out');
+ipcMain.handle('choose-destination', async () => '/tmp/skinnyvideo-verify-out');
 ipcMain.handle('stat-path', async () => ({ isFile: false, isDirectory: true }));
 ipcMain.handle('check-engine', async () => ({ ok: true }));   // locked: Start pre-flight stub
 ipcMain.handle('save-last-src', async () => {});

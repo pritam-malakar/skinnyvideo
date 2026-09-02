@@ -29,7 +29,7 @@ function header(t) { console.log('\n==== ' + t + ' ===='); }
 
 (async () => {
   const { ffmpeg, ffprobe } = getBinaries();
-  const sandbox = await fsp.mkdtemp(path.join(os.tmpdir(), 'squeeze-color-'));
+  const sandbox = await fsp.mkdtemp(path.join(os.tmpdir(), 'skinnyvideo-color-'));
   const srcDir = path.join(sandbox, 'Graded');
   const destDir = path.join(sandbox, 'out');
   await fsp.mkdir(srcDir, { recursive: true });

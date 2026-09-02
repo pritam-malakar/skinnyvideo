@@ -28,7 +28,7 @@ function header(t) { console.log('\n==== ' + t + ' ===='); }
 
 (async () => {
   const { ffmpeg, ffprobe } = getBinaries();
-  const sandbox = await fsp.mkdtemp(path.join(os.tmpdir(), 'squeeze-carry-'));
+  const sandbox = await fsp.mkdtemp(path.join(os.tmpdir(), 'skinnyvideo-carry-'));
   const mk = async (d) => { const p = path.join(sandbox, d); await fsp.mkdir(p, { recursive: true }); return p; };
 
   const probeStream = async (f) => {

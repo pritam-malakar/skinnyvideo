@@ -1,6 +1,6 @@
 # Bundled ffmpeg — PINNED
 
-Squeeze ships its own ffmpeg/ffprobe and runs **only** these (single resolution
+SkinnyVideo ships its own ffmpeg/ffprobe and runs **only** these (single resolution
 path in [pipeline.js](../../src/encoder/pipeline.js) `getBinaries`/`resolveBinDir`
 — no PATH lookup, no system ffmpeg, no Homebrew, no `ffmpeg-static`, no env
 override, no fallback). These two binaries are **vendored in git** so every

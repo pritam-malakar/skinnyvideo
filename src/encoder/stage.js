@@ -25,7 +25,7 @@ const os = require('os');
    (nothing could be staged at all); the temp dir is self-cleaned on that throw.
    Pure fs/path (no electron) so it is unit-testable in plain node. */
 async function stageFileList(batchId, fileSources) {
-  const tmpRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'squeeze-fl-'));
+  const tmpRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'skinnyvideo-fl-'));
   try {
     const stageDir = path.join(tmpRoot, `Selected files (${batchId})`);
     await fsp.mkdir(stageDir, { recursive: true });

@@ -34,7 +34,7 @@ const PASS = [], FAIL = [];
 const check = (c, l) => { (c ? PASS : FAIL).push(l); console.log((c ? 'PASS' : 'FAIL') + ': ' + l); };
 const header = (t) => console.log('\n==== ' + t + ' ====');
 
-const WORK = path.join(os.tmpdir(), 'squeeze-history-' + process.pid);
+const WORK = path.join(os.tmpdir(), 'skinnyvideo-history-' + process.pid);
 const DEST = path.join(WORK, 'out');
 const LIVE_RUNDIR = path.join(DEST, 'Compressed_2026-08-18_0942');
 const DEAD_RUNDIR = path.join(DEST, 'Compressed_2026-08-18_1130');

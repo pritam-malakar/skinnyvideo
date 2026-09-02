@@ -43,14 +43,14 @@ function tierDefaults(tier) {
 }
 
 /* ─── ffmpeg/ffprobe resolution — ONE path, no fallback ──────────────────
-   The encoder is fully self-contained: Squeeze only EVER runs the ffmpeg it
+   The encoder is fully self-contained: SkinnyVideo only EVER runs the ffmpeg it
    ships in its own bundle. There is deliberately NO PATH lookup, no system
    ffmpeg, no ffmpeg-static, no env override, no hardcoded /usr or /opt path —
    any of those would let a different (possibly broken/missing) binary run, and
    "resolves a binary some other way per machine" was the whole failure class
    this guards against. resolveBinDir has exactly two branches and both point
    inside the app:
-     • packaged → <Squeeze.app>/Contents/Resources/bin
+     • packaged → <SkinnyVideo.app>/Contents/Resources/bin
      • dev      → <repo>/resources/bin
    Both are absolute and 'bin'-suffixed; neither can yield a bare name or a
    system path. Pure (no electron/process refs) so it is unit-testable. */
@@ -72,7 +72,7 @@ function getBinaries() {
 /* Plain-language wording for a non-technical operator when the bundled engine
    is absent. Shown at startup and as the run-block reason — never a stack
    trace, never an ffmpeg path. */
-const ENGINE_MISSING_MESSAGE = "Squeeze's video engine is missing — please reinstall the app.";
+const ENGINE_MISSING_MESSAGE = "SkinnyVideo's video engine is missing — please reinstall the app.";
 
 /* Hard gate: the bundled ffmpeg AND ffprobe must exist and be executable.
    Returns {ok:true, ffmpeg, ffprobe} or {ok:false, missing, reason, …}. NEVER
@@ -795,7 +795,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
   // so an unhandled 'error' can't crash the process.
   logStream.on('error', () => {});
   const log = (line) => { try { logStream.write(line + '\n'); } catch {} };
-  log(`# Squeeze run started ${new Date().toISOString()}`);
+  log(`# SkinnyVideo run started ${new Date().toISOString()}`);
   log(`# Source: ${src}`);
   log(`# Destination: ${runDir}`);
   log(`# Tier: ${tier}`);

@@ -16,7 +16,7 @@ const exists = (p) => fs.existsSync(p);
 const read = (p) => fs.readFileSync(p, 'utf8');
 
 (async () => {
-  const sandbox = await fsp.mkdtemp(path.join(os.tmpdir(), 'squeeze-trust-'));
+  const sandbox = await fsp.mkdtemp(path.join(os.tmpdir(), 'skinnyvideo-trust-'));
 
   // ─────────────────────────────────────────────────────────────
   header('Item 5: flatten collision auto-suffix under flat output');

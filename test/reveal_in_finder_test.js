@@ -12,7 +12,7 @@
      • Folder batch, DELETED original  → stat gate blocks it: reveal NOT invoked,
        non-blocking notice shown (no modal/backdrop).
      • File-list batch (the folder-vs-file-list trap) → reveal invoked with the
-       ORIGINAL source path, NEVER a temp hardlink (no squeeze-fl/Selected files).
+       ORIGINAL source path, NEVER a temp hardlink (no skinnyvideo-fl/Selected files).
 
    FAIL on old code: the file name carries no click handler, so reveal is never
    invoked and no notice appears → every assertion fails. PASS on the fix.
@@ -125,7 +125,7 @@ app.whenReady().then(async () => {
   const got = revealCalls[0] || '';
   check(revealCalls.length === 1 && got === MOVIEX,
     `file-list batch → reveal invoked with ORIGINAL (got ${JSON.stringify(revealCalls)})`);
-  check(!/squeeze-fl-|Selected files/.test(got),
+  check(!/skinnyvideo-fl-|Selected files/.test(got),
     `file-list reveal path is NOT a temp hardlink (got "${got}")`);
 
   check(errs.length === 0, 'no renderer console errors: ' + (errs[0] || 'none'));

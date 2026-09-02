@@ -31,7 +31,7 @@ const os = require('os');
 const { runCmd, STALL_TIMEOUT_MS } = require(path.join(__dirname, '..', 'src/encoder/pipeline'));
 
 const MODE = process.env.MODE || 'all';
-const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'squeeze-wd-'));
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'skinnyvideo-wd-'));
 const PASS = [], FAIL = [];
 const check = (c, l) => { (c ? PASS : FAIL).push(l); console.log((c ? 'PASS' : 'FAIL') + ': ' + l); };
 

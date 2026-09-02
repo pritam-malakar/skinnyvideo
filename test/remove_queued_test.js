@@ -27,8 +27,8 @@ const { runQueue } = require(path.join(ROOT, 'src/main/queue-runner'));
 
 const MODE = process.env.MODE || 'removequeued';
 const SMALL_CLIP = '/Users/macmini1/Downloads/CompressorTest/Source/Project A/C0224.mov';
-const DEST = path.join(os.tmpdir(), `squeeze-rmq-out-${MODE}`);
-const SRCDIR = path.join(os.tmpdir(), `squeeze-rmq-src-${MODE}`);
+const DEST = path.join(os.tmpdir(), `skinnyvideo-rmq-out-${MODE}`);
+const SRCDIR = path.join(os.tmpdir(), `skinnyvideo-rmq-src-${MODE}`);
 
 const PASS = [], FAIL = [];
 const check = (c, l) => { (c ? PASS : FAIL).push(l); console.log((c ? 'PASS' : 'FAIL') + ': ' + l); };

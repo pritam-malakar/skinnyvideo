@@ -19,7 +19,7 @@ const ROOT = path.join(__dirname, '..');
 const PASS = [], FAIL = [];
 const check = (c, l) => { (c ? PASS : FAIL).push(l); console.log((c ? 'PASS' : 'FAIL') + ': ' + l); };
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-const DEST = '/tmp/squeeze-desync';
+const DEST = '/tmp/skinnyvideo-desync';
 
 let nextVideo = { file: '/fake/a.mov', size: 1_000_000, duration: 60, pix_fmt: 'yuv420p10le' };
 let scanDelay = 0;

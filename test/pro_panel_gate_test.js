@@ -20,7 +20,7 @@ const check = (c, l) => { (c ? PASS : FAIL).push(l); console.log((c ? 'PASS' : '
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const FAKE = '/fake/gate-clip.mov';
-const DEST = '/tmp/squeeze-pro-gate';
+const DEST = '/tmp/skinnyvideo-pro-gate';
 
 let win;
 ipcMain.handle('app-version', async () => 'gate-test');

@@ -26,7 +26,7 @@
      pause SIGSTOPs it (progress freezes, no file-done); resume SIGCONTs it and it
      completes. Confirms the existing live-suspend still works.
 
-   Fixture: SQUEEZE_TEST_CLIP(/_LONG) env, else test/fixtures/tiny_clip.mov /
+   Fixture: SKINNYVIDEO_TEST_CLIP(/_LONG) env, else test/fixtures/tiny_clip.mov /
    long_clip.mov. Skips cleanly if the bundled ffmpeg or fixtures are missing. */
 const path = require('path');
 const fs = require('fs');
@@ -44,8 +44,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const until = async (pred, ms) => { const end = Date.now() + ms; while (Date.now() < end) { if (pred()) return true; await sleep(40); } return pred(); };
 const withTimeout = (p, ms) => Promise.race([p, sleep(ms).then(() => 'TIMEOUT')]);
 
-const TINY = process.env.SQUEEZE_TEST_CLIP || path.join(__dirname, 'fixtures', 'tiny_clip.mov');
-const LONG = process.env.SQUEEZE_TEST_CLIP_LONG || path.join(__dirname, 'fixtures', 'long_clip.mov');
+const TINY = process.env.SKINNYVIDEO_TEST_CLIP || path.join(__dirname, 'fixtures', 'tiny_clip.mov');
+const LONG = process.env.SKINNYVIDEO_TEST_CLIP_LONG || path.join(__dirname, 'fixtures', 'long_clip.mov');
 
 // ---- per-batch runtime state, exactly like main.js's runtime Map ----
 const rtm = new Map();
@@ -76,8 +76,8 @@ function ffprobeValid(file) {
 }
 
 async function testA() {
-  const src = await freshDir(path.join(os.tmpdir(), 'squeeze-pause-A-src'));
-  const dest = await freshDir(path.join(os.tmpdir(), 'squeeze-pause-A-out'));
+  const src = await freshDir(path.join(os.tmpdir(), 'skinnyvideo-pause-A-src'));
+  const dest = await freshDir(path.join(os.tmpdir(), 'skinnyvideo-pause-A-out'));
   await fsp.copyFile(TINY, path.join(src, 'a_clip.mov'));
   await fsp.copyFile(LONG, path.join(src, 'b_clip.mov'));
   const BID = 'A1';
@@ -128,8 +128,8 @@ async function testA() {
 // CHANGE 4 — LONG-FREEZE RESUME: SIGSTOP a live encode, hold, SIGCONT, and prove
 // the encode RESUMES TO COMPLETION with a valid output (guards resume-into-broken-pipe).
 async function testB() {
-  const src = await freshDir(path.join(os.tmpdir(), 'squeeze-pause-B-src'));
-  const dest = await freshDir(path.join(os.tmpdir(), 'squeeze-pause-B-out'));
+  const src = await freshDir(path.join(os.tmpdir(), 'skinnyvideo-pause-B-src'));
+  const dest = await freshDir(path.join(os.tmpdir(), 'skinnyvideo-pause-B-out'));
   await fsp.copyFile(LONG, path.join(src, 'only.mov'));
   const BID = 'B1';
 
@@ -159,8 +159,8 @@ async function testB() {
 // CHANGE 3 — teardown while paused in the probe window (no live child). The event
 // gate must release on stop/cancel and the queue must not hang. mode 'stop'|'cancel'.
 async function testTeardown(mode) {
-  const src = await freshDir(path.join(os.tmpdir(), `squeeze-pause-td-${mode}-src`));
-  const dest = await freshDir(path.join(os.tmpdir(), `squeeze-pause-td-${mode}-out`));
+  const src = await freshDir(path.join(os.tmpdir(), `skinnyvideo-pause-td-${mode}-src`));
+  const dest = await freshDir(path.join(os.tmpdir(), `skinnyvideo-pause-td-${mode}-out`));
   await fsp.copyFile(TINY, path.join(src, 'a_clip.mov'));
   await fsp.copyFile(LONG, path.join(src, 'b_clip.mov'));
   const BID = `TD-${mode}`;

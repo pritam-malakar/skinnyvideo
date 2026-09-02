@@ -32,14 +32,14 @@
                     set converges (path pruned + re-pushed).
 
    Run:  MODE=<mode> ./node_modules/.bin/electron test/skip_remove_test.js
-   Fixture: SQUEEZE_TEST_CLIP env var, else test/fixtures/tiny_clip.mov, else
+   Fixture: SKINNYVIDEO_TEST_CLIP env var, else test/fixtures/tiny_clip.mov, else
    the legacy CompressorTest path. Generate the local fixture with the
    bundled engine (from the repo root):
      ./resources/bin/ffmpeg -f lavfi -i testsrc=duration=2:size=640x360:rate=15 \
        -f lavfi -i sine=frequency=440:duration=2 \
        -c:v h264_videotoolbox -b:v 800k -c:a aac test/fixtures/tiny_clip.mov
    LONG fixture (liveskip/unskip/skipui need a wide first-file encode window;
-   SQUEEZE_TEST_CLIP_LONG env var, else test/fixtures/long_clip.mov):
+   SKINNYVIDEO_TEST_CLIP_LONG env var, else test/fixtures/long_clip.mov):
      ./resources/bin/ffmpeg -f lavfi -i testsrc=duration=60:size=3840x2160:rate=15 \
        -f lavfi -i sine=frequency=440:duration=60 \
        -c:v h264_videotoolbox -b:v 12M -c:a aac test/fixtures/long_clip.mov
@@ -59,19 +59,19 @@ const MODE = process.env.MODE || 'skip';
 /* Fixture resolution: env override → repo-local generated clip → legacy path.
    See the header for the one-line generation command. */
 const CLIP_CANDIDATES = [
-  process.env.SQUEEZE_TEST_CLIP,
+  process.env.SKINNYVIDEO_TEST_CLIP,
   path.join(__dirname, 'fixtures', 'tiny_clip.mov'),
   '/Users/macmini1/Downloads/CompressorTest/Source/Project A/C0224.mov'
 ].filter(Boolean);
 const SMALL_CLIP = CLIP_CANDIDATES.find((p) => fs.existsSync(p)) || CLIP_CANDIDATES[0];
 const LONG_CANDIDATES = [
-  process.env.SQUEEZE_TEST_CLIP_LONG,
+  process.env.SKINNYVIDEO_TEST_CLIP_LONG,
   path.join(__dirname, 'fixtures', 'long_clip.mov')
 ].filter(Boolean);
 const LONG_CLIP = LONG_CANDIDATES.find((p) => fs.existsSync(p)) || LONG_CANDIDATES[0];
 const NEEDS_LONG = new Set(['skipui', 'liveskip', 'unskip']);
-const DEST = path.join(os.tmpdir(), `squeeze-sr-out-${MODE}`);
-const SRCDIR = path.join(os.tmpdir(), `squeeze-sr-src-${MODE}`);
+const DEST = path.join(os.tmpdir(), `skinnyvideo-sr-out-${MODE}`);
+const SRCDIR = path.join(os.tmpdir(), `skinnyvideo-sr-src-${MODE}`);
 
 const PASS = [], FAIL = [];
 const check = (c, l) => { (c ? PASS : FAIL).push(l); console.log((c ? 'PASS' : 'FAIL') + ': ' + l); };
