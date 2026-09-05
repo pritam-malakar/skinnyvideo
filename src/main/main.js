@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, MenuItem } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
@@ -237,6 +237,51 @@ function stopRunThenQuit(finish) {
   });
 }
 
+/* ─── Attribution: native About panel + a way to read the shipped licenses ──
+   SkinnyVideo is GPL-2.0-or-later and bundles GPL'd FFmpeg/x265, MIT Electron
+   and OFL fonts, so the credits below are an obligation, not decoration. We
+   use macOS's own About panel and the default app menu — no new UI, no
+   renderer involvement.
+
+   The full license texts ship as plain files in Contents/Resources/licenses
+   (see extraResources in package.json); the menu item just opens that folder
+   in Finder so they can actually be read. */
+const CREDITS = [
+  'Licensed under the GNU GPL, version 2 or later.',
+  "This software uses code of FFmpeg licensed under the GPLv2 and its source can be downloaded from the project's releases page.",
+  'HEVC encoding by x265 (GPL-2.0-or-later). Hardware encoding via Apple VideoToolbox.',
+  'Built with Electron (MIT). Fonts: Geist and Geist Mono by Vercel, Poppins by Indian Type Foundry — SIL Open Font License 1.1.',
+].join('\n');
+
+/* Packaged: Contents/Resources/licenses. Dev (`npm start`): there is no
+   Resources dir, so fall back to the repo root, which holds LICENSE. */
+function licensesDir() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'licenses')
+    : path.join(__dirname, '..', '..');
+}
+
+function installAboutAndCredits() {
+  app.setAboutPanelOptions({
+    applicationName: 'Skinnyvideo',
+    applicationVersion: app.getVersion(),
+    copyright: '© 2026 Pritam Malakar',
+    credits: CREDITS,
+  });
+
+  /* Take the default menu Electron already built and insert one item, rather
+     than restating the whole macOS template (and risking losing standard
+     roles). items[0] is the app-name menu; index 1 puts us directly below
+     "About SkinnyVideo". */
+  const menu = Menu.getApplicationMenu();
+  if (!menu || !menu.items.length || !menu.items[0].submenu) return;
+  menu.items[0].submenu.insert(1, new MenuItem({
+    label: 'Third-Party Licenses',
+    click: () => { shell.openPath(licensesDir()); },
+  }));
+  Menu.setApplicationMenu(menu);
+}
+
 app.whenReady().then(() => {
   migrateLegacyUserData();   // MUST precede any prefs/history read
   loadPrefs();
@@ -250,6 +295,7 @@ app.whenReady().then(() => {
     return;
   }
   createWindow();
+  installAboutAndCredits();
 
   /* Orphaned-partial sweep (BUG 2 — intended scope, documented):
      On every launch we scan EVERY output folder SkinnyVideo has written to —

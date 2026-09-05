@@ -9,8 +9,8 @@
     "dist": "sh scripts/release.sh",
     "postinstall": "node scripts/fix-electron.js"
   },
-  "author": "SkinnyVideo",
-  "license": "UNLICENSED",
+  "author": "Pritam Malakar",
+  "license": "GPL-2.0-or-later",
   "engines": {
     "node": "22.x"
   },
@@ -34,6 +34,26 @@
           "ffmpeg",
           "ffprobe"
         ]
+      },
+      {
+        "from": "LICENSE",
+        "to": "licenses/LICENSE"
+      },
+      {
+        "from": "node_modules/electron/dist/LICENSE",
+        "to": "licenses/LICENSE.electron.txt"
+      },
+      {
+        "from": "node_modules/electron/dist/LICENSES.chromium.html",
+        "to": "licenses/LICENSES.chromium.html"
+      },
+      {
+        "from": "licenses/LICENSE-Geist.txt",
+        "to": "licenses/LICENSE-Geist.txt"
+      },
+      {
+        "from": "licenses/LICENSE-Poppins.txt",
+        "to": "licenses/LICENSE-Poppins.txt"
       }
     ],
     "mac": {
