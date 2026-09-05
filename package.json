@@ -11,6 +11,14 @@
   },
   "author": "Pritam Malakar",
   "license": "GPL-2.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pritam-malakar/skinnyvideo.git"
+  },
+  "homepage": "https://skinnyvideo.app",
+  "bugs": {
+    "url": "https://github.com/pritam-malakar/skinnyvideo/issues"
+  },
   "engines": {
     "node": "22.x"
   },

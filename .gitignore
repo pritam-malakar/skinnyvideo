@@ -2,7 +2,22 @@ node_modules/
 dist/
 .DS_Store
 *.log
+
+# Secrets and signing material — never commit
+.env
+.env.*
+*.env
+*.p8
+*.p12
+*.pem
+*.cer
+*.mobileprovision
+.appstoreconnect/
+
+# Large local test fixtures (generated or supplied out-of-band)
+test/fixtures/generated/
 test/fixtures/tiny_clip.mov
 test/fixtures/long_clip.mov
+
 docs/
 test/bg_bake_verify.js
