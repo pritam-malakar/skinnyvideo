@@ -1,14 +1,17 @@
-// Pilot test against /Users/macmini1/Downloads/CompressorTest only.
+// Pilot test against the synthesized CompressorTest fixture tree (see test/fixture_helper.js).
 const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
 const { spawnSync } = require('child_process');
 const { scanFolder, runBatch, dryRunBatch, getBinaries, humanBytes } = require('../src/encoder/pipeline');
 
-const TEST_ROOT = '/Users/macmini1/Downloads/CompressorTest';
+const { ensureFixtures, skip } = require('./fixture_helper');
+const FX = ensureFixtures();
+if (!FX) { skip('needs the bundled ffmpeg to synthesize the CompressorTest fixture tree'); process.exit(0); }
+const TEST_ROOT = FX.root;
 const SOURCE = path.join(TEST_ROOT, 'Source');
 const SOURCE_PROJECT = path.join(SOURCE, 'Project A');
-const SMALL_CLIP = path.join(SOURCE_PROJECT, 'C0224.mov'); // 11s, 4K H264, PCM
+const SMALL_CLIP = path.join(SOURCE_PROJECT, 'C0224.mov'); // 4K H264, PCM audio
 const OUTPUT_BASE = path.join(TEST_ROOT, 'Output');
 
 const PASS = [], FAIL = [];

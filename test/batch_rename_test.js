@@ -27,7 +27,10 @@ const { runQueue } = require(path.join(ROOT, 'src/main/queue-runner'));
 const { stageFileList } = require(path.join(ROOT, 'src/encoder/stage'));
 const { getBinaries, scanFolder } = require(path.join(ROOT, 'src/encoder/pipeline'));
 
-const SMALL_CLIP = '/Users/macmini1/Downloads/CompressorTest/Source/Project A/C0224.mov';
+const { ensureFixtures, skip } = require('./fixture_helper');
+const FX = ensureFixtures();
+if (!FX) { skip('needs the bundled ffmpeg to synthesize the CompressorTest fixture tree'); process.exit(0); }
+const SMALL_CLIP = FX.smallClip;
 const TEST_DEST = path.join(os.tmpdir(), 'rename-test-out-' + process.pid);
 
 const PASS = [], FAIL = [];

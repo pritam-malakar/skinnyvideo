@@ -7,7 +7,10 @@ const os = require('os');
 const { spawnSync } = require('child_process');
 const { runBatch, getBinaries, isVideoFile } = require('../src/encoder/pipeline');
 
-const TEST_ROOT = '/Users/macmini1/Downloads/CompressorTest';
+const { ensureFixtures, skip } = require('./fixture_helper');
+const FX = ensureFixtures();
+if (!FX) { skip('needs the bundled ffmpeg to synthesize the CompressorTest fixture tree'); process.exit(0); }
+const TEST_ROOT = FX.root;
 const SOURCE_PROJECT = path.join(TEST_ROOT, 'Source', 'Project A');
 const SMALL_CLIP = path.join(SOURCE_PROJECT, 'C0224.mov');
 const OUTPUT_BASE = path.join(TEST_ROOT, 'Output');
@@ -99,7 +102,7 @@ async function stageFilesAsBatch(batchId, fileSources, dest, tier) {
   const synthRes = spawnSync(ffmpeg, [
     '-y','-hide_banner','-loglevel','error',
     '-f','lavfi','-i', 'testsrc=size=640x480:duration=1:rate=30',
-    '-c:v','libx264','-pix_fmt','yuv420p', synthA
+    '-c:v','h264_videotoolbox','-b:v','2M','-pix_fmt','yuv420p', synthA
   ]);
   check(synthRes.status === 0, 'synthesized second file');
 

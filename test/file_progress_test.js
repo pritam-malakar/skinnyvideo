@@ -21,8 +21,11 @@ const ROOT = path.join(__dirname, '..');
 const { runBatch, scanFolder } = require(path.join(ROOT, 'src/encoder/pipeline'));
 const { runQueue } = require(path.join(ROOT, 'src/main/queue-runner'));
 
-const SHORT = '/Users/macmini1/Downloads/CompressorTest/Source/Project A/C0224.mov';  // ~11s → finishes fast
-const LONG = '/Users/macmini1/Downloads/CompressorTest/gate/FAQs.mov';                // ~240s → still running
+const { ensureFixtures, skip } = require('./fixture_helper');
+const FX = ensureFixtures();
+if (!FX) { skip('needs the bundled ffmpeg to synthesize the short/long clip pair'); process.exit(0); }
+const SHORT = FX.smallClip;   // short → finishes fast
+const LONG = FX.longClip;     // long  → still encoding when SHORT is done
 const DEST = path.join(os.tmpdir(), 'skinnyvideo-fileprog-out');
 
 const PASS = [], FAIL = [];
@@ -83,7 +86,10 @@ app.whenReady().then(async () => {
   await wait(400);
 
   // resolve --green to rgb via a probe (compare resolved rgb, not the hex string)
-  const greenRgb = await run(`(() => { const e=document.createElement('span'); document.body.appendChild(e); e.style.color='var(--green)'; const c=getComputedStyle(e).color; e.remove(); return c; })()`);
+  // The done bar is painted with --mint (styles.css: .qrow .status.done
+  // .progressbar > i). --green is a legacy alias that now resolves to --fg,
+  // so probing it would compare the bar against the body text colour.
+  const doneRgb = await run(`(() => { const e=document.createElement('span'); document.body.appendChild(e); e.style.color='var(--mint)'; const c=getComputedStyle(e).color; e.remove(); return c; })()`);
 
   // seed one 2-file batch (short then long) via the real add flow
   await run(`document.getElementById('choose-dest').click(); true;`); await wait(150);
@@ -126,11 +132,11 @@ app.whenReady().then(async () => {
   check(doneAll100,
     `(c) earlier DONE file's bar stays 100% while a later file encodes (widths=[${doneWidths.map(w=>Number.isFinite(w)?w.toFixed(1):'?').join(',')}])`);
 
-  // (b) the DONE file's bar is EXACTLY 100% and GREEN
+  // (b) the DONE file's bar is EXACTLY 100% and carries the done accent
   check(doneWidths.length > 0 && Math.abs(doneWidths[doneWidths.length - 1] - 100) < 0.5,
     `(b) DONE file's bar is exactly 100% (last=${doneWidths[doneWidths.length-1]})`);
-  check(doneColor === greenRgb,
-    `(b) DONE file's bar is green (got ${doneColor}, want ${greenRgb})`);
+  check(doneColor === doneRgb,
+    `(b) DONE file's bar carries the mint done accent (got ${doneColor}, want ${doneRgb})`);
 
   // stop the long encode + reap
   await run(`window.api.stopQueue && window.api.stopQueue(); true;`).catch(() => {});

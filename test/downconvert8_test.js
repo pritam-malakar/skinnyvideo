@@ -18,7 +18,9 @@ const REPO = path.join(__dirname, '..');
 const { buildArgs, buildFallbackArgs, tierDefaults } = require(path.join(REPO, 'src/encoder/pipeline'));
 const FFMPEG = path.join(REPO, 'resources/bin/ffmpeg');
 const FFPROBE = path.join(REPO, 'resources/bin/ffprobe');
-const CLIP = '/Users/macmini1/Downloads/IMG_0332.mov';
+const { ensureFixtures, skip } = require('./fixture_helper');
+const FX = ensureFixtures();
+const CLIP = FX ? FX.hdrClip : null;
 const SCRATCH = '/tmp/skinnyvideo_dc8';
 
 const PASS = [], FAIL = [];
@@ -101,8 +103,8 @@ const mkFb = (vs, extra) => buildFallbackArgs({
 
 // ── D: REAL encode — IMG_0332 with downconvert8 ON → 8-bit Main + color survives ──
 (() => {
-  if (!fs.existsSync(CLIP) || !fs.existsSync(FFMPEG)) {
-    check(false, `DECISIVE real-encode SKIPPED — clip or bundled ffmpeg missing (${CLIP})`);
+  if (!CLIP || !fs.existsSync(CLIP) || !fs.existsSync(FFMPEG)) {
+    skip('DECISIVE real-encode — needs the bundled ffmpeg to synthesize a 10-bit HLG source');
     return;
   }
   fs.rmSync(SCRATCH, { recursive: true, force: true });
