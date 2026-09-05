@@ -1,0 +1,9 @@
+lazy-val 1.0.5
+
+Declared license: MIT (package.json "license" field).
+Author: Vladimir Krivosheev
+Upstream: https://github.com/develar/lazy-val
+
+This package ships no LICENSE file of its own; the line above is the
+license it declares. No license text has been substituted here, because
+inventing one would misstate the copyright holder's terms.

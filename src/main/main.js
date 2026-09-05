@@ -13,6 +13,7 @@ const { writeJsonAtomic } = require('./prefs-store');
 const { appendHistoryEntry, readHistory } = require('./history-store');
 const { RUN_DIALOG, handleCloseAttempt, applyProgressToQuitState } = require('./close-guard');
 const { beginCancel, quitViaCancel } = require('./quit-teardown');
+const { installUpdater } = require('./updater');
 
 let mainWindow = null;
 let stopRequested = false;
@@ -28,6 +29,9 @@ const quitState = {
 /* The in-flight runQueue promise, held so "Stop and quit" can await REAL
    encoder exit + cleanup instead of guessing at a timeout. */
 let runPromise = null;
+/* Auto-update handle (installed at whenReady; a no-op object in dev). Held so
+   the end of a run can flush a restart prompt that was held back mid-encode. */
+let updater = { notifyIdle() {} };
 /* The LIVE batch list the running queue is draining (the same array object
    passed to runQueue). Mid-run drops are appended here via 'enqueue-batch', and
    runQueue's loop re-reads `.length` each turn so it absorbs them in the SAME
@@ -251,6 +255,7 @@ const CREDITS = [
   "This software uses code of FFmpeg licensed under the GPLv2 and its source can be downloaded from the project's releases page.",
   'HEVC encoding by x265 (GPL-2.0-or-later). Hardware encoding via Apple VideoToolbox.',
   'Built with Electron (MIT). Fonts: Geist and Geist Mono by Vercel, Poppins by Indian Type Foundry — SIL Open Font License 1.1.',
+  'Updates via electron-updater (MIT).',
 ].join('\n');
 
 /* Packaged: Contents/Resources/licenses. Dev (`npm start`): there is no
@@ -296,6 +301,14 @@ app.whenReady().then(() => {
   }
   createWindow();
   installAboutAndCredits();
+
+  /* Auto-update. Packaged builds only; the module no-ops in dev. isBusy is the
+     same pair the close-guard arms on, so a downloaded update can never
+     interrupt an encode or the container flush that follows it. */
+  updater = installUpdater({
+    isBusy: () => queueRunning || quitState.isFinalizing,
+    getWindow: () => mainWindow,
+  });
 
   /* Orphaned-partial sweep (BUG 2 — intended scope, documented):
      On every launch we scan EVERY output folder SkinnyVideo has written to —
@@ -507,6 +520,9 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
       totals: totals || { processed: 0, failed: 0, failedCopied: 0, failedNoCopy: 0, failedDestLost: 0, destLost: false, skippedNonVideo: 0, reclaimed: 0, alreadyDone: 0 },
       stopped: stopRequested
     });
+    /* The queue is idle now, so a restart prompt held back during the run is
+       safe to show. No-op when there is nothing pending. */
+    try { updater.notifyIdle(); } catch { /* never let this break a run's teardown */ }
   }
   return { ok: true };
 });

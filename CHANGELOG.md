@@ -4,6 +4,10 @@
 
 First public release.
 
+- Automatic updates. SkinnyVideo checks for a new version shortly after
+  launch and every six hours, downloads it in the background, and offers to
+  restart once it is ready — never while a queue is running. Declining costs
+  nothing: the update is applied the next time you quit.
 - Builds are now Developer ID signed, hardened-runtime, notarized and stapled.
 - Licensed under the GNU GPL v2 or later; bundled component credits are now in
   the About panel and a Third-Party Licenses folder inside the app.

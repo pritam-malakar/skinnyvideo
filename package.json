@@ -70,6 +70,10 @@
       {
         "from": "licenses/LICENSE-Poppins.txt",
         "to": "licenses/LICENSE-Poppins.txt"
+      },
+      {
+        "from": "licenses/npm",
+        "to": "licenses/npm"
       }
     ],
     "mac": {
@@ -95,5 +99,8 @@
       "entitlementsInherit": "build/entitlements.mac.plist",
       "notarize": true
     }
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }
