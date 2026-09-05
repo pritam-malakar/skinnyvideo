@@ -20,7 +20,10 @@ const { flattenRunDir } = require(path.join(ROOT, 'src/encoder/flatten'));
 const { stageFileList } = require(path.join(ROOT, 'src/encoder/stage'));
 const { getBinaries } = require(path.join(ROOT, 'src/encoder/pipeline'));
 
-const SMALL_CLIP = '/Users/macmini1/Downloads/CompressorTest/Source/Project A/C0224.mov';
+const { ensureFixtures } = require('./fixture_helper');
+const FX = ensureFixtures();
+// '' when the bundled ffmpeg is absent, so the existsSync guard below skips cleanly.
+const SMALL_CLIP = FX ? FX.smallClip : '';
 const TEST_DEST = path.join(os.tmpdir(), 'ui-sizes-out');
 const SRCDIR = path.join(os.tmpdir(), 'ui-sizes-src');
 let BATCH_FILES = [];   // [ [b1 files...], [b2 files...] ]

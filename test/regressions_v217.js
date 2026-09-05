@@ -12,7 +12,10 @@ const PASS = [], FAIL = [];
 function check(cond, label) { (cond ? PASS : FAIL).push(label); console.log((cond ? 'PASS' : 'FAIL') + ': ' + label); }
 function header(t) { console.log('\n==== ' + t + ' ===='); }
 
-const SMALL_CLIP = '/Users/macmini1/Downloads/CompressorTest/Source/Project A/C0224.mov';
+const { ensureFixtures } = require('./fixture_helper');
+const FX = ensureFixtures();
+// '' when the bundled ffmpeg is absent, so the existsSync guard below skips cleanly.
+const SMALL_CLIP = FX ? FX.smallClip : '';
 
 (async () => {
   const sandbox = await fsp.mkdtemp(path.join(os.tmpdir(), 'skinnyvideo-reg-'));

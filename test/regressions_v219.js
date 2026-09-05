@@ -16,7 +16,10 @@ const { runBatch, getBinaries } = require('../src/encoder/pipeline');
 const PASS = [], FAIL = [];
 const check = (c, l) => { (c ? PASS : FAIL).push(l); console.log((c ? 'PASS' : 'FAIL') + ': ' + l); };
 const header = (t) => console.log('\n==== ' + t + ' ====');
-const SMALL_CLIP = '/Users/macmini1/Downloads/CompressorTest/Source/Project A/C0224.mov';
+const { ensureFixtures } = require('./fixture_helper');
+const FX = ensureFixtures();
+// '' when the bundled ffmpeg is absent, so the existsSync guard below skips cleanly.
+const SMALL_CLIP = FX ? FX.smallClip : '';
 
 (async () => {
   if (!fs.existsSync(SMALL_CLIP) || !fs.existsSync(getBinaries().ffmpeg)) {

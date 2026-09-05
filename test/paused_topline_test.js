@@ -26,7 +26,10 @@ const ROOT = path.join(__dirname, '..');
 const { runQueue } = require(path.join(ROOT, 'src/main/queue-runner'));
 const { getBinaries, scanFolder } = require(path.join(ROOT, 'src/encoder/pipeline'));
 
-const SMALL_CLIP = '/Users/macmini1/Downloads/CompressorTest/Source/Project A/C0224.mov';
+const { ensureFixtures } = require('./fixture_helper');
+const FX = ensureFixtures();
+// '' when the bundled ffmpeg is absent, so the existsSync guard below skips cleanly.
+const SMALL_CLIP = FX ? FX.smallClip : '';
 const TEST_DEST = path.join(os.tmpdir(), 'paused-test-out-' + process.pid);
 
 const PASS = [], FAIL = [];

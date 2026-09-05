@@ -13,7 +13,7 @@ const { spawnSync } = require('child_process');
 const REPO = path.join(__dirname, '..');
 const FFMPEG = path.join(REPO, 'resources/bin/ffmpeg');
 const ROOT = path.join(REPO, 'test/fixtures/generated');
-const RECIPE = 'v1';                       // bump to force a rebuild
+const RECIPE = 'v2';                       // bump to force a rebuild
 const STAMP = path.join(ROOT, '.built-' + RECIPE);
 
 const SOURCE = path.join(ROOT, 'Source');
@@ -45,10 +45,13 @@ function build() {
   }
 
   // C0224.mov — the clip pilot asserts 4K on, with PCM audio so the AAC
-  // re-encode assertion stays meaningful.
+  // re-encode assertion stays meaningful. The 40M bitrate is deliberate: it
+  // stands in for camera footage, so the app's HEVC pass actually reclaims
+  // space. Encoded leaner (12M) the HEVC output comes out LARGER than the
+  // source and ui_sizes_test's Reclaimed assertions read 0.
   run(['-f', 'lavfi', '-i', 'testsrc2=size=3840x2160:rate=30:duration=3',
        '-f', 'lavfi', '-i', 'sine=frequency=440:duration=3',
-       '-c:v', 'h264_videotoolbox', '-b:v', '12M', '-pix_fmt', 'yuv420p',
+       '-c:v', 'h264_videotoolbox', '-b:v', '40M', '-pix_fmt', 'yuv420p',
        '-c:a', 'pcm_s16le', '-shortest', paths.smallClip]);
 
   // Two more videos so Project A holds the 3 the scan test expects.

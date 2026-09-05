@@ -7,6 +7,8 @@ dist/
 .env
 .env.*
 *.env
+.claude/settings.local.json
+**/settings.local.json
 *.p8
 *.p12
 *.pem

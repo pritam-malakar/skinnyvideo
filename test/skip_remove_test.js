@@ -56,17 +56,19 @@ const { flattenRunDir } = require(path.join(ROOT, 'src/encoder/flatten'));
 const { stageFileList } = require(path.join(ROOT, 'src/encoder/stage'));
 
 const MODE = process.env.MODE || 'skip';
-/* Fixture resolution: env override → repo-local generated clip → legacy path.
-   See the header for the one-line generation command. */
+/* Fixture resolution: env override → repo-local clip → synthesized fixture. */
+const { ensureFixtures } = require('./fixture_helper');
+const FX = ensureFixtures();
 const CLIP_CANDIDATES = [
   process.env.SKINNYVIDEO_TEST_CLIP,
   path.join(__dirname, 'fixtures', 'tiny_clip.mov'),
-  '/Users/macmini1/Downloads/CompressorTest/Source/Project A/C0224.mov'
+  FX && FX.smallClip
 ].filter(Boolean);
 const SMALL_CLIP = CLIP_CANDIDATES.find((p) => fs.existsSync(p)) || CLIP_CANDIDATES[0];
 const LONG_CANDIDATES = [
   process.env.SKINNYVIDEO_TEST_CLIP_LONG,
-  path.join(__dirname, 'fixtures', 'long_clip.mov')
+  path.join(__dirname, 'fixtures', 'long_clip.mov'),
+  FX && FX.longClip
 ].filter(Boolean);
 const LONG_CLIP = LONG_CANDIDATES.find((p) => fs.existsSync(p)) || LONG_CANDIDATES[0];
 const NEEDS_LONG = new Set(['skipui', 'liveskip', 'unskip']);

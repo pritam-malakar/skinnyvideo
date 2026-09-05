@@ -26,7 +26,10 @@ const { scanFolder, getBinaries, tierDefaults } = require(path.join(ROOT, 'src/e
 const { runQueue } = require(path.join(ROOT, 'src/main/queue-runner'));
 
 const MODE = process.env.MODE || 'removequeued';
-const SMALL_CLIP = '/Users/macmini1/Downloads/CompressorTest/Source/Project A/C0224.mov';
+const { ensureFixtures } = require('./fixture_helper');
+const FX = ensureFixtures();
+// '' when the bundled ffmpeg is absent, so the existsSync guard below skips cleanly.
+const SMALL_CLIP = FX ? FX.smallClip : '';
 const DEST = path.join(os.tmpdir(), `skinnyvideo-rmq-out-${MODE}`);
 const SRCDIR = path.join(os.tmpdir(), `skinnyvideo-rmq-src-${MODE}`);
 
