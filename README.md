@@ -25,16 +25,19 @@ which is GPL-licensed. Distributing the app therefore carries the GPL's
 corresponding-source obligation, which is met by attaching the FFmpeg and x265
 sources to each release.
 
-Two further documents will be added with the next release, once the bundled
-FFmpeg has been rebuilt from a pinned, in-repo recipe so that they describe the
-binary that actually ships:
+The bundled `ffmpeg`/`ffprobe` are built by this repository's own pinned recipe,
+[`scripts/build-ffmpeg.sh`](scripts/build-ffmpeg.sh) (FFmpeg + x265 + Apple
+VideoToolbox, nothing else), so the two documents below describe the binary
+that actually ships:
 
-- `THIRD-PARTY-NOTICES.md` — every bundled component, its version and license
-- `CORRESPONDING-SOURCE.md` — how to obtain the exact sources under GPL §3
+- [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) — every bundled component,
+  its version, license and copyright notice, and the exact build configuration
+- [CORRESPONDING-SOURCE.md](CORRESPONDING-SOURCE.md) — the pinned source
+  tarballs and checksums attached to each release, and how to rebuild from them
 
-In the meantime, the full license texts for everything shipped are inside the
-app itself: **SkinnyVideo → Third-Party Licenses** in the menu bar opens the
-folder, and **About SkinnyVideo** lists the credits.
+The full license texts for everything shipped are also inside the app itself:
+**SkinnyVideo → Third-Party Licenses** in the menu bar opens the folder, and
+**About SkinnyVideo** lists the credits.
 
 ## Credits
 

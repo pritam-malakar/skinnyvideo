@@ -30,12 +30,14 @@ const check = (c, l) => { (c ? PASS : FAIL).push(l); console.log((c ? 'PASS' : '
 const note = (l) => console.log('NOTE: ' + l);
 
 // Make a tiny REAL mp4 with the bundled ffmpeg so scanFolder/ffprobe accept it.
+// -c:v is EXPLICIT so this can never fall to the muxer's default encoder
+// (the bundled ffmpeg is native + libx265 + VideoToolbox only — no libx264).
 function makeSampleMp4(dest) {
   const { ffmpeg } = getBinaries();
   return new Promise((resolve, reject) => {
     execFile(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y',
       '-f', 'lavfi', '-i', 'testsrc=duration=1:size=128x128:rate=10',
-      '-pix_fmt', 'yuv420p', dest], (err) => err ? reject(err) : resolve());
+      '-c:v', 'h264_videotoolbox', '-pix_fmt', 'yuv420p', dest], (err) => err ? reject(err) : resolve());
   });
 }
 

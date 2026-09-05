@@ -59,11 +59,13 @@ app.whenReady().then(async () => {
 
   const startRun = () => {
     /* -re paces the source at REALTIME so this is a genuinely long-running
-       encode (~300 s wall clock). Without it, ultrafast finishes in seconds and
-       a graceful stop-after-current-file would look indistinguishable from a
-       cancel — the timing assertion below would prove nothing. */
+       encode (~300 s wall clock) REGARDLESS of encoder speed. Without it the
+       encode (h264_videotoolbox — hardware, far faster than realtime; the
+       bundled ffmpeg has no libx264) finishes in seconds and a graceful
+       stop-after-current-file would look indistinguishable from a cancel —
+       the timing assertion below would prove nothing. */
     child = spawn(FFMPEG, ['-y', '-re', '-f', 'lavfi', '-i', 'testsrc=size=640x480:rate=30',
-      '-t', '300', '-c:v', 'libx264', '-preset', 'ultrafast', OUT], { stdio: 'ignore' });
+      '-t', '300', '-c:v', 'h264_videotoolbox', OUT], { stdio: 'ignore' });
     child.on('exit', () => { quitState.queueRunning = false; });
     quitState.queueRunning = true;
     // main.js shape: runtime state carries the live child; runPromise unwinds

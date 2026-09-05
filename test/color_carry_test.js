@@ -40,7 +40,8 @@ function header(t) { console.log('\n==== ' + t + ' ===='); }
   const gen = async (out, vf) => {
     const a = ['-y', '-nostdin', '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=25:duration=1'];
     if (vf) a.push('-vf', vf);
-    a.push('-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-an', out);
+    // h264_videotoolbox: the bundled ffmpeg has no libx264 (native + libx265 + VideoToolbox only).
+    a.push('-c:v', 'h264_videotoolbox', '-pix_fmt', 'yuv420p', '-an', out);
     return (await runCmd(ffmpeg, a, { stallTimeoutMs: 30000 })).code === 0;
   };
   // colr-only shape: VUI carries primaries/matrix but transfer EXPLICITLY

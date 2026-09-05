@@ -133,11 +133,26 @@ else
   fi
 fi
 
-# ── 7. Report ────────────────────────────────────────────────────────────────
+# ── 7. Corresponding source (GPL §3) ─────────────────────────────────────────
+# The dmg ships GPL'd ffmpeg/ffprobe, so every release must carry the exact
+# sources they were built from. This downloads the two pinned tarballs, fails
+# on any checksum mismatch, and stages them with the build script in
+# dist/corresponding-source/ — attach them to the GitHub release next to the
+# dmg and zip. See CORRESPONDING-SOURCE.md.
+echo
+echo "release: assembling corresponding source"
+sh scripts/fetch-corresponding-source.sh "$DIST_DIR/corresponding-source"
+
+# ── 8. Report ────────────────────────────────────────────────────────────────
 echo
 echo "release: artifacts in $DIST_DIR/"
 find "$DIST_DIR" -maxdepth 1 -type f \
   \( -name '*.dmg' -o -name '*.zip' -o -name '*.blockmap' \) \
+  -exec ls -lh {} \; | awk '{printf "  %-46s %s\n", $NF, $5}'
+echo
+echo "release: corresponding source in $DIST_DIR/corresponding-source/ (attach to the release)"
+find "$DIST_DIR/corresponding-source" -maxdepth 1 -type f \
+  \( -name '*.tar.xz' -o -name '*.tar.gz' -o -name 'build-ffmpeg.sh' -o -name 'SHA256SUMS' \) \
   -exec ls -lh {} \; | awk '{printf "  %-46s %s\n", $NF, $5}'
 echo
 echo "release: done — signed, notarized and stapled."
