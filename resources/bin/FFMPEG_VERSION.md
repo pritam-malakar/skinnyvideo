@@ -29,11 +29,17 @@ ffprobe  33303773efb8a6279fbdcffdbebe55258c4e5dbd6f53fb2774118a215aefebfb
 
 ## Signing
 
-Ad-hoc signed at **build time** by the electron-builder `afterPack` hook
-([scripts/sign-ffmpeg.js](../../scripts/sign-ffmpeg.js)) so a clean install on
-Apple Silicon does not SIGKILL an unsigned binary. The committed copies are also
-ad-hoc signed, but the build re-signs unconditionally — re-vendoring an unsigned
-binary is therefore safe.
+Signed at **build time** with the project's Developer ID identity, hardened
+runtime and a secure timestamp. `@electron/osx-sign` walks the whole app bundle
+and picks these up automatically from `Contents/Resources/bin` — no extra build
+config is needed. A clean install on Apple Silicon therefore never sees an
+unsigned binary (which the kernel would SIGKILL).
+
+The committed copies here are ad-hoc signed, but the release build re-signs
+unconditionally, so re-vendoring an unsigned binary is safe. Verify a build
+with `codesign -dvv` on the copies inside the packaged `.app`: each must show
+Authority `Developer ID Application`, TeamIdentifier `5Q58R4CVQY`, and
+`flags=0x10000(runtime)`.
 
 ## Replacing this binary (do NOT do casually)
 

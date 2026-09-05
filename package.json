@@ -6,7 +6,7 @@
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --mac --arm64",
+    "dist": "sh scripts/release.sh",
     "postinstall": "node scripts/fix-electron.js"
   },
   "author": "SkinnyVideo",
@@ -22,7 +22,6 @@
     "appId": "com.pritammalakar.skinnyvideo",
     "productName": "SkinnyVideo",
     "asar": true,
-    "afterPack": "scripts/sign-ffmpeg.js",
     "files": [
       "src/**/*",
       "package.json"
@@ -31,18 +30,34 @@
       {
         "from": "resources/bin",
         "to": "bin",
-        "filter": ["ffmpeg", "ffprobe"]
+        "filter": [
+          "ffmpeg",
+          "ffprobe"
+        ]
       }
     ],
     "mac": {
       "category": "public.app-category.video",
       "icon": "build/skinnyvideo.icns",
       "target": [
-        { "target": "dir", "arch": ["arm64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
       ],
-      "hardenedRuntime": false,
+      "hardenedRuntime": true,
       "gatekeeperAssess": false,
-      "identity": null
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true
     }
   }
 }
