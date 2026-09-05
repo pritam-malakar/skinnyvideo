@@ -30,6 +30,14 @@
     "appId": "com.pritammalakar.skinnyvideo",
     "productName": "SkinnyVideo",
     "asar": true,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "pritam-malakar",
+        "repo": "skinnyvideo",
+        "releaseType": "release"
+      }
+    ],
     "files": [
       "src/**/*",
       "package.json"

@@ -20,14 +20,14 @@
 # staple below. The zip needs nothing: stapler cannot staple a zip archive, and
 # it does not need to, because it contains the already-stapled .app.
 #
-# ── WHEN A `publish` BLOCK IS ADDED LATER ────────────────────────────────────
-# latest-mac.yml must be produced AFTER the staple step. Stapling REWRITES the
-# dmg, so its size and sha512 change. If electron-builder's own publish step
-# runs as part of the build (before the staple below), the hashes it records in
-# latest-mac.yml describe the pre-staple file and every auto-update check will
-# fail its integrity check. Build with `--publish never`, staple, and only then
-# generate/upload latest-mac.yml — the same ordering reason the blockmap is
-# regenerated at the end of this script.
+# ── THE UPDATE FEED ──────────────────────────────────────────────────────────
+# package.json's build.publish block makes electron-builder emit
+# dist/latest-mac.yml. That file is written DURING the build, so its dmg size
+# and sha512 describe the pre-staple dmg; stapling below rewrites the dmg and
+# invalidates them. We therefore build with `--publish never` (electron-builder
+# must never upload anything — releases are cut deliberately, by hand) and
+# repoint the dmg entry after stapling, the same ordering reason the blockmap
+# is regenerated below. Uploading is a separate, explicit step.
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -58,7 +58,7 @@ fi
 
 # ── 2. Build ─────────────────────────────────────────────────────────────────
 echo "release: building (Developer ID + hardened runtime + notarize)…"
-./node_modules/.bin/electron-builder --mac --arm64
+./node_modules/.bin/electron-builder --mac --arm64 --publish never
 
 # ── 3. Locate exactly one dmg ────────────────────────────────────────────────
 dmg_count=$(find "$DIST_DIR" -maxdepth 1 -name '*.dmg' | wc -l | tr -d ' ')
@@ -133,7 +133,25 @@ else
   fi
 fi
 
-# ── 7. Corresponding source (GPL §3) ─────────────────────────────────────────
+# ── 7. Repoint the update feed at the stapled dmg ────────────────────────────
+# See the header. The dmg the updater will download is the STAPLED one; the yml
+# still describes the pre-staple bytes. Rewrite the dmg entry (size, sha512,
+# blockMapSize) and verify the zip entry, which stapling does not touch.
+YML="$DIST_DIR/latest-mac.yml"
+ZIP=$(find "$DIST_DIR" -maxdepth 1 -name '*-mac.zip')
+if [ ! -f "$YML" ]; then
+  echo "release: $YML was not produced. build.publish is missing from package.json, or electron-builder changed its behaviour. Refusing to continue with a release that has no update feed." >&2
+  exit 1
+fi
+if [ ! -f "$ZIP" ]; then
+  echo "release: no *-mac.zip found in $DIST_DIR/ — cannot verify the feed's zip entry." >&2
+  exit 1
+fi
+echo
+echo "release: repointing $YML at the stapled artifacts"
+node scripts/rewrite-update-feed.js "$YML" "$DMG" "$ZIP"
+
+# ── 8. Corresponding source (GPL §3) ─────────────────────────────────────────
 # The dmg ships GPL'd ffmpeg/ffprobe, so every release must carry the exact
 # sources they were built from. This downloads the two pinned tarballs, fails
 # on any checksum mismatch, and stages them with the build script in
@@ -143,11 +161,11 @@ echo
 echo "release: assembling corresponding source"
 sh scripts/fetch-corresponding-source.sh "$DIST_DIR/corresponding-source"
 
-# ── 8. Report ────────────────────────────────────────────────────────────────
+# ── 9. Report ────────────────────────────────────────────────────────────────
 echo
 echo "release: artifacts in $DIST_DIR/"
 find "$DIST_DIR" -maxdepth 1 -type f \
-  \( -name '*.dmg' -o -name '*.zip' -o -name '*.blockmap' \) \
+  \( -name '*.dmg' -o -name '*.zip' -o -name '*.blockmap' -o -name 'latest-mac.yml' \) \
   -exec ls -lh {} \; | awk '{printf "  %-46s %s\n", $NF, $5}'
 echo
 echo "release: corresponding source in $DIST_DIR/corresponding-source/ (attach to the release)"
