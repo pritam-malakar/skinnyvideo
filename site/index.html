@@ -3,365 +3,515 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>SkinnyVideo for Mac — your footage, up to 96% smaller</title>
-<meta name="description" content="Free, open-source Mac app that batch-shrinks camera footage to HEVC. Completely local, no internet, originals never touched. Nerd Mode for pro control. Apple Silicon only." />
+<meta name="color-scheme" content="dark" />
+<title>Free video compressor for Mac, batch HEVC — SkinnyVideo</title>
+<meta name="description" content="Free, open-source video compressor for Mac. Batch-compress 4K, ProRes and H.264 footage to HEVC on Apple Silicon. Runs offline, originals never touched." />
 <link rel="canonical" href="https://skinnyvideo.app/" />
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://skinnyvideo.app/" />
-<meta property="og:title" content="SkinnyVideo for Mac — your footage, up to 96% smaller" />
-<meta property="og:description" content="Free, open-source batch HEVC compression for camera footage. Completely local. Originals never touched." />
+<meta property="og:title" content="Free video compressor for Mac, batch HEVC — SkinnyVideo" />
+<meta property="og:description" content="Free, open-source video compressor for Mac. Batch-compress 4K, ProRes and H.264 footage to HEVC on Apple Silicon. Runs offline, originals never touched." />
 <meta property="og:image" content="https://skinnyvideo.app/og.png" />
+<meta property="og:image:width" content="1600" />
+<meta property="og:image:height" content="1000" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="theme-color" content="#111111" />
-<!-- MOCKUP: Google Fonts stand in for self-hosted Geist / Poppins. Screenshots are embedded for preview; production serves files. -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Poppins:wght@500&display=swap" rel="stylesheet">
+<link rel="icon" href="favicon.svg" type="image/svg+xml" />
+<link rel="icon" href="favicon.ico" sizes="32x32" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<link rel="manifest" href="site.webmanifest" />
+<link rel="preload" href="fonts/Geist-latin.woff2" as="font" type="font/woff2" crossorigin />
+<script type="application/ld+json">[{"@context":"https://schema.org","@type":"SoftwareApplication","name":"SkinnyVideo","applicationCategory":"MultimediaApplication","operatingSystem":"macOS 11 or later (Apple Silicon)","description":"Free, open-source video compressor for Mac. Batch-compress 4K, ProRes and H.264 footage to HEVC on Apple Silicon. Runs offline, originals never touched.","url":"https://skinnyvideo.app/","downloadUrl":"https://github.com/pritam-malakar/skinnyvideo/releases/latest/download/SkinnyVideo-arm64.dmg","license":"https://www.gnu.org/licenses/old-licenses/gpl-2.0.html","isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"screenshot":"https://skinnyvideo.app/og.png","featureList":["Batch-compress whole folders of camera footage to HEVC at once","Two quality choices: Make It Fast (hardware HEVC via Apple VideoToolbox) and Slow But Better (software HEVC via x265)","Originals never touched; results land in a new folder","Runs entirely on your Mac, offline, with no telemetry","Nerd Mode with CRF, presets, quality scale, bit depth and dry runs"],"author":{"@type":"Person","name":"Pritam Malakar"}},{"@context":"https://schema.org","@type":"WebSite","name":"SkinnyVideo","url":"https://skinnyvideo.app/"},{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Does it work on Intel Macs?","acceptedAnswer":{"@type":"Answer","text":"No. SkinnyVideo runs only on Apple Silicon (M1 or later) on macOS 11 and up."}},{"@type":"Question","name":"Does it lose quality?","acceptedAnswer":{"@type":"Answer","text":"HEVC is lossy, so yes, technically. Both tiers are tuned to look visually identical; Slow But Better keeps the most detail at the smallest size."}},{"@type":"Question","name":"Does it upload my videos anywhere?","acceptedAnswer":{"@type":"Answer","text":"No. It runs entirely on your Mac with no internet connection and no telemetry. Your footage never leaves the machine."}},{"@type":"Question","name":"Is it safe to install?","acceptedAnswer":{"@type":"Answer","text":"Yes. It's signed and notarized by Apple, open source under GPL-2.0-or-later, and every release publishes a SHA-256 checksum."}},{"@type":"Question","name":"Where do the compressed files go?","acceptedAnswer":{"@type":"Answer","text":"Into a new folder next to your originals. The originals are never opened for writing, moved, or deleted."}},{"@type":"Question","name":"Can it compress ProRes?","acceptedAnswer":{"@type":"Answer","text":"Yes. A 172 GB ProRes master came out at 6.4 GB with Slow But Better."}},{"@type":"Question","name":"Can it compress iPhone video that's already HEVC?","acceptedAnswer":{"@type":"Answer","text":"Yes, with smaller gains: 266 MB to 62 MB in our test."}},{"@type":"Question","name":"How is it different from HandBrake?","acceptedAnswer":{"@type":"Answer","text":"HandBrake is a full manual transcoder with hundreds of settings. SkinnyVideo is folder-first with two choices, and Nerd Mode when you want the settings back."}}]}]</script>
 <style>
+@font-face{font-family:'Geist';font-style:normal;font-weight:100 900;font-display:swap;src:url("fonts/Geist-latin.woff2") format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
 :root{
-  --mint:#5EE39B; --peri:#6B8AFF; --violet:#A97DFF; --cyan:#43C7EF; --orange:#FFAA5E; --coral:#FF6B6B;
-  --ink:#141414; --paper:#F5F5F5; --shot:#E3E3E3;
-  --canvas:#111111; --card:#1D1D1D; --card-2:#161616; --track:#2C2C2C;
-  --fg:#F5F5F5; --fg-2:#9A9A9A; --fg-3:#707070;
-  --r-xl:32px; --r-card:22px; --r-pill:999px;
-  --font:'Geist',system-ui,sans-serif; --font-sub:'Poppins',system-ui,sans-serif;
+  --paper:#111111; --paper-2:#181818; --tray:#1D1D1D; --tray-2:#222222;
+  --ink:#F5F5F5; --body:#C9C9CC; --muted:#8A8A90;
+  --hair:rgba(255,255,255,.08); --hair-2:rgba(255,255,255,.14);
+  --mint:#5EE39B; --peri:#6B8AFF; --violet:#A97DFF; --cyan:#43C7EF; --orange:#FFAA5E;
+  --accent:var(--mint); --btn-ink:#141414; --tier-ink:#111113;
+  --nav-bg:rgba(17,17,17,.82); --hover-bg:rgba(255,255,255,.06);
+  --tray-line:rgba(255,255,255,.06); --tray-img-line:rgba(255,255,255,.08);
+  --font:'Geist',system-ui,-apple-system,sans-serif;
+  --ease:cubic-bezier(.16,1,.3,1);
+  --r-frame:22px; --r-frame-in:12px; --r-box:16px;
+  --w:1200px; --gutter:32px; --sec:96px;
 }
 *{box-sizing:border-box}
-html,body{margin:0;padding:0;background:var(--canvas);color:var(--fg)}
-body{font-family:var(--font);font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums;letter-spacing:-.005em}
-svg,img{display:block;max-width:100%}
-a{color:inherit}
-*:focus-visible{outline:3px solid var(--mint);outline-offset:3px;border-radius:8px}
-::selection{background:var(--mint);color:var(--ink)}
-.wrap{max-width:1080px;margin:0 auto;padding:0 28px}
-h1,h2,h3{margin:0;letter-spacing:-.035em;line-height:1.05}
+html{scroll-behavior:smooth;scroll-padding-top:88px;background:var(--paper)}
+html,body{margin:0;padding:0}
+body{font-family:var(--font);font-size:17px;line-height:1.6;color:var(--body);background:var(--paper);-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums;font-feature-settings:"ss01"}
+img,svg{display:block;max-width:100%}
+a{color:inherit;text-decoration:none}
+:focus-visible{outline:2px solid var(--mint);outline-offset:3px;border-radius:6px}
+::selection{background:var(--mint);color:var(--btn-ink)}
+h1,h2,h3,h4{margin:0;color:var(--ink);font-weight:800;letter-spacing:-.035em;line-height:1.05;text-wrap:balance}
 p{margin:0}
-sup{font-size:.45em;vertical-align:top;position:relative;top:.2em;font-weight:700;color:var(--fg-2)}
-sup a{text-decoration:none}
-
-.h{font-size:clamp(36px,4.6vw,52px);font-weight:800}
-.h em{font-style:normal;color:var(--mint)}
-.line{font-size:17px;color:var(--fg-2);font-weight:500;max-width:58ch}
-.line b{color:var(--fg);font-weight:600}
-.label{font-family:var(--font-sub);font-size:14px;font-weight:500;color:var(--fg);margin-bottom:18px;display:inline-flex;align-items:center;gap:9px;background:var(--card);border-radius:var(--r-pill);padding:8px 16px 8px 12px}
-.label::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--fg-2)}
-.label.mint::before{background:var(--mint)}
-.label.cyan{color:var(--cyan)}.label.cyan::before{background:var(--cyan)}
-.label.orange{color:var(--orange)}.label.orange::before{background:var(--orange)}
-.label.coral::before{background:var(--coral)}
+ul,dl,dd{margin:0;padding:0}
+ul{list-style:none}
+sup{font-size:.4em;vertical-align:top;position:relative;top:.35em;font-weight:500;color:var(--muted);letter-spacing:0}
+sup a{padding:8px 9px;margin:-8px -9px}
+sup a:hover{color:var(--mint)}
+code{font-family:inherit;font-size:.92em;font-weight:500;color:var(--ink);background:var(--hair);border-radius:6px;padding:1px 7px;white-space:nowrap}
+.wrap{max-width:var(--w);margin:0 auto;padding:0 var(--gutter)}
+.skip{position:absolute;left:12px;top:-60px;background:var(--ink);color:var(--paper);padding:10px 14px;border-radius:999px;font-weight:500;font-size:14px;z-index:20}
+.skip:focus{top:12px}
+.label{display:flex;align-items:center;gap:10px;font-size:12px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:18px}
+.label::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none}
+.nerd{--accent:var(--cyan)}
+.limits{--accent:var(--orange)}
+.h2{font-size:clamp(32px,3.4vw,46px)}
+.h2 em,.h3 em{font-style:normal;color:var(--accent)}
+.h3{font-size:22px}
+.lead{font-size:19px;line-height:1.55;text-wrap:pretty}
+.copy{font-size:17px;line-height:1.6;text-wrap:pretty}
+.copy b,.lead b{color:var(--ink);font-weight:600}
+.sec{padding:var(--sec) 0}
+.alt{background:var(--paper-2);--tray:var(--tray-2)}
 
 /* nav */
-.nav{position:sticky;top:0;z-index:10;background:var(--canvas)}
-.nav .wrap{display:flex;align-items:center;justify-content:space-between;height:74px}
-.wordmark{display:flex;align-items:center;gap:12px;text-decoration:none}
-.wm-logo{width:32px;height:32px}.wm-logo svg{width:100%;height:100%}
-.wm-name{font-size:21px;font-weight:800;letter-spacing:-.03em}
-.links{display:flex;align-items:center;gap:4px}
-.links a{text-decoration:none;font-size:14.5px;font-weight:600;color:var(--fg-2);padding:10px 14px;border-radius:var(--r-pill)}
-.links a:hover{color:var(--fg);background:var(--card)}
-.links a.navdl{background:var(--mint);color:var(--ink);font-weight:700;padding:10px 20px}
-.links a.navdl:hover{opacity:.9;background:var(--mint);color:var(--ink)}
+.nav{position:sticky;top:0;z-index:10;background:var(--nav-bg);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--hair)}
+.nav .wrap{display:flex;align-items:center;justify-content:space-between;height:64px}
+.wordmark{display:flex;align-items:center;gap:10px;color:var(--ink);font-weight:600;font-size:17px;letter-spacing:-.02em}
+.wordmark svg{width:28px;height:28px}
+.links{display:flex;align-items:center;gap:6px}
+.links a{font-size:15px;font-weight:500;color:var(--body);padding:8px 12px;border-radius:999px;transition:color .25s var(--ease),background-color .25s var(--ease)}
+.links a:hover{color:var(--ink);background:var(--hover-bg)}
+.links a.pill{margin-left:6px;background:var(--ink);color:var(--paper);font-weight:500;padding:9px 16px}
+.links a.pill:hover{opacity:.9;color:var(--paper)}
 
-/* sections */
-.sec{padding:96px 0 0}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
-.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
-.card{background:var(--card);border-radius:var(--r-card);padding:26px 28px}
-.shot{background:var(--shot);border-radius:var(--r-card);overflow:hidden}
-.shot img{width:100%;height:auto}
-.shot.pad{padding:14px}
-.shot.pad img{border-radius:12px}
-.note{font-size:13px;color:var(--fg-3);line-height:1.55;max-width:84ch}
-.note b{color:var(--fg-2);font-weight:600}
+/* buttons and links */
+.btn{display:inline-flex;align-items:center;justify-content:center;height:52px;padding:0 26px;border-radius:999px;background:var(--mint);color:var(--btn-ink);font-weight:600;font-size:16px;letter-spacing:-.01em;white-space:nowrap;transition:background-color .25s var(--ease),transform .25s var(--ease)}
+.btn:hover{opacity:.92;transform:translateY(-1px)}
+.btn:active{transform:scale(.98)}
+.link{font-weight:500;font-size:16px;color:var(--ink);padding:0 4px;text-decoration:underline;text-decoration-color:var(--hair-2);text-underline-offset:5px;transition:text-decoration-color .25s var(--ease)}
+.link:hover{text-decoration-color:var(--mint)}
+.inline{color:var(--ink);text-decoration:underline;text-decoration-color:var(--hair-2);text-underline-offset:4px;transition:text-decoration-color .25s var(--ease)}
+.inline:hover{text-decoration-color:var(--mint)}
 
-/* pills */
-.pills{display:flex;flex-wrap:wrap;gap:8px}
-.pill{font-family:var(--font-sub);font-size:14px;font-weight:500;padding:9px 16px;border-radius:var(--r-pill);background:var(--paper);color:var(--ink);display:inline-flex;align-items:center;gap:8px}
-.pill::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--mint)}
-.pill.dark{background:var(--ink);color:var(--paper)}
+/* frame: double bezel tray for dark screenshots */
+.tray{padding:10px;border-radius:var(--r-frame);background:var(--tray);box-shadow:inset 0 0 0 1px var(--tray-line),0 2px 6px -2px rgba(17,17,19,.08),0 48px 90px -40px rgba(17,17,19,.30)}
+.tray img{width:100%;height:auto;border-radius:var(--r-frame-in);box-shadow:0 0 0 1px var(--tray-img-line)}
 
-/* hero */
-.hero{padding:56px 0 0;text-align:center}
-.hero h1{font-size:clamp(50px,7vw,88px);font-weight:800;letter-spacing:-.045em;line-height:.98;margin:0 auto}
-.hero h1 em{font-style:normal;color:var(--mint)}
-.hero .line{margin:22px auto 0;font-size:19px;max-width:52ch}
-.hero .pills{margin-top:26px;justify-content:center}
-.cta{margin-top:30px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
-.hero .cta{justify-content:center}
-.btn{display:inline-flex;align-items:center;gap:10px;text-decoration:none;border:0;cursor:pointer;font-family:var(--font);white-space:nowrap;border-radius:var(--r-pill);background:var(--mint);color:var(--ink);font-size:18px;font-weight:800;padding:18px 32px}
-.btn:hover{opacity:.92}.btn svg{width:18px;height:18px}
-.btn.ink{background:var(--ink);color:var(--paper)}
-.quiet{font-size:15px;font-weight:600;color:var(--fg-2);text-decoration:none}.quiet:hover{color:var(--fg)}
-.fine{margin-top:14px;font-size:13.5px;color:var(--fg-3);font-weight:500}
-.hero .shot{margin-top:44px;border-radius:var(--r-xl)}
+/* hero: asymmetric split, screenshot breaks the container */
+.hero{padding:80px 0 var(--sec);overflow-x:clip}
+.hero .wrap{display:grid;grid-template-columns:minmax(0,6fr) minmax(0,6fr);gap:56px;align-items:center}
+.hero .label{margin-bottom:22px}
+.h1{font-size:clamp(34px,2.95vw,42px);letter-spacing:-.045em;line-height:1.05}
+.h1 em{font-style:normal;color:var(--mint)}
+.hero .lead{margin-top:24px;max-width:44ch}
+.cta{margin-top:36px;display:flex;align-items:center;gap:22px;flex-wrap:wrap}
+.shot{margin-right:calc(-1 * ((100vw - min(100vw,var(--w))) / 2 + var(--gutter) + 56px))}
 
-/* stats */
-.stat{background:var(--card);border-radius:var(--r-card);padding:26px 28px 24px;display:flex;flex-direction:column;gap:6px}
-.stat .t{font-family:var(--font-sub);font-size:14px;color:var(--fg-2)}
-.stat .n{font-size:clamp(52px,6vw,76px);font-weight:800;letter-spacing:-.06em;line-height:.9;color:var(--mint)}
-.stat .n small{font-size:.32em;letter-spacing:-.02em;color:var(--fg-2);font-weight:700;margin-right:6px;vertical-align:middle}
-.stat .n sup{font-size:.3em;top:.1em}
-.stat .ba{margin-top:18px;font-size:18px;font-weight:700;color:var(--fg-2);display:flex;align-items:center;gap:10px}
-.stat .ba b{color:var(--fg);font-weight:800}
-.stat .ba svg{width:18px;height:18px;color:var(--mint)}
-.stat .tchip{margin-top:14px;font-size:12.5px;font-weight:700;align-self:flex-start;padding:5px 12px;border-radius:var(--r-pill);background:var(--card-2)}
-.stat .tchip.fast{color:var(--peri)}.stat .tchip.slow{color:var(--violet)}
+/* proof: intro line, top hairline, three equal typographic columns */
+.proof .intro{margin-top:20px;font-size:19px;color:var(--body);line-height:1.5;text-wrap:pretty;max-width:60ch}
+.proof .intro b{color:var(--ink);font-weight:600}
+.stats{margin-top:40px;border-top:1px solid var(--hair-2);padding-top:26px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:40px 48px}
+.stat{display:flex;flex-direction:column}
+.stat .t{font-size:14px;color:var(--muted);font-weight:500}
+.stat .n{margin-top:14px;color:var(--mint);font-weight:600;letter-spacing:-.045em;line-height:.95;white-space:nowrap;font-size:clamp(52px,5vw,72px)}
+.stat .n small{font-size:.3em;font-weight:500;letter-spacing:-.01em;color:var(--muted);margin-right:.35em;vertical-align:.6em}
+.stat .n sup{font-size:.28em;top:.15em}
+.stat .ba{margin-top:18px;font-size:16px;font-weight:500;color:var(--body)}
+.stat .ba b{color:var(--ink);font-weight:600}
+.stat .tl{margin-top:4px;font-size:14px;font-weight:500}
+.fast-t{color:var(--peri)}
+.slow-t{color:var(--violet)}
 
-/* how */
-.steps{display:grid;grid-template-columns:1fr;gap:14px}
-.step{display:grid;grid-template-columns:120px 1fr;gap:20px;align-items:start;background:var(--card);border-radius:var(--r-card);padding:26px 28px}
-.step .k{font-size:72px;font-weight:800;letter-spacing:-.06em;line-height:.85;color:var(--mint)}
-.step h3{font-size:24px;font-weight:800}
-.step p{margin-top:6px;font-size:15.5px;color:var(--fg-2);max-width:60ch}
-.step code{font-family:var(--font);font-size:13.5px;font-weight:700;color:var(--fg);background:var(--card-2);border-radius:6px;padding:1px 7px}
-.tiers{margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.tier{border-radius:18px;padding:22px 24px 20px;color:var(--ink);display:flex;flex-direction:column}
-.tier.fast{background:var(--peri)}.tier.arch{background:var(--violet)}
-.tier .tag{align-self:flex-start;font-family:var(--font-sub);font-size:12.5px;font-weight:500;background:var(--ink);color:var(--paper);border-radius:var(--r-pill);padding:5px 12px}
-.tier h4{margin:14px 0 0;font-size:26px;font-weight:800;letter-spacing:-.03em;line-height:1.05}
-.tier p{margin-top:6px;font-size:14.5px;font-weight:500;color:rgba(20,20,20,.74)}
-.tier ul{list-style:none;margin:14px 0 0;padding:0;display:flex;flex-direction:column;gap:5px;font-size:14px;font-weight:600;color:rgba(20,20,20,.86)}
-.tier li{padding-left:16px;position:relative}
-.tier li::before{content:"";position:absolute;left:0;top:.6em;width:6px;height:6px;border-radius:50%;background:var(--ink)}
-.step .shot{margin-top:16px}
+/* how it works: verb-led rows, hairline separated */
+.steps{margin-top:40px;display:flex;flex-direction:column}
+.step{display:grid;grid-template-columns:minmax(0,4fr) minmax(0,8fr);gap:32px 72px;padding:36px 0;border-top:1px solid var(--hair-2);align-items:start}
+.step:last-child{border-bottom:1px solid var(--hair-2)}
+.step .copy{max-width:56ch}
+.step .tray{margin-top:28px}
+.tiers{margin-top:28px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.tier{border-radius:var(--r-box);padding:26px 26px 24px;color:var(--tier-ink);display:flex;flex-direction:column;gap:10px}
+.tier.fast{background:var(--peri)}
+.tier.arch{background:var(--violet)}
+.tier .tag{font-size:14px;font-weight:500}
+.tier .sub{font-size:13.5px;font-weight:600;margin-top:-4px}
+.tier h4{font-size:24px;margin-top:2px;color:var(--tier-ink)}
+.tier p{font-size:15.5px;line-height:1.5;color:var(--tier-ink);text-wrap:pretty}
+.tier ul{margin-top:8px;border-top:1px solid rgba(17,17,19,.18);font-size:15px;font-weight:500;color:var(--tier-ink)}
+.tier li{padding:9px 0}
+.tier li+li{border-top:1px solid rgba(17,17,19,.18)}
+.tier sup{font-size:12px;top:.15em;color:var(--tier-ink);opacity:1}
 
-/* nerd */
-.nerd .h{max-width:16ch}
-.feat{background:var(--card);border-radius:var(--r-card);padding:24px 26px}
-.feat .v{font-size:26px;font-weight:800;letter-spacing:-.035em;color:var(--cyan);line-height:1.05}
-.feat .v small{font-size:14px;color:var(--fg-2);font-weight:600;letter-spacing:0;display:block;margin-top:6px}
-.feat p{margin-top:12px;font-size:14.5px;color:var(--fg-2)}
-.feat kbd{font-family:var(--font);font-size:13px;font-weight:700;color:var(--fg);background:var(--card-2);border-radius:6px;padding:1px 7px}
+/* safe by default: headline, three hairline columns, then the receipt */
+.cols{margin-top:40px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:40px}
+.col{border-top:1px solid var(--hair-2);padding-top:20px}
+.col h3{font-size:19px}
+.col p{margin-top:8px;font-size:16px;line-height:1.55;text-wrap:pretty;max-width:30ch}
 
-/* originals */
-.checks{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
-.checks li{background:var(--card);border-radius:var(--r-card);padding:24px 26px;font-size:16px;font-weight:600;line-height:1.4}
-.checks li::before{content:"";display:block;width:26px;height:26px;border-radius:50%;background:var(--mint);margin-bottom:16px;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23141414' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><path d='M6 12l4 4 8-8'/></svg>");background-size:16px;background-repeat:no-repeat;background-position:center}
-.checks li span{display:block;margin-top:4px;font-size:14px;color:var(--fg-2);font-weight:500}
+/* history card: the app's own History/Lifetime CSS (src/renderer/styles.css), light theme tokens */
+.hcard{margin-top:56px;border-radius:22px;background:#E3E3E3;color:#141414;padding:34px 32px 34px;font-size:15px;line-height:1.5;letter-spacing:-.005em;font-variant-numeric:tabular-nums;box-shadow:inset 0 0 0 1px rgba(17,17,19,.06),0 2px 6px -2px rgba(17,17,19,.08),0 48px 90px -40px rgba(17,17,19,.30)}
+.hcard .hh{display:flex;align-items:baseline;gap:14px;margin:0 0 14px;font-size:22px;font-weight:800;letter-spacing:-.03em;line-height:1.5;color:#141414}
+.hcard .hrows+.hh{margin-top:68px}
+.hcard .hh span{font-size:14px;font-weight:500;color:#5C5C5C;letter-spacing:0}
+.hcard .hrows{padding:8px 26px;background:#F7F7F7;border-radius:18px;display:flex;flex-direction:column}
+.hcard .hrow{display:grid;grid-template-columns:36px minmax(0,1fr) auto auto;grid-template-areas:"icon name fig btn";align-items:center;gap:14px;padding:14px 0}
+.hcard .hrow+.hrow{border-top:1px solid #DBDBDB}
+.hcard .hicon{grid-area:icon;width:36px;height:36px;border-radius:10px;background:#EAEAEA;display:grid;place-items:center;color:#5C5C5C}
+.hcard .hicon svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.hcard .hname{grid-area:name;min-width:0}
+.hcard .hname div:first-child{color:#5C5C5C;font-weight:500;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hcard .hmeta{margin-top:2px;font-size:13px;color:#8C8C8C}
+.hcard .hmeta.batch{margin-top:3px;display:flex;align-items:center;gap:7px;min-width:0;flex-wrap:wrap}
+.hcard .chip{font-size:12px;font-weight:700;padding:3px 9px;border-radius:999px;background:#EAEAEA;color:#A97DFF;white-space:nowrap}
+.hcard .hfig{grid-area:fig;text-align:right;padding-left:8px;min-width:0}
+.hcard .hfig b{display:block;font-size:16px;font-weight:700;color:#141414;white-space:nowrap}
+.hcard .hfig b.green{color:#11743E}
+.hcard .hfig small{display:block;margin-top:2px;font-size:12.5px;color:#8C8C8C;white-space:nowrap}
+.hcard .hbtn{grid-area:btn;font-size:13px;font-weight:600;color:#5C5C5C;background:#EAEAEA;border-radius:999px;padding:7px 16px;white-space:nowrap;line-height:1.5}
+.hcard .hfoot{display:flex;justify-content:center;padding:12px 0 4px;border-top:1px solid #DBDBDB}
+.hcard .hall{font-size:13px;font-weight:600;color:#5C5C5C;padding:6px 14px;border-radius:999px}
 
-/* install */
-.tile{background:var(--card);border-radius:var(--r-card);padding:24px 26px;display:flex;flex-direction:column;min-height:210px}
-.tile .k{font-size:64px;font-weight:800;letter-spacing:-.06em;line-height:.85;color:var(--fg)}
-.tile h3{margin-top:auto;padding-top:22px;font-size:19px;font-weight:800;line-height:1.15}
-.tile p{margin-top:6px;font-size:14.5px;color:var(--fg-2)}
-kbd{font-family:var(--font);font-size:13px;font-weight:700;color:var(--fg);background:var(--card-2);border-radius:6px;padding:1px 7px;white-space:nowrap}
-kbd.no{background:var(--coral);color:var(--ink)}
-details{background:var(--card);border-radius:18px;padding:0 24px}
-summary{list-style:none;cursor:pointer;padding:16px 0;font-size:14.5px;font-weight:700;color:var(--fg-2)}
-summary::-webkit-details-marker{display:none}
-summary:hover{color:var(--fg)}
-details .body{padding:0 0 18px;font-size:14.5px;color:var(--fg-2);line-height:1.55;max-width:74ch}
-details pre{margin:10px 0 0;background:var(--canvas);color:var(--fg);border-radius:12px;padding:14px 16px;font-size:13.5px;overflow:auto}
+/* nerd mode: stacked header, tray, six features in a two-column definition grid */
+.nerd .lead{margin-top:20px;max-width:58ch}
+.nerd .tray{margin-top:40px}
+.feats{margin-top:56px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 72px}
+.feats>div{border-top:1px solid var(--hair-2);padding:22px 0 26px}
+.feats dt{font-size:20px;font-weight:600;color:var(--cyan);letter-spacing:-.02em;line-height:1.2}
+.feats dt small{font-size:14px;font-weight:500;color:var(--muted);letter-spacing:0;margin-left:8px;white-space:nowrap}
+.feats dd{margin-top:8px;font-size:16px;line-height:1.55;text-wrap:pretty;max-width:44ch}
 
-/* limits / about */
-.limits{list-style:none;margin:18px 0 0;padding:0}
-.limits li{padding:13px 0;font-size:15.5px;display:grid;grid-template-columns:22px 1fr;gap:12px;align-items:center}
-.limits li+li{border-top:1px solid var(--track)}
-.limits li::before{content:"";width:14px;height:14px;border-radius:50%;background:var(--coral)}
-.about{display:flex;flex-direction:column}
-.about .links2{margin-top:auto;padding-top:24px;display:flex;gap:8px;flex-wrap:wrap}
-.about .links2 a{text-decoration:none;font-size:14px;font-weight:700;padding:11px 18px;border-radius:var(--r-pill);background:var(--card-2);color:var(--fg)}
-.about .links2 a:hover{background:var(--fg);color:var(--ink)}
+/* limits and about: heading left, content right */
+.ledger{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:24px 72px;align-items:start}
+.ledger .h2{font-size:clamp(28px,2.6vw,36px)}
+.limits li{padding:10px 0;font-size:17px;color:var(--ink);display:flex;align-items:center;gap:12px}
+.limits li::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--orange);flex:none}
+.limits li+li{border-top:1px solid var(--hair)}
+.about .copy{max-width:52ch}
+.about .copy+.copy{margin-top:14px}
+.about .more{margin-top:24px;display:flex;gap:24px;flex-wrap:wrap}
+.about .more a{padding:9px 4px;margin:-9px 0}
 
-/* download */
-.dl{background:var(--mint);color:var(--ink);border-radius:var(--r-xl);padding:48px 44px;display:grid;grid-template-columns:1.2fr .8fr;gap:30px;align-items:end}
-.dl h2{font-size:clamp(40px,5.6vw,72px);font-weight:800;letter-spacing:-.045em}
-.dl .pills{margin-top:18px}
-.dl .btn{margin-top:26px}
-.req{background:rgba(20,20,20,.1);border-radius:20px;padding:6px 20px}
-.req div{display:flex;justify-content:space-between;gap:16px;padding:12px 0;font-size:14.5px;font-weight:600}
-.req div+div{border-top:1px solid rgba(20,20,20,.14)}
-.req span:first-child{color:rgba(20,20,20,.62)}
-.req code{font-family:var(--font);font-size:12.5px;font-weight:700;background:rgba(20,20,20,.14);border-radius:6px;padding:2px 7px}
+/* questions: hairline ledger, question left, answer right */
+.faqs{margin-top:40px}
+.faq .h2{font-size:clamp(26px,2.1vw,30px);letter-spacing:-.03em}
+.qa{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:12px 72px;padding:28px 0;border-top:1px solid var(--hair-2);align-items:start}
+.qa:last-child{border-bottom:1px solid var(--hair-2)}
+.qa h3{font-size:18px;font-weight:600;line-height:1.35;letter-spacing:-.01em;color:var(--ink)}
+.qa p{font-size:16px;line-height:1.6;max-width:56ch;text-wrap:pretty}
 
-.footnotes{padding-top:48px;font-size:13px;color:var(--fg-3);line-height:1.6;max-width:90ch}
-.footnotes p+p{margin-top:8px}
-.footnotes b{color:var(--fg-2);font-weight:700}
-.footer{padding:36px 0 40px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;font-size:13.5px;color:var(--fg-3);font-weight:500}
-.footer a{color:var(--fg-2);text-decoration:none;margin-left:18px}.footer a:hover{color:var(--fg)}
+/* download: copy and the mint button left, requirements right */
+.dl .grid{display:grid;grid-template-columns:minmax(0,6fr) minmax(0,6fr);gap:48px 72px;align-items:start}
+.dl .h2{font-size:clamp(34px,3.1vw,44px)}
+.dl .lead{margin-top:22px;max-width:40ch}
+.dl .cta{margin-top:32px}
+.req{border-top:1px solid var(--hair-2)}
+.req div{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:16px;padding:14px 0;border-bottom:1px solid var(--hair);font-size:16px}
+.req span:first-child{color:var(--muted);font-weight:500}
+.req span:last-child{color:var(--ink);font-weight:500}
+.req .link{font-size:16px;padding:0}
+.footnotes{grid-column:1/-1;margin-top:48px;padding-top:24px;border-top:1px solid var(--hair);font-size:13.5px;line-height:1.6;color:var(--muted);display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 48px}
+.fn-col{max-width:60ch;display:flex;flex-direction:column;gap:8px}
+.fn-all{grid-column:1/-1;max-width:60ch}
+@media (max-width:767px){.footnotes{grid-template-columns:1fr;gap:8px}}
+.footnotes b{color:var(--body);font-weight:500}
 
-@media (max-width:900px){
-  .grid2,.grid3,.checks,.dl,.tiers{grid-template-columns:1fr}
-  .grid4{grid-template-columns:1fr 1fr}
-  .step{grid-template-columns:1fr}
+/* footer */
+.footer{border-top:1px solid var(--hair)}
+.footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;padding-top:32px;padding-bottom:40px;font-size:14px;color:var(--muted)}
+.footer nav{display:flex;gap:22px;flex-wrap:wrap}
+.footer a{color:var(--body);font-weight:500;padding:11px 0;margin:-11px 0;transition:color .25s var(--ease)}
+.footer a:hover{color:var(--ink)}
+
+/* motion: load-in cascade in reading order; hover/active feedback only */
+@media (prefers-reduced-motion:no-preference){
+  .rise{animation:rise .8s var(--ease) both}
+  .d1{animation-delay:.05s}.d2{animation-delay:.12s}.d3{animation-delay:.19s}.d4{animation-delay:.26s}.d5{animation-delay:.2s}
+  @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 }
-@media (max-width:600px){
-  .wrap{padding:0 16px}
-  .links a:not(.dl){display:none}
-  .card,.stat,.step,.feat,.tile,.dl{padding:24px 20px}
-  .grid4{grid-template-columns:1fr}
-  .tile{min-height:0}
-  .sec{padding-top:64px}
-  .footer a{margin:0 14px 0 0}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.btn,.links a,.link,.inline,.footer a{transition:none}}
+
+@media (max-width:1024px){
+  :root{--sec:72px}
+  .hero .wrap{grid-template-columns:1fr;gap:48px}
+  .h1{font-size:clamp(34px,5.4vw,42px)}
+  .shot{margin-right:calc(-1 * var(--gutter))}
+  .hero .lead{max-width:44ch}
+  .stats{gap:32px 28px}
+  .step{grid-template-columns:1fr;gap:16px;padding:32px 0}
+  .feats{gap:0 40px}
+  .ledger{grid-template-columns:1fr;gap:20px}
+  .qa{grid-template-columns:1fr;gap:8px;padding:24px 0}
+  .dl .grid{grid-template-columns:1fr;gap:48px}
+}
+@media (max-width:640px){
+  :root{--gutter:20px;--sec:56px}
+  body{font-size:16px}
+  .nav .wrap{height:60px}
+  .wordmark span{display:none}
+  .links{gap:2px}
+  .links a{font-size:14px;padding:8px 8px;white-space:nowrap}
+  .links a.pill{height:44px;display:inline-flex;align-items:center;padding:0 14px;margin-left:2px}
+  .hero{padding-top:48px}
+  .hero .label{margin-bottom:16px}
+  .h1{font-size:27px}
+  .hero .lead{margin-top:20px;font-size:17px}
+  .cta{margin-top:28px;gap:18px}
+  .btn{height:50px;padding:0 22px}
+  .shot{margin-right:0}
+  .tray{padding:8px;border-radius:18px}
+  .tray img{border-radius:10px}
+  .h2{font-size:clamp(26px,6.9vw,34px)}
+  .lead{font-size:17px}
+  .stats{margin-top:32px;grid-template-columns:1fr;gap:0;border-top:0;padding-top:0}
+  .stat{border-top:1px solid var(--hair-2);padding:22px 0}
+  .stat .n{font-size:56px}
+  .steps{margin-top:32px}
+  .tiers{grid-template-columns:1fr;gap:12px}
+  .tier{padding:22px 20px 20px}
+  .cols{grid-template-columns:1fr;gap:28px;margin-top:32px}
+  .safe .hcard,.nerd .tray{margin-top:36px}
+  .hcard{padding:27px 26px;border-radius:18px}
+  .hcard .hh{font-size:20px}
+  .hcard .hrows+.hh{margin-top:54px}
+  .hcard .hrows{padding:8px 21px}
+  .hcard .hrow{grid-template-columns:36px minmax(0,1fr) auto;grid-template-areas:"icon name btn" "icon fig btn";gap:4px 12px;padding:12px 0}
+  .hcard .hfig{text-align:left;padding-left:0}
+  .hcard .hfig b,.hcard .hfig small{display:inline}
+  .hcard .hfig small{margin:0 0 0 6px}
+  .feats{grid-template-columns:1fr;margin-top:36px}
+  .feats>div{padding:20px 0 22px}
+  .ledger .h2{font-size:28px}
+  .dl .h2{font-size:26px}
+  .req div{grid-template-columns:1fr;gap:2px;padding:12px 0}
+  .footnotes{margin-top:36px}
+  .footer .wrap{flex-direction:column;align-items:flex-start;padding-top:28px;padding-bottom:36px}
+  .footer nav{gap:18px}
 }
 </style>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 
 <header class="nav"><div class="wrap">
-  <a class="wordmark" href="#top" aria-label="SkinnyVideo">
-    <span class="wm-logo"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect width="100" height="100" rx="22" fill="#5EE39B"/><g transform="translate(19.000 26.175) scale(0.10098)"><g transform="translate(-205.020038,749.000000) scale(0.100000,-0.100000)" fill="#141414"><path d="M4345 7463 c-68 -43 -126 -105 -151 -161 -24 -52 -24 -55 -24 -405 0 -437 -2 -427 138 -631 186 -270 299 -521 372 -831 34 -145 34 -438 -1 -615 -59 -302 -176 -556 -422 -912 -21 -30 -49 -86 -62 -124 -24 -68 -25 -75 -25 -407 l0 -337 35 -68 c55 -107 107 -153 203 -180 49 -14 147 -17 697 -19 576 -3 647 -2 705 13 111 29 157 61 220 153 43 62 50 124 50 446 0 390 -4 408 -127 586 -196 284 -320 558 -385 849 -20 92 -23 131 -22 315 0 208 1 211 37 359 21 82 48 180 62 218 46 128 174 370 279 527 162 242 151 196 151 646 l0 380 -30 54 c-35 63 -67 97 -131 140 l-45 31 -742 -1 -742 0 -40 -26z"/><path d="M2340 7008 c-61 -23 -144 -82 -177 -125 -36 -49 -73 -130 -84 -185 -6 -29 -15 -57 -20 -62 -13 -14 -11 -150 2 -163 6 -6 15 -30 20 -54 6 -24 23 -71 39 -104 25 -53 97 -128 590 -620 352 -352 559 -566 558 -576 -2 -9 -253 -269 -558 -577 -597 -601 -590 -594 -626 -734 -12 -46 -15 -93 -12 -173 4 -99 8 -118 37 -180 43 -93 122 -173 211 -214 56 -26 85 -33 167 -38 127 -7 212 7 309 51 78 36 86 44 522 484 672 679 1025 1042 1058 1092 50 72 74 152 81 259 7 117 -7 195 -47 278 -36 74 -168 211 -995 1039 -327 327 -558 552 -586 568 -80 46 -132 56 -289 55 -122 0 -154 -3 -200 -21z"/><path d="M7523 7016 c-76 -25 -132 -66 -271 -199 -440 -425 -1357 -1363 -1395 -1428 -45 -77 -57 -132 -57 -269 0 -191 27 -253 174 -410 110 -117 562 -575 1042 -1057 354 -355 364 -364 446 -403 75 -36 94 -41 184 -47 187 -11 317 30 408 127 58 62 105 160 113 234 3 31 10 56 14 56 12 0 12 107 0 114 -4 3 -11 28 -14 55 -11 92 -55 168 -168 287 -188 198 -459 475 -741 758 -153 154 -278 284 -278 290 0 6 248 259 550 561 303 303 563 570 579 595 16 25 37 68 46 95 10 28 22 54 27 60 11 12 10 251 -1 273 -5 9 -23 47 -39 84 -41 91 -96 148 -190 194 l-77 39 -155 2 c-108 2 -168 -2 -197 -11z"/></g></g></svg></span>
-    <span class="wm-name">SkinnyVideo</span>
+  <a class="wordmark" href="#main" aria-label="SkinnyVideo home">
+    <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect width="100" height="100" rx="22" fill="#5EE39B"/><g transform="translate(19.000 26.175) scale(0.10098)"><g transform="translate(-205.020038,749.000000) scale(0.100000,-0.100000)" fill="#141414"><path d="M4345 7463 c-68 -43 -126 -105 -151 -161 -24 -52 -24 -55 -24 -405 0 -437 -2 -427 138 -631 186 -270 299 -521 372 -831 34 -145 34 -438 -1 -615 -59 -302 -176 -556 -422 -912 -21 -30 -49 -86 -62 -124 -24 -68 -25 -75 -25 -407 l0 -337 35 -68 c55 -107 107 -153 203 -180 49 -14 147 -17 697 -19 576 -3 647 -2 705 13 111 29 157 61 220 153 43 62 50 124 50 446 0 390 -4 408 -127 586 -196 284 -320 558 -385 849 -20 92 -23 131 -22 315 0 208 1 211 37 359 21 82 48 180 62 218 46 128 174 370 279 527 162 242 151 196 151 646 l0 380 -30 54 c-35 63 -67 97 -131 140 l-45 31 -742 -1 -742 0 -40 -26z"/><path d="M2340 7008 c-61 -23 -144 -82 -177 -125 -36 -49 -73 -130 -84 -185 -6 -29 -15 -57 -20 -62 -13 -14 -11 -150 2 -163 6 -6 15 -30 20 -54 6 -24 23 -71 39 -104 25 -53 97 -128 590 -620 352 -352 559 -566 558 -576 -2 -9 -253 -269 -558 -577 -597 -601 -590 -594 -626 -734 -12 -46 -15 -93 -12 -173 4 -99 8 -118 37 -180 43 -93 122 -173 211 -214 56 -26 85 -33 167 -38 127 -7 212 7 309 51 78 36 86 44 522 484 672 679 1025 1042 1058 1092 50 72 74 152 81 259 7 117 -7 195 -47 278 -36 74 -168 211 -995 1039 -327 327 -558 552 -586 568 -80 46 -132 56 -289 55 -122 0 -154 -3 -200 -21z"/><path d="M7523 7016 c-76 -25 -132 -66 -271 -199 -440 -425 -1357 -1363 -1395 -1428 -45 -77 -57 -132 -57 -269 0 -191 27 -253 174 -410 110 -117 562 -575 1042 -1057 354 -355 364 -364 446 -403 75 -36 94 -41 184 -47 187 -11 317 30 408 127 58 62 105 160 113 234 3 31 10 56 14 56 12 0 12 107 0 114 -4 3 -11 28 -14 55 -11 92 -55 168 -168 287 -188 198 -459 475 -741 758 -153 154 -278 284 -278 290 0 6 248 259 550 561 303 303 563 570 579 595 16 25 37 68 46 95 10 28 22 54 27 60 11 12 10 251 -1 273 -5 9 -23 47 -39 84 -41 91 -96 148 -190 194 l-77 39 -155 2 c-108 2 -168 -2 -197 -11z"/></g></g></svg>
+    <span>SkinnyVideo</span>
   </a>
   <nav class="links" aria-label="Site">
     <a href="#how">How it works</a>
     <a href="#nerd">Nerd Mode</a>
-    <a href="#install">Install</a>
-    <a href="https://github.com/pritam-malakar/skinnyvideo">Source</a>
-    <a class="navdl" href="https://github.com/pritam-malakar/skinnyvideo/releases/latest/download/SkinnyVideo-arm64.dmg">Download</a>
+    <a class="pill" href="https://github.com/pritam-malakar/skinnyvideo/releases/latest/download/SkinnyVideo-arm64.dmg">Download</a>
   </nav>
 </div></header>
 
-<main id="top">
+<main id="main">
 
-<section class="hero"><div class="wrap">
-  <h1>Your videos.<br><em>Up to 96% smaller.<sup><a href="#fn">*</a></sup></em></h1>
-  <p class="line">Shrink any video on your Mac with a modern, efficient codec. Whole folders at once. Two quality choices, no settings, and <b>originals never touched.</b></p>
-  <div class="pills"><span class="pill">Open source</span><span class="pill">Always free</span><span class="pill">No internet</span><span class="pill">Completely local</span></div>
-  <div class="cta">
-    <a class="btn" href="https://github.com/pritam-malakar/skinnyvideo/releases/latest/download/SkinnyVideo-arm64.dmg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v11m0 0 4.5-4.5M12 14l-4.5-4.5M4 21h16"/></svg>Download for Mac</a>
-    <a class="quiet" href="https://github.com/pritam-malakar/skinnyvideo">Source on GitHub</a>
-  </div>
-  <p class="fine">macOS 11 or later · Apple Silicon. Notarized by Apple. GPL licensed.</p>
-  <div class="shot"><img src="img/hero-main-window.png" alt="SkinnyVideo main window" width="1600" height="1000"></div>
-</div></section>
-
-<section class="sec"><div class="wrap">
-  <div class="label mint">The problem</div>
-  <h2 class="h">Footage you might need someday.<br>Drives you need today.</h2>
-  <p class="line" style="margin-top:12px">Keep every take. Stop paying full price to store it.</p>
-  <div class="grid3" style="margin-top:26px">
-    <div class="stat">
-      <div class="t">Camera originals</div>
-      <div class="n"><small>up to</small>94%<sup><a href="#fn">*</a></sup></div>
-      <div class="ba">2.3 GB <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16m-6-6 6 6-6 6"/></svg> <b>147 MB</b></div>
-      <span class="tchip fast">Make It Fast</span>
-    </div>
-    <div class="stat">
-      <div class="t">ProRes</div>
-      <div class="n"><small>up to</small>96%<sup><a href="#fn">*</a></sup></div>
-      <div class="ba">172 GB <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16m-6-6 6 6-6 6"/></svg> <b>6.4 GB</b></div>
-      <span class="tchip slow">Slow But Better</span>
-    </div>
-    <div class="stat">
-      <div class="t">Already HEVC</div>
-      <div class="n"><small>up to</small>77%<sup><a href="#fn">*</a></sup></div>
-      <div class="ba">266 MB <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16m-6-6 6 6-6 6"/></svg> <b>62 MB</b></div>
-      <span class="tchip slow">Slow But Better</span>
-    </div>
-  </div>
-</div></section>
-
-<section class="sec" id="how"><div class="wrap">
-  <div class="label">How it works</div>
-  <h2 class="h">Drop. Pick. Start.</h2>
-  <div class="steps" style="margin-top:26px">
-    <div class="step"><div class="k">1</div><div><h3>Drop</h3><p>A folder or a pile of files. Non-video files are ignored, not errors.</p></div></div>
-    <div class="step"><div class="k">2</div><div>
-      <h3>Pick a quality</h3><p>The only decision you make.</p>
-      <div class="tiers">
-        <div class="tier fast"><span class="tag">Recommended</span><h4>Make It Fast</h4><p>Encodes on the media engine in your Mac's chip, so a card dump finishes while you keep editing.</p><ul><li>Encodes faster than the footage plays<sup><a href="#fn">*</a></sup></li><li>Mac stays usable</li></ul></div>
-        <div class="tier arch"><span class="tag">Archival</span><h4>Slow But Better</h4><p>A software encoder that spends more time on every frame for a smaller file.</p><ul><li>Smaller at the same visible quality</li><li>Uses more of your Mac's computing power</li></ul></div>
+<section class="hero" aria-labelledby="h1">
+  <div class="wrap">
+    <div>
+      <p class="label rise">Free and open source. Runs entirely on your Mac.</p>
+      <h1 class="h1 rise d1" id="h1">A free video compressor for Mac. <em>Up to 96% smaller.<sup><a href="#fn" aria-label="See how we measured">*</a></sup></em></h1>
+      <p class="lead rise d2">Batch-compress camera footage to HEVC (H.265) on your Mac. Whole folders at once. Two quality choices, no settings to learn, originals never touched.</p>
+      <div class="cta rise d3">
+        <a class="btn" href="https://github.com/pritam-malakar/skinnyvideo/releases/latest/download/SkinnyVideo-arm64.dmg">Download for Mac</a>
+        <a class="link" href="https://github.com/pritam-malakar/skinnyvideo">Source on GitHub</a>
       </div>
-    </div></div>
-    <div class="step"><div class="k">3</div><div>
-      <h3>Start</h3><p>Walk away. Results land in a new <code>Compressed_&lt;date&gt;</code> folder, same names, flat.</p>
-      <div class="shot pad"><img src="img/batch-running.png" alt="A batch running: file 3 of 6, 1.5 GB reclaimed so far" width="1600" height="523" loading="lazy"></div>
-    </div></div>
+    </div>
+    <div class="shot rise d5">
+      <div class="tray"><picture><source type="image/webp" srcset="img/hero-main-window-800.webp 800w, img/hero-main-window-1600.webp 1600w" sizes="(max-width:1024px) 100vw, 52vw"><img src="img/hero-main-window.png" alt="SkinnyVideo main window on a Mac, ready to batch-compress a folder of camera footage to HEVC" width="1600" height="1000" fetchpriority="high"></picture></div>
+    </div>
+  </div>
+</section>
+
+<section class="proof sec alt rise d4" aria-labelledby="results-h"><div class="wrap">
+  <p class="label">Results</p>
+  <h2 class="h2" id="results-h">Compression results on <em>real footage.</em></h2>
+  <p class="intro"><b>Measured on real footage</b>, not a benchmark clip. <a class="inline" href="#fn">How we measured</a></p>
+  <div class="stats">
+    <div class="stat">
+      <div class="t">Camera originals · H.264</div>
+      <div class="n"><small>up to</small>94%<sup><a href="#fn" aria-label="Footnote: camera originals" tabindex="-1">*</a></sup></div>
+      <div class="ba">2.3 GB → <b>147 MB</b></div>
+      <div class="tl fast-t">Make It Fast</div>
+    </div>
+    <div class="stat">
+      <div class="t">ProRes masters</div>
+      <div class="n"><small>up to</small>96%<sup><a href="#fn" aria-label="Footnote: ProRes" tabindex="-1">*</a></sup></div>
+      <div class="ba">172 GB → <b>6.4 GB</b></div>
+      <div class="tl slow-t">Slow But Better</div>
+    </div>
+    <div class="stat">
+      <div class="t">iPhone, already HEVC</div>
+      <div class="n"><small>up to</small>77%<sup><a href="#fn" aria-label="Footnote: already HEVC" tabindex="-1">*</a></sup></div>
+      <div class="ba">266 MB → <b>62 MB</b></div>
+      <div class="tl slow-t">Slow But Better</div>
+    </div>
   </div>
 </div></section>
 
-<section class="sec nerd" id="nerd"><div class="wrap">
-  <div class="label cyan">Nerd Mode</div>
-  <h2 class="h">Professional control. <em style="color:var(--cyan)">One switch away.</em></h2>
-  <p class="line" style="margin-top:12px">Full encoder control for people who know exactly what they want. CRF, presets, quality scale, bit depth, dry runs. Set per batch, never left behind for the next user.</p>
-  <div class="shot" style="margin-top:26px"><img src="img/nerd-mode-settings.png" alt="Nerd Mode batch settings: CRF, preset, and 10-bit downconvert" width="1600" height="1000" loading="lazy"></div>
-  <div class="grid3" style="margin-top:14px">
-    <div class="feat"><div class="v">CRF 0–51<small>Slow But Better</small></div><p>Constant-quality control for x265. Default 18. Right always means better quality.</p></div>
-    <div class="feat"><div class="v">ultrafast → veryslow<small>x265 preset ladder</small></div><p>Nine snap positions. Trade encode time for file size. Default medium.</p></div>
-    <div class="feat"><div class="v">Quality 1–85<small>Make It Fast</small></div><p>VideoToolbox quality scale. Default 62. Capped at 85, where the bitrate curve goes vertical.</p></div>
-    <div class="feat"><div class="v">10-bit → 8-bit<small>Downconvert</small></div><p>Appears only when the batch contains a 10-bit file. 8-bit files are left alone.</p></div>
-    <div class="feat"><div class="v">Preview only<small>Dry run</small></div><p>Scan the batch and report the totals. Nothing is written. Check before an overnight job.</p></div>
-    <div class="feat"><div class="v">Per batch<small>Never global</small></div><p>Each batch carries its own settings into the queue. <kbd>Reset to defaults</kbd> is one click.</p></div>
+<section class="how sec" id="how" aria-labelledby="how-h"><div class="wrap">
+  <p class="label">How it works</p>
+  <h2 class="h2" id="how-h">Compress whole folders <em>at once.</em></h2>
+  <div class="steps">
+    <div class="step">
+      <h3 class="h3">Drop</h3>
+      <p class="copy">A folder or a pile of files. Non-video files are ignored, not errors.</p>
+    </div>
+    <div class="step">
+      <h3 class="h3">Pick a <em>quality</em></h3>
+      <div>
+        <p class="copy"><b>The only decision you make: <span class="fast-t">Make It Fast</span> or <span class="slow-t">Slow But Better</span>.</b></p>
+        <div class="tiers">
+          <div class="tier fast">
+            <span class="tag">Recommended</span>
+            <h4>Make It Fast</h4>
+            <p class="sub">Hardware HEVC via Apple VideoToolbox.</p>
+            <p>Encodes on the media engine in your Mac's chip, so a card dump finishes while you keep editing.</p>
+            <ul><li>Encodes faster than the footage plays<sup><a href="#fn" aria-label="Footnote: encode speed">*</a></sup></li><li>Mac stays usable</li></ul>
+          </div>
+          <div class="tier arch">
+            <span class="tag">Archival</span>
+            <h4>Slow But Better</h4>
+            <p class="sub">Software HEVC via x265. Smallest files.</p>
+            <p>A software encoder that spends more time on every frame for a smaller file.</p>
+            <ul><li>Smaller at the same visible quality</li><li>Uses more of your Mac while it runs</li></ul>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="step">
+      <h3 class="h3">Start</h3>
+      <div>
+        <p class="copy">Walk away. Results land in a new <code>Compressed_&lt;date&gt;</code> folder, same names, flat.</p>
+        <div class="tray"><picture><source type="image/webp" srcset="img/batch-running-800.webp 800w, img/batch-running-1600.webp 1600w" sizes="(max-width:1024px) 100vw, 60vw"><img src="img/batch-running.png" alt="SkinnyVideo compressing a batch of 4K H.264 clips to HEVC with per-file progress" width="1600" height="523" loading="lazy"></picture></div>
+      </div>
+    </div>
   </div>
-  <div class="shot pad" style="margin-top:14px"><img src="img/nerd-mode-dry-run.png" alt="Preview only switched on: no files will be written" width="1600" height="163" loading="lazy"></div>
 </div></section>
 
-<section class="sec"><div class="wrap">
-  <div class="label mint">Originals</div>
-  <h2 class="h">Never touched.</h2>
-  <ul class="checks" style="margin-top:26px">
-    <li>Sources are read-only<span>Never moved, renamed, changed, or deleted.</span></li>
-    <li>Results go to a new folder<span><code style="font-family:inherit">Compressed_&lt;date&gt;</code>, next to where you chose. Same names, flat.</span></li>
-    <li>Don't like it? Trash the folder<span>Your masters are exactly where they were.</span></li>
-  </ul>
+<section class="safe sec alt" aria-labelledby="safe-h"><div class="wrap">
+  <p class="label">Safe by default</p>
+  <h2 class="h2" id="safe-h"><em>Originals never touched.</em><br>Nothing leaves your Mac.</h2>
+  <div class="cols">
+    <div class="col"><h3>Sources are read-only.</h3><p>Never moved, renamed, changed, or deleted.</p></div>
+    <div class="col"><h3>Results go to a new folder.</h3><p>Don't like it? Trash the folder. Your masters are where they were.</p></div>
+    <div class="col"><h3>Keeps the receipts.</h3><p>What went in, what came out, reclaimed totals per drive.</p></div>
+  </div>
+  <div class="hcard" role="img" aria-label="SkinnyVideo History panel showing lifetime reclaimed space and recent batches">
+    <p class="hh">Lifetime reclaimed <span>12 TB total · 2 drives</span></p>
+    <div class="hrows">
+      <div class="hrow"><div class="hicon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 12h18"/><circle cx="7" cy="15" r="1.2" fill="currentColor" stroke="none"/></svg></div><div class="hname"><div>Footage RAID</div><div class="hmeta">3038 files · 646 runs · since 1 Jun 2026</div></div><div class="hfig"><b>12 TB</b></div><span class="hbtn">Reset</span></div>
+      <div class="hrow"><div class="hicon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 12h18"/><circle cx="7" cy="15" r="1.2" fill="currentColor" stroke="none"/></svg></div><div class="hname"><div>Macintosh HD</div><div class="hmeta">6 files · 4 runs · since 1 Jun 2026</div></div><div class="hfig"><b>47 GB</b></div><span class="hbtn">Reset</span></div>
+    </div>
+    <p class="hh">History <span>50 batches</span></p>
+    <div class="hrows">
+      <div class="hrow"><div class="hicon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg></div><div class="hname"><div>Explainer_final_v3.mov</div><div class="hmeta batch"><span>3 Sept</span><span>·</span><span>1 video</span><span>·</span><span class="chip">Slow But Better</span></div></div><div class="hfig"><b class="green">7.9 GB</b><small>8.2 GB → 316 MB</small></div><span class="hbtn">Reveal</span></div>
+      <div class="hrow"><div class="hicon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg></div><div class="hname"><div>C0038.mov + 5 more</div><div class="hmeta batch"><span>3 Sept</span><span>·</span><span>6 videos</span><span>·</span><span class="chip">Slow But Better</span></div></div><div class="hfig"><b class="green">8.7 GB</b><small>12 GB → 3.8 GB</small></div><span class="hbtn">Reveal</span></div>
+      <div class="hrow"><div class="hicon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg></div><div class="hname"><div>Walkthrough_0018.mov + 2 more</div><div class="hmeta batch"><span>3 Sept</span><span>·</span><span>3 videos</span><span>·</span><span class="chip">Slow But Better</span></div></div><div class="hfig"><b class="green">9.8 GB</b><small>12 GB → 2.3 GB</small></div><span class="hbtn">Reveal</span></div>
+      <div class="hrow"><div class="hicon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg></div><div class="hname"><div>Interview_4K_0018.mov + 11 more</div><div class="hmeta batch"><span>3 Sept</span><span>·</span><span>12 videos</span><span>·</span><span class="chip">Slow But Better</span></div></div><div class="hfig"><b class="green">29 GB</b><small>52 GB → 23 GB</small></div><span class="hbtn">Reveal</span></div>
+      <div class="hrow"><div class="hicon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg></div><div class="hname"><div>C0100.MP4 + 2 more</div><div class="hmeta batch"><span>2 Sept</span><span>·</span><span>3 videos</span><span>·</span><span class="chip">Slow But Better</span></div></div><div class="hfig"><b class="green">1.3 GB</b><small>1.4 GB → 99 MB</small></div><span class="hbtn">Reveal</span></div>
+      <div class="hfoot"><span class="hall">Show all (50)</span></div>
+    </div>
+  </div>
 </div></section>
 
-<section class="sec"><div class="wrap">
-  <div class="label">Logs</div>
-  <h2 class="h">Keeps the receipts.</h2>
-  <p class="line" style="margin-top:12px">Every batch logged with what went in and what came out. Reclaimed totals per drive. A plain-text log per run. Reveal output in Finder.</p>
-  <div class="shot" style="margin-top:26px"><img src="img/history-reclaimed.png" alt="Lifetime reclaimed and History with two batches" width="1600" height="804" loading="lazy"></div>
+<section class="nerd sec" id="nerd" aria-labelledby="nerd-h"><div class="wrap">
+  <p class="label">Nerd Mode</p>
+  <h2 class="h2" id="nerd-h">Nerd Mode. <em>CRF, presets, full encoder control.</em></h2>
+  <p class="lead"><b>Full encoder control</b> for people who know exactly what they want. CRF, presets, quality scale, bit depth, dry runs. Set per batch, never left behind for the next user. Built on a self-compiled FFmpeg with x265 and VideoToolbox, nothing else&nbsp;bundled.</p>
+  <div class="tray"><picture><source type="image/webp" srcset="img/nerd-mode-settings-800.webp 800w, img/nerd-mode-settings-1600.webp 1600w" sizes="(max-width:1200px) 100vw, 1116px"><img src="img/nerd-mode-settings.png" alt="SkinnyVideo Nerd Mode showing CRF, x265 preset and VideoToolbox quality controls" width="1600" height="1000" loading="lazy"></picture></div>
+  <dl class="feats">
+    <div><dt>CRF 0-51 <small>Slow But Better</small></dt><dd>Constant-quality control for x265. Default 18. Lower is larger and cleaner.</dd></div>
+    <div><dt>ultrafast → veryslow <small>preset</small></dt><dd>Nine snap positions. Trade encode time for file size. Default medium.</dd></div>
+    <div><dt>Quality 1-85 <small>Make It Fast</small></dt><dd>VideoToolbox quality scale. Default 62. Capped at 85, where the bitrate curve goes vertical.</dd></div>
+    <div><dt>10-bit → 8-bit</dt><dd>Appears only when the batch contains a 10-bit file. 8-bit files are left&nbsp;alone.</dd></div>
+    <div><dt>Dry run</dt><dd>Scan the batch and report the totals. Nothing is written. Check before an overnight job.</dd></div>
+    <div><dt>Per batch</dt><dd>Each batch carries its own settings into the queue. Reset to defaults is one click.</dd></div>
+  </dl>
 </div></section>
 
-<section class="sec" id="install"><div class="wrap">
-  <div class="label mint">Install</div>
-  <h2 class="h">Like any other Mac app.</h2>
-  <p class="line" style="margin-top:12px">Signed and notarized by Apple. Open the .dmg, drag SkinnyVideo to Applications, launch. No warnings, no workarounds.</p>
-</div></section>
-
-<section class="sec"><div class="wrap grid2">
-  <div class="card">
-    <div class="label coral">Limits</div>
-    <h2 class="h" style="font-size:32px">What it doesn't do.</h2>
-    <ul class="limits">
+<section class="limits sec alt" aria-labelledby="limits-h"><div class="wrap">
+  <p class="label">Limits</p>
+  <div class="ledger">
+    <h2 class="h2" id="limits-h">What it <em>doesn't</em> do.</h2>
+    <ul>
       <li>Edit, trim, or color anything</li>
       <li>Run on Intel Macs</li>
       <li>Write ProRes, DNx, or AV1</li>
-      <li>Watch folders or talk to a NAS</li>
-      <li>Promise "no quality loss". Nothing lossy can.</li>
+      <li>Watch a folder and compress new files automatically</li>
+      <li>Promise "no quality loss". It aims for visually identical.</li>
     </ul>
-  </div>
-  <div class="card about">
-    <div class="label">About</div>
-    <h2 class="h" style="font-size:32px">Built by a production manager.</h2>
-    <p class="line" style="margin-top:14px;font-size:15.5px">I run a corporate video team. Every tool I tried asked the cinematographer to choose a codec. Nobody wants to. So: two buttons, no settings, originals untouched.</p>
-    <p class="line" style="margin-top:10px;font-size:15.5px">GPL licensed. Source, releases, and bug tracker are public. No paid tier, no plan for one.</p>
-    <div class="links2"><a href="https://github.com/pritam-malakar/skinnyvideo">Source</a><a href="https://github.com/pritam-malakar/skinnyvideo/releases">Changelog</a><a href="https://github.com/pritam-malakar/skinnyvideo/issues">Report a bug</a></div>
   </div>
 </div></section>
 
-<section class="sec"><div class="wrap">
-  <div class="dl">
+<section class="about sec" aria-labelledby="about-h"><div class="wrap">
+  <p class="label">About</p>
+  <div class="ledger">
+    <h2 class="h2" id="about-h">Built by a <em>production manager.</em></h2>
     <div>
-      <h2>Get the space back.</h2>
-      <div class="pills"><span class="pill dark">Open source</span><span class="pill dark">Always free</span><span class="pill dark">No internet</span><span class="pill dark">Completely local</span></div>
-      <a class="btn ink" href="https://github.com/pritam-malakar/skinnyvideo/releases/latest/download/SkinnyVideo-arm64.dmg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v11m0 0 4.5-4.5M12 14l-4.5-4.5M4 21h16"/></svg>Download SkinnyVideo 2.11.0</a>
+      <p class="copy">I'm Pritam Malakar, corporate video production manager, and I built SkinnyVideo for my own team. Every tool I tried wanted either a terminal or a dozen decisions before it would touch a single file. Nobody wants to. So: <b>two buttons, no settings, originals untouched.</b></p>
+      <p class="copy">GPL licensed. Source, releases, and bug tracker are public. No paid tier, no plan for&nbsp;one.</p>
+      <div class="more">
+        <a class="link" href="https://github.com/pritam-malakar/skinnyvideo">Source on GitHub</a>
+        <a class="link" href="https://github.com/pritam-malakar/skinnyvideo/releases">Changelog</a>
+        <a class="link" href="https://github.com/pritam-malakar/skinnyvideo/issues">Report a bug</a>
+      </div>
+    </div>
+  </div>
+</div></section>
+
+<section class="faq sec alt" id="questions" aria-labelledby="faq-h"><div class="wrap">
+  <p class="label">Questions</p>
+  <h2 class="h2" id="faq-h">Questions <em>people ask.</em></h2>
+  <div class="faqs">
+    <div class="qa"><h3>Does it work on Intel Macs?</h3><p>No. SkinnyVideo runs only on Apple Silicon (M1 or later) on macOS 11 and up.</p></div>
+    <div class="qa"><h3>Does it lose quality?</h3><p>HEVC is lossy, so yes, technically. Both tiers are tuned to look visually identical; Slow But Better keeps the most detail at the smallest size.</p></div>
+    <div class="qa"><h3>Does it upload my videos anywhere?</h3><p>No. It runs entirely on your Mac with no internet connection and no telemetry. Your footage never leaves the machine.</p></div>
+    <div class="qa"><h3>Is it safe to install?</h3><p>Yes. It's signed and notarized by Apple, open source under GPL-2.0-or-later, and every release publishes a SHA-256 checksum.</p></div>
+    <div class="qa"><h3>Where do the compressed files go?</h3><p>Into a new folder next to your originals. The originals are never opened for writing, moved, or deleted.</p></div>
+    <div class="qa"><h3>Can it compress ProRes?</h3><p>Yes. A 172 GB ProRes master came out at 6.4 GB with Slow But Better.</p></div>
+    <div class="qa"><h3>Can it compress iPhone video that's already HEVC?</h3><p>Yes, with smaller gains: 266 MB to 62 MB in our test.</p></div>
+    <div class="qa"><h3>How is it different from HandBrake?</h3><p>HandBrake is a full manual transcoder with hundreds of settings. SkinnyVideo is folder-first with two choices, and Nerd Mode when you want the settings back.</p></div>
+  </div>
+</div></section>
+
+<section class="dl sec" id="download" aria-labelledby="dl-h"><div class="wrap">
+  <p class="label">Download</p>
+  <div class="grid">
+    <div>
+      <h2 class="h2" id="dl-h">Get the <em>space</em> back. Free, for Apple Silicon Macs.</h2>
+      <p class="lead">Like any other Mac app. Open the .dmg, drag to Applications, launch. <b>Signed and notarized by Apple:</b> no warnings, no workarounds.</p>
+      <div class="cta">
+        <a class="btn" href="https://github.com/pritam-malakar/skinnyvideo/releases/latest/download/SkinnyVideo-arm64.dmg">Download for Mac</a>
+      </div>
     </div>
     <div class="req" aria-label="Requirements">
       <div><span>Mac</span><span>Apple Silicon, M1 or later</span></div>
       <div><span>macOS</span><span>macOS 11 or later · Apple Silicon</span></div>
       <div><span>Download</span><span>.dmg, about 135 MB</span></div>
       <div><span>Security</span><span>Signed and notarized by Apple</span></div>
-      <div><span>SHA-256</span><a href="https://github.com/pritam-malakar/skinnyvideo/releases/latest/download/SHA256SUMS">Verify checksum</a></div>
+      <div><span>SHA-256</span><span><a class="link" href="https://github.com/pritam-malakar/skinnyvideo/releases/latest/download/SHA256SUMS">Verify checksum</a></span></div>
       <div><span>License</span><span>GPL-2.0-or-later</span></div>
     </div>
-  </div>
-  <div class="footnotes" id="fn">
-    <p><b>* Camera originals:</b> three Sony 4K 25p 10-bit H.264 clips, 2.3 GB → 147 MB (94%), Make It Fast defaults, Mac mini M4 Pro, SkinnyVideo 2.11.0, 5 Sep 2026.</p>
-    <p><b>* ProRes:</b> one 172 GB ProRes .mov → 6.4 GB (96%) and one 81 GB → 5.2 GB (94%), Slow But Better defaults, 12 Jun 2026, earlier 2.x build of this app.</p>
-    <p><b>* Already HEVC:</b> one iPhone HEVC .mov, 266 MB → 62 MB (77%) with Slow But Better; 266 MB → 100 MB (62%) with Make It Fast. Sep 2026.</p>
-    <p><b>* Faster than the footage plays:</b> the same three Sony 4K clips, 2 min of footage, encoded in about 29 s on a Mac mini M4 Pro. Speed scales with your chip.</p>
-    <p>Savings depend on how much your footage moves and how hard the camera compressed it. The app reports the real figure after every batch.</p>
+    <div class="footnotes" id="fn">
+      <div class="fn-col">
+        <p><b>* Camera originals:</b> three Sony 4K 25p 10-bit H.264 clips, 2.3 GB → 147 MB (94%), Make It Fast defaults, Mac mini M4 Pro, 5 Sep 2026.</p>
+        <p><b>* ProRes:</b> one 172 GB ProRes .mov → 6.4 GB (96%) and one 81 GB → 5.2 GB (94%), Slow But Better defaults, 12 Jun 2026, earlier build of this app.</p>
+      </div>
+      <div class="fn-col">
+        <p><b>* Already HEVC:</b> one iPhone HEVC .mov, 266 MB → 62 MB (77%) with Slow But Better; 266 MB → 100 MB (62%) with Make It Fast. Sep 2026.</p>
+        <p><b>* Faster than the footage plays:</b> the same three Sony 4K clips, 2 min of footage, encoded in about 29 s on a Mac mini M4 Pro. Speed scales with your chip.</p>
+      </div>
+      <p class="fn-all">Savings depend on how much your footage moves and how hard the camera compressed it. The app reports the real figure after every batch.</p>
+    </div>
   </div>
 </div></section>
 
 </main>
 
-<footer class="wrap footer">
-  <span>SkinnyVideo 2.11.0. Made in Bengaluru by Pritam Malakar.</span>
-  <span><a href="https://github.com/pritam-malakar/skinnyvideo">GitHub</a><a href="https://github.com/pritam-malakar/skinnyvideo/blob/main/LICENSE">License</a><a href="https://github.com/pritam-malakar/skinnyvideo/issues">Contact</a></span>
-</footer>
+<footer class="footer"><div class="wrap">
+  <span>SkinnyVideo. Made in India by Pritam.</span>
+  <nav aria-label="Footer">
+    <a href="https://github.com/pritam-malakar/skinnyvideo">Source on GitHub</a>
+    <a href="https://github.com/pritam-malakar/skinnyvideo/releases">Releases</a>
+    <a href="https://github.com/pritam-malakar/skinnyvideo/blob/main/LICENSE">License</a>
+    <a href="https://github.com/pritam-malakar/skinnyvideo/issues">Contact</a>
+  </nav>
+</div></footer>
 </body>
 </html>

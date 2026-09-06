@@ -13,9 +13,11 @@
   people actually download. It is written after stapling, so the dmg hash is
   the stapled one.
 - The marketing site now lives in the repo at `site/`, which is the build
-  output directory Cloudflare Pages serves. It is a single self-contained
-  `index.html` — every image is inlined — plus `og.png` for link previews. All
-  of its download links point at
+  output directory Cloudflare Pages serves. It is a single `index.html` with a
+  self-hosted Geist font, three screenshots as PNG plus WebP, `og.png` for link
+  previews, a favicon set, `robots.txt`, `sitemap.xml`, a `404.html`, and
+  SoftwareApplication / FAQPage structured data. The page carries no version
+  number, and all of its download links point at
   `releases/latest/download/SkinnyVideo-arm64.dmg`, so a new release needs no
   edit to the site.
 - The minimum macOS version is now stated explicitly as 11.0 in the build
