@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.0.1 — unreleased
+## 3.0.1 — 2026-09-06
 
 - Fixed the About panel showing the app name as "Skinnyvideo". It now reads
   SkinnyVideo, matching the bundle name everywhere else.

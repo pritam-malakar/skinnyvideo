@@ -1,7 +1,7 @@
 {
   "name": "skinnyvideo",
   "productName": "SkinnyVideo",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Video archive compressor for macOS",
   "main": "src/main/main.js",
   "scripts": {
