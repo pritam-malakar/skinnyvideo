@@ -268,7 +268,7 @@ function licensesDir() {
 
 function installAboutAndCredits() {
   app.setAboutPanelOptions({
-    applicationName: 'Skinnyvideo',
+    applicationName: 'SkinnyVideo',
     applicationVersion: app.getVersion(),
     copyright: '© 2026 Pritam Malakar',
     credits: CREDITS,

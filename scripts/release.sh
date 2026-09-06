@@ -161,12 +161,33 @@ echo
 echo "release: assembling corresponding source"
 sh scripts/fetch-corresponding-source.sh "$DIST_DIR/corresponding-source"
 
+# The fetch script writes SHA256SUMS covering the source tarballs only. Append
+# the release artifacts so one published file lets anyone verify what they
+# actually downloaded. This MUST run after the staple and the blockmap
+# regeneration, for the same reason the update feed does: the pre-staple dmg
+# has a different hash. Basenames only, two spaces, so `shasum -a 256 -c
+# SHA256SUMS` works from a directory holding the assets.
+SUMS="$DIST_DIR/corresponding-source/SHA256SUMS"
+echo "release: adding the release artifacts to $SUMS"
+for f in "$DMG" "$DMG.blockmap" "$ZIP" "$ZIP.blockmap"; do
+  if [ -f "$f" ]; then
+    # One file per call, always quoted: no reliance on word splitting, which
+    # zsh does not do on unquoted expansions even though sh does.
+    ( cd "$DIST_DIR" && shasum -a 256 "$(basename "$f")" ) >> "$SUMS"
+  else
+    echo "release: note — $(basename "$f") is absent, leaving it out of SHA256SUMS" >&2
+  fi
+done
+
 # ── 9. Report ────────────────────────────────────────────────────────────────
 echo
 echo "release: artifacts in $DIST_DIR/"
 find "$DIST_DIR" -maxdepth 1 -type f \
   \( -name '*.dmg' -o -name '*.zip' -o -name '*.blockmap' -o -name 'latest-mac.yml' \) \
   -exec ls -lh {} \; | awk '{printf "  %-46s %s\n", $NF, $5}'
+echo
+echo "release: SHA256SUMS (source tarballs + release artifacts)"
+sed 's/^/  /' "$DIST_DIR/corresponding-source/SHA256SUMS"
 echo
 echo "release: corresponding source in $DIST_DIR/corresponding-source/ (attach to the release)"
 find "$DIST_DIR/corresponding-source" -maxdepth 1 -type f \

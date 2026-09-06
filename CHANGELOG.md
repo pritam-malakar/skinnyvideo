@@ -1,5 +1,30 @@
 # Changelog
 
+## 3.0.1 — unreleased
+
+- Fixed the About panel showing the app name as "Skinnyvideo". It now reads
+  SkinnyVideo, matching the bundle name everywhere else.
+- The disk image is now named `SkinnyVideo-arm64.dmg` rather than carrying the
+  version, so `releases/latest/download/SkinnyVideo-arm64.dmg` is a permanent
+  link the website can point at and never has to be edited again. The zip keeps
+  its versioned name, which is what the update feed expects.
+- `SHA256SUMS` now covers the release artifacts as well as the GPL source
+  tarballs, so the hashes published alongside a release describe the files
+  people actually download. It is written after stapling, so the dmg hash is
+  the stapled one.
+- The marketing site now lives in the repo at `site/`, which is the build
+  output directory Cloudflare Pages serves. It is a single self-contained
+  `index.html` — every image is inlined — plus `og.png` for link previews. All
+  of its download links point at
+  `releases/latest/download/SkinnyVideo-arm64.dmg`, so a new release needs no
+  edit to the site.
+- The minimum macOS version is now stated explicitly as 11.0 in the build
+  config instead of being inherited from Electron's default. Same floor as
+  before — 3.0.0 already shipped with `LSMinimumSystemVersion` 11.0 — but it is
+  now a deliberate choice that will not move silently when Electron is
+  upgraded. (Electron 38 drops Big Sur; that upgrade will need this raised
+  to 12.0.)
+
 ## 3.0.0 — 2026-09-05
 
 First public release.
