@@ -34,7 +34,7 @@ Savings depend on how much the footage moves and how hard the camera already com
 
 **Make It Fast** (recommended) — hardware HEVC via Apple VideoToolbox. Encodes on the media engine in your Mac's chip, faster than the footage plays, and the Mac stays usable while it runs.
 
-**Slow But Better** (archival) — software HEVC via libx265. Spends more time on every frame for a smaller file at the same visible quality. Uses more of your Mac while it runs.
+**Slow But Better** (archival) — software HEVC via libx265. Spends more time on every frame for a smaller file at the same visible quality. Uses more of your Mac while it runs. On fanless or lower-core Macs such as MacBook Neo it is noticeably slower, but it completes normally.
 
 Both tiers write HEVC (H.265) as `.mp4`, tagged `hvc1` with faststart, so the files open directly in QuickTime, Premiere Pro, After Effects, and Final Cut Pro.
 
@@ -77,7 +77,7 @@ HandBrake is a full manual transcoder with hundreds of settings and a queue you 
 
 | | |
 |---|---|
-| Mac | Apple Silicon, M1 or later |
+| Mac | Apple Silicon Macs, including MacBook Neo |
 | macOS | 11 or later |
 | Download | [`SkinnyVideo-arm64.dmg`](https://github.com/pritam-malakar/skinnyvideo/releases/latest/download/SkinnyVideo-arm64.dmg), about 135 MB |
 | Security | Signed with a Developer ID certificate and notarized by Apple |
@@ -108,7 +108,7 @@ The bundled `ffmpeg`/`ffprobe` are produced by [`scripts/build-ffmpeg.sh`](scrip
 ## Frequently asked questions
 
 **Does it work on Intel Macs?**
-No. SkinnyVideo runs only on Apple Silicon (M1 or later) on macOS 11 and up.
+No. SkinnyVideo runs only on Apple Silicon Macs, including MacBook Neo, on macOS 11 and up.
 
 **Does it lose quality?**
 HEVC is lossy, so yes, technically. Both tiers are tuned to look visually identical; Slow But Better keeps the most detail at the smallest size.
