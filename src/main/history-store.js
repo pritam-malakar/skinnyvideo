@@ -11,6 +11,29 @@
 
 const HISTORY_CAP = 50;
 
+/* How a row's `name` is to be rendered:
+     'files'  — a multi-file drop; the row appends "+ (files - 1) more"
+     'folder' — a dropped folder; renders verbatim
+     'custom' — the operator renamed the batch inline; renders verbatim */
+const KINDS = new Set(['files', 'folder', 'custom']);
+
+/* Entries written before v3.0.2 have no `kind` and carry the suffix baked
+   into `name` ("C0038.mov + 12 more"). Strip it and mark them 'files'; the
+   suffix's number is DISCARDED rather than trusted, because it is the very
+   number that was wrong — the row re-derives it from `files`. A pre-3.0.2
+   name with no suffix was a folder drop or a rename, and 'folder' renders
+   both verbatim, which is what they did before. Pure function over one
+   entry; applied on read so no migration pass has to rewrite prefs.json. */
+const BAKED_SUFFIX = / \+ \d+ more$/;
+function migrateHistoryEntry(entry) {
+  if (!entry || typeof entry !== 'object') return entry;
+  if (KINDS.has(entry.kind)) return entry;
+  const name = typeof entry.name === 'string' ? entry.name : '';
+  return BAKED_SUFFIX.test(name)
+    ? { ...entry, name: name.replace(BAKED_SUFFIX, ''), kind: 'files' }
+    : { ...entry, kind: 'folder' };
+}
+
 /* Coerce one renderer-supplied entry into the stored shape, or null if it
    isn't a real run. `at` is stamped by the caller (main), never trusted from
    the renderer — same as the lifetime ledger's lastUsed. */
@@ -29,9 +52,18 @@ function sanitizeHistoryEntry(h, at) {
      TIER_LABEL and must never be baked into the store — a stored label would
      freeze today's wording into every past run. */
   const tier = (h.tier === 'regular' || h.tier === 'preserve') ? h.tier : 'regular';
+  /* v3.0.2 — `name` is the BARE name (first filename, folder name, or the
+     operator's rename) and `kind` says how to render it. The "+ N more"
+     suffix is NOT stored: it is derived at render time from `files`, the one
+     count in this record, so the row can never say "+ 12 more · 12 videos"
+     the way a baked string could. Unknown kinds fall back to 'folder', which
+     renders verbatim — the safe direction, since a wrong verbatim name is
+     merely unhelpful while a wrong count is a lie. */
+  const kind = KINDS.has(h.kind) ? h.kind : 'folder';
   return {
     at,
     name,
+    kind,
     tier,
     files,
     failed: num(h.failed),
@@ -60,9 +92,14 @@ function appendHistoryEntry(store, rawEntry, at) {
   return entry;
 }
 
-/* Read side — same defensive guard, so a corrupt/missing key reads empty. */
+/* Read side — same defensive guard, so a corrupt/missing key reads empty.
+   Every entry goes through migrateHistoryEntry on the way out, so a store
+   written by any earlier version renders correctly with no user action and
+   without rewriting prefs.json on load. */
 function readHistory(store) {
-  return Array.isArray(store.history) ? store.history : [];
+  return Array.isArray(store.history) ? store.history.map(migrateHistoryEntry) : [];
 }
 
-module.exports = { HISTORY_CAP, sanitizeHistoryEntry, appendHistoryEntry, readHistory };
+module.exports = {
+  HISTORY_CAP, KINDS, sanitizeHistoryEntry, appendHistoryEntry, readHistory, migrateHistoryEntry
+};

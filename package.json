@@ -1,11 +1,12 @@
 {
   "name": "skinnyvideo",
   "productName": "SkinnyVideo",
-  "version": "3.0.1",
+  "version": "3.0.2",
   "description": "Video archive compressor for macOS",
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
+    "test": "for t in test/*_test.js; do echo \"\\n### $t\"; if grep -q \"require('electron')\" \"$t\"; then ./node_modules/.bin/electron \"$t\"; else node \"$t\"; fi || exit 1; done",
     "dist": "sh scripts/release.sh",
     "postinstall": "node scripts/fix-electron.js"
   },

@@ -1,5 +1,28 @@
 # Changelog
 
+## 3.0.2 — 2026-09-07
+
+- The release script now clears the previous run's artifacts from `dist/`
+  before building. The disk image name carries no version, so it overwrote
+  cleanly, but the zip does — a version bump left the old zip behind, the
+  update-feed step then matched two zips at once, and the build died after
+  notarization and stapling had already been spent. Named globs only; the
+  unpacked app directory and the sha256-pinned source tarballs are left alone.
+- The disk image is now signed with the Developer ID certificate, not only
+  notarized and stapled. A stapled ticket was enough for Gatekeeper on first
+  open, but the container itself carried no signature, so it failed
+  `spctl --assess --context context:primary-signature` and had nothing
+  attesting to it once the quarantine bit was gone. Signing happens before
+  notarization; stapling, the blockmap and the update feed still follow.
+- History rows no longer disagree with themselves about how many files a run
+  held — "C0038.mov + 12 more · 12 videos". The name and the count came from
+  different populations at different moments: the suffix was frozen when the
+  files were dropped and counted everything dropped, including files that
+  were not video and files that later failed or were skipped, while the count
+  came from the files that actually finished. The row now stores a bare name
+  and derives the suffix from the one count in the record. Existing history
+  is migrated on read, with nothing to do by hand.
+
 ## 3.0.1 — 2026-09-06
 
 - Fixed the About panel showing the app name as "Skinnyvideo". It now reads

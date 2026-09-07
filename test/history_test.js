@@ -164,7 +164,7 @@ app.whenReady().then(async () => {
   STAMP_AT = 1_755_500_000_000;
   const idA = await addBatch({ files: A, sizes: ASZ, tier: 'regular' });
   // Inline rename BEFORE the run finishes — the entry must carry the new name.
-  await run(`(() => { const b = queue.find(q => q.id === ${idA}); b.srcName = 'Wedding rushes'; renderQueue(); })(); true;`);
+  await run(`(() => { const b = queue.find(q => q.id === ${idA}); b.srcName = 'Wedding rushes'; b.renamed = true; renderQueue(); })(); true;`);
   await wait(120);
   await runBatchTo(idA, [
     { file: A[0], outBytes: 1_500_000, outcome: 'ok' },      // done  4.0M → 1.5M
@@ -185,7 +185,10 @@ app.whenReady().then(async () => {
   check(e0.after === 3_500_000, `after = output bytes of DONE files only (got ${e0.after})`);
   check(e0.reclaimed === 6_500_000, `reclaimed = before − after (got ${e0.reclaimed})`);
   check(e0.runDir === LIVE_RUNDIR, `runDir carried from lastResult (got ${e0.runDir})`);
-  check(Object.keys(e0).sort().join(',') === 'after,at,before,failed,files,name,reclaimed,runDir,skipped,tier',
+  /* v3.0.2 added `kind` — the row's name is stored bare and the "+ N more"
+     suffix is derived from `files` at render time (see history_counts_test). */
+  check(e0.kind === 'custom', `kind is 'custom' after an inline rename (got ${JSON.stringify(e0.kind)})`);
+  check(Object.keys(e0).sort().join(',') === 'after,at,before,failed,files,kind,name,reclaimed,runDir,skipped,tier',
     `entry holds exactly the documented keys (got ${Object.keys(e0).sort().join(',')})`);
 
   const shown = await sectionState();

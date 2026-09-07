@@ -1556,7 +1556,8 @@ function beginRenameBatch(batch, nameEl) {
     settled = true;
     if (commit) {
       const trimmed = input.value.trim();
-      if (trimmed) batch.srcName = trimmed;   // reject empty/whitespace → keep prev
+      // renamed: History renders this verbatim, never re-derived from files
+      if (trimmed) { batch.srcName = trimmed; batch.renamed = true; }   // reject empty/whitespace → keep prev
     }
     editingBatchId = null;
     renderQueue();                            // single fresh repaint
@@ -2613,11 +2614,13 @@ function maybeCreditBatch(batch) {
   let afterBytes = 0;
   let failedCount = 0;
   let skippedCount = 0;
+  let firstDoneName = null;      // names the row; see the historyEntry below
   for (const f of batch.files) {
     if (f.status === 'failed') { failedCount += 1; continue; }
     if (f.status === 'skipped' || f.status === 'existed') { skippedCount += 1; continue; }
     if (f.status !== 'done') continue;
     filesAdded += 1;
+    if (firstDoneName === null) firstDoneName = f.name;
     if (Number.isFinite(f.outputSize) && Number.isFinite(f.size)) {
       const delta = f.size - f.outputSize;
       if (delta > 0) addedBytes += delta;
@@ -2627,11 +2630,27 @@ function maybeCreditBatch(batch) {
     }
   }
   if (filesAdded === 0) return;
-  /* Name is frozen HERE, at terminal time, so it reflects any inline rename
+  /* Name is resolved HERE, at terminal time, so it reflects any inline rename
      the operator made while the batch was queued or running. Tier is the
-     internal key — never a label; the store must not hold display strings. */
+     internal key — never a label; the store must not hold display strings.
+
+     v3.0.2 — name and kind, NOT a baked "+ N more" string. The old code froze
+     fileListDisplayName(dropped paths) at drop time, so the suffix counted
+     every path dropped — non-videos the scan rejected, and files that later
+     failed or were skipped — while the row's count came from filesAdded here.
+     Hence "C0038.mov + 12 more · 12 videos". The suffix is now derived at
+     render time from `files` alone, so the two cannot disagree.
+
+     'custom' (inline rename) and 'folder' render verbatim. 'files' takes the
+     first DONE file's basename, from this same loop's population — not
+     batch.files[0], which may itself have failed. */
+  const kind = batch.renamed ? 'custom' : (batch.kind === 'folder' ? 'folder' : 'files');
+  const name = (kind === 'files')
+    ? ((firstDoneName || batch.srcName || 'Untitled'))
+    : (batch.srcName || 'Untitled');
   const historyEntry = {
-    name: batch.srcName || 'Untitled',
+    name,
+    kind,
     tier: batch.tier,
     files: filesAdded,
     failed: failedCount,
@@ -2795,6 +2814,17 @@ function fmtRunDate(ts) {
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+/* The ONE place "+ N more" is produced. Derived from entry.files — the same
+   field the row's "N videos" renders — so the two are arithmetically locked:
+   the suffix is always exactly (files - 1). 'folder' and 'custom' names are
+   the operator's words and render untouched. Pre-3.0.2 entries arrive here
+   already migrated by history-store's readHistory. */
+function historyDisplayName(entry) {
+  const n = Math.max(0, Math.floor(Number(entry.files) || 0));
+  if (entry.kind !== 'files' || n <= 1) return entry.name;
+  return `${entry.name} + ${n - 1} more`;
+}
+
 function historyRow(entry) {
   const li = document.createElement('li');
   li.className = 'hs-row';
@@ -2809,7 +2839,7 @@ function historyRow(entry) {
   info.className = 'hs-info';
   const label = document.createElement('div');
   label.className = 'hs-label';
-  label.textContent = entry.name;
+  label.textContent = historyDisplayName(entry);
   if (entry.runDir) label.title = entry.runDir;
   info.appendChild(label);
 
