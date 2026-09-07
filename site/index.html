@@ -101,7 +101,7 @@ code{font-family:inherit;font-size:.92em;font-weight:500;color:var(--ink);backgr
 .h1 em{font-style:normal;color:var(--mint)}
 .hero .lead{margin-top:24px;max-width:44ch}
 .cta{margin-top:36px;display:flex;align-items:center;gap:22px;flex-wrap:wrap}
-.shot{margin-right:calc(-1 * ((100vw - min(100vw,var(--w))) / 2 + var(--gutter) + 56px))}
+.shot{margin-right:max(calc(-1 * ((100vw - min(100vw,var(--w))) / 2 + var(--gutter))),-160px)}
 
 /* proof: intro line, top hairline, three equal typographic columns */
 .proof .intro{margin-top:20px;font-size:19px;color:var(--body);line-height:1.5;text-wrap:pretty;max-width:60ch}
