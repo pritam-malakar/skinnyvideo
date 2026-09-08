@@ -482,6 +482,13 @@ const themeMedia = window.matchMedia('(prefers-color-scheme: dark)');
 let themeOverridden = false;   // manual click → stop following the system
 function applyTheme(dark) {
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  /* Keep the NSWindow backgroundColor on --canvas. The macOS corner mask leaves
+     a crescent of bare window above the square top edge of the web contents; if
+     the two colours disagree that crescent reads as a coloured wedge at every
+     corner (near-black on light grey, before this). Sent on EVERY path into
+     this function — startup seed, system appearance change, manual segment —
+     because this function is the only place data-theme is set. */
+  try { window.api.setTheme(dark); } catch { /* pre-bridge / non-Electron host */ }
   if (themeLightBtn) {
     themeLightBtn.classList.toggle('active', !dark);
     themeLightBtn.setAttribute('aria-pressed', String(!dark));

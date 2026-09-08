@@ -2,6 +2,10 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
   getAppVersion: () => ipcRenderer.invoke('app-version'),
+  /* Tell main which theme is now painted so it can match the window's
+     backgroundColor to --canvas (see ../shared/theme). One-way: the renderer
+     has already repainted and has nothing to wait for. */
+  setTheme: (dark) => ipcRenderer.send('theme:changed', { dark: !!dark }),
   getTierDefaults: () => ipcRenderer.invoke('get-tier-defaults'),
   chooseDestination: (defaultPath) => ipcRenderer.invoke('choose-destination', defaultPath),
   scanSource: (srcPath) => ipcRenderer.invoke('scan-source', srcPath),

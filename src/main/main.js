@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, MenuItem } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, MenuItem, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
@@ -14,6 +14,7 @@ const { appendHistoryEntry, readHistory } = require('./history-store');
 const { RUN_DIALOG, handleCloseAttempt, applyProgressToQuitState } = require('./close-guard');
 const { beginCancel, quitViaCancel } = require('./quit-teardown');
 const { installUpdater } = require('./updater');
+const { canvasFor } = require('../shared/theme');
 
 let mainWindow = null;
 let stopRequested = false;
@@ -180,8 +181,17 @@ function createWindow() {
        exactly like the mockup .html. Real OS vibrancy is dropped: it required a
        transparent window over a near-black desktop, which made the frosted panels
        sample a dark backdrop and read flat/sunken. An opaque painted backdrop is
-       what gives the milky floating panels. backgroundColor = the mockup canvas. */
-    backgroundColor: '#111111',
+       what gives the milky floating panels.
+
+       backgroundColor = the mockup canvas — NOT a constant. It tracks the
+       renderer's --canvas per appearance (../shared/theme), because macOS shows
+       any disagreement: the system corner mask leaves a crescent of bare
+       NSWindow above the square top edge of the web contents, and that crescent
+       is painted with THIS colour. Seeded here from the system appearance so the
+       very first frame is right; kept in sync afterwards by 'theme:changed'
+       below, which the renderer sends for every theme change including its
+       manual override. */
+    backgroundColor: canvasFor(nativeTheme.shouldUseDarkColors),
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 18 },
     show: false,
@@ -362,6 +372,21 @@ app.on('before-quit', (e) => {
     confirmQuit: confirmStopAndQuit,
     proceed: () => stopRunThenQuit(() => app.quit())
   });
+});
+
+/* ─── Window canvas mirror ────────────────────────────────────────────────
+   The RENDERER is the authority on which theme is active: it seeds from
+   matchMedia at startup, live-follows system appearance changes, and honours a
+   manual segment click that overrides both. Main deliberately does NOT listen
+   to nativeTheme — that would fight the manual override and repaint the window
+   to a colour the renderer is not showing. Main only mirrors what it is told.
+
+   Fire-and-forget (send/on, not invoke/handle): the renderer has already
+   repainted by the time this arrives and has nothing to wait for. Guarded for a
+   window destroyed between the send and the delivery. */
+ipcMain.on('theme:changed', (_evt, payload) => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.setBackgroundColor(canvasFor(!!(payload && payload.dark)));
 });
 
 /* Version read from Electron's bundled identity — single source of truth.
