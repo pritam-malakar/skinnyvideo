@@ -3003,12 +3003,35 @@ window.api.onOrphansFound(async ({ orphans } = {}) => {
   }
 });
 
-/* Version label — single source of truth. main.js returns app.getVersion()
-   which reads CFBundleShortVersionString in the packaged .app and falls
-   through to package.json in dev. Bumping package.json is the only edit. */
+/* Version label — single source of truth. main.js returns the build descriptor
+   built on app.getVersion(), which reads CFBundleShortVersionString in the
+   packaged .app and falls through to package.json in dev. Bumping package.json
+   is still the only edit.
+
+   In dev the descriptor carries a "-dev.<short sha>" tail. That tail is split
+   off into its own lemon chip so a `npm start` instance is unmistakable at a
+   glance — a release badge has no tail and renders exactly as it always has.
+   Lemon is the caution token and is worn as a FILL here (ink on lemon, like
+   .tl-tag.paused) rather than as text colour: #FFD84D as type would sit at
+   ~1.6:1 on the light canvas. Split on "-dev" specifically, never the first
+   hyphen, so a version like "2.1.17-test" stays plain. */
+const DEV_TAIL = /-dev(?:\..*)?$/;
 (async () => {
   try {
     const v = await window.api.getAppVersion();
-    if (appVersionEl && v) appVersionEl.textContent = 'v' + v;
+    if (!appVersionEl || !v) return;
+    const tail = DEV_TAIL.exec(v);
+    if (!tail) { appVersionEl.textContent = 'v' + v; return; }
+    appVersionEl.textContent = 'v' + v.slice(0, tail.index);
+    const chip = document.createElement('span');
+    chip.className = 'dev-chip';
+    /* textContent, never innerHTML — the sha is ours, but the badge is not
+       where we start trusting strings. The chip drops the joining hyphen
+       because a pill reading "-dev.71df208" looks like a typo; the canonical
+       unbroken string stays available on the title below, so what you copy out
+       of the tooltip is exactly what main reported. */
+    chip.textContent = tail[0].replace(/^-/, '');
+    appVersionEl.appendChild(chip);
+    appVersionEl.title = 'v' + v;
   } catch { /* leave blank if IPC fails */ }
 })();

@@ -219,6 +219,22 @@ svg { display: block; }
   color: var(--fg-3);
   line-height: 1;
 }
+/* Dev-build tail ("dev.71df208"), appended only when main reports a descriptor
+   with a -dev segment — a release badge never renders this element. Lemon, the
+   caution token, worn as a FILL like .tl-tag.paused: ink on lemon reads the
+   same in both themes, where #FFD84D as TYPE would sit at ~1.6:1 on the light
+   canvas. Theme-invariant by construction — both tokens are :root accents. */
+.app-version .dev-chip {
+  margin-left: 6px;
+  padding: 2px 7px;
+  border-radius: var(--r-pill);
+  background: var(--lemon);
+  color: var(--ink);
+  font-family: var(--font-main);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
 
 /* ============================================================
    Header

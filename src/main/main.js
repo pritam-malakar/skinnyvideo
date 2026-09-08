@@ -15,6 +15,7 @@ const { RUN_DIALOG, handleCloseAttempt, applyProgressToQuitState } = require('./
 const { beginCancel, quitViaCancel } = require('./quit-teardown');
 const { installUpdater } = require('./updater');
 const { canvasFor } = require('../shared/theme');
+const { buildDescriptor } = require('./build-id');
 
 let mainWindow = null;
 let stopRequested = false;
@@ -391,8 +392,19 @@ ipcMain.on('theme:changed', (_evt, payload) => {
 
 /* Version read from Electron's bundled identity — single source of truth.
    In dev this falls through to package.json; in a packaged .app it returns
-   CFBundleShortVersionString. The renderer fetches it once at startup. */
-ipcMain.handle('app-version', async () => app.getVersion());
+   CFBundleShortVersionString. The renderer fetches it once at startup.
+
+   What crosses the bridge is the BUILD DESCRIPTOR, not the bare version: in
+   dev it carries a "-dev.<short sha>" suffix so a `npm start` instance is
+   never mistaken for the installed copy at the same version number. Packaged
+   builds get the version verbatim — see ./build-id. This is the ONLY consumer
+   of the suffix. app.getVersion() itself is untouched, so the About panel, the
+   updater's currentVersion and every other reader are unaffected. */
+ipcMain.handle('app-version', async () => buildDescriptor({
+  version: app.getVersion(),
+  packaged: app.isPackaged,
+  gitDir: path.join(__dirname, '..', '..', '.git')
+}));
 
 /* Pro Mode foundation: the per-tier encode defaults, resolved renderer-side
    into each batch payload's `settings` field at enqueue time. Single source
