@@ -21,6 +21,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <link rel="manifest" href="site.webmanifest" />
 <link rel="preload" href="fonts/Geist-latin.woff2" as="font" type="font/woff2" crossorigin />
+<script src="compare.js" defer></script>
 <script type="application/ld+json">[{"@context":"https://schema.org","@type":"SoftwareApplication","name":"SkinnyVideo","applicationCategory":"MultimediaApplication","operatingSystem":"macOS 11 or later (Apple Silicon Macs, including MacBook Neo)","description":"Free, open-source video compressor for Mac. Batch-compress 4K, ProRes and H.264 footage to HEVC on Apple Silicon. Runs offline, originals never touched.","url":"https://skinnyvideo.app/","downloadUrl":"https://github.com/pritam-malakar/skinnyvideo/releases/latest/download/SkinnyVideo-arm64.dmg","license":"https://www.gnu.org/licenses/old-licenses/gpl-2.0.html","isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"screenshot":"https://skinnyvideo.app/og.png","featureList":["Batch-compress whole folders of camera footage to HEVC at once","Two quality choices: Make It Fast (hardware HEVC via Apple VideoToolbox) and Slow But Better (software HEVC via x265)","Originals never touched; results land in a new folder","Runs entirely on your Mac, offline, with no telemetry","Nerd Mode with CRF, presets, quality scale, bit depth and dry runs"],"author":{"@type":"Person","name":"Pritam Malakar"}},{"@context":"https://schema.org","@type":"WebSite","name":"SkinnyVideo","url":"https://skinnyvideo.app/"},{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Does it work on Intel Macs?","acceptedAnswer":{"@type":"Answer","text":"No. SkinnyVideo runs only on Apple Silicon Macs, including MacBook Neo, on macOS 11 and up."}},{"@type":"Question","name":"Does it lose quality?","acceptedAnswer":{"@type":"Answer","text":"HEVC is lossy, so yes, technically. Both tiers are tuned to look visually identical; Slow But Better keeps the most detail at the smallest size."}},{"@type":"Question","name":"Does it upload my videos anywhere?","acceptedAnswer":{"@type":"Answer","text":"No. It runs entirely on your Mac with no internet connection and no telemetry. Your footage never leaves the machine."}},{"@type":"Question","name":"Is it safe to install?","acceptedAnswer":{"@type":"Answer","text":"Yes. It's signed and notarized by Apple, open source under GPL-2.0-or-later, and every release publishes a SHA-256 checksum."}},{"@type":"Question","name":"Where do the compressed files go?","acceptedAnswer":{"@type":"Answer","text":"Into a new folder next to your originals. The originals are never opened for writing, moved, or deleted."}},{"@type":"Question","name":"Can it compress ProRes?","acceptedAnswer":{"@type":"Answer","text":"Yes. A 172 GB ProRes master came out at 6.4 GB with Slow But Better."}},{"@type":"Question","name":"Can it compress iPhone video that's already HEVC?","acceptedAnswer":{"@type":"Answer","text":"Yes, with smaller gains: 266 MB to 62 MB in our test."}},{"@type":"Question","name":"How is it different from HandBrake?","acceptedAnswer":{"@type":"Answer","text":"HandBrake is a full manual transcoder with hundreds of settings. SkinnyVideo is folder-first with two choices, and Nerd Mode when you want the settings back."}}]}]</script>
 <style>
 @font-face{font-family:'Geist';font-style:normal;font-weight:100 900;font-display:swap;src:url("fonts/Geist-latin.woff2") format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
@@ -290,6 +291,71 @@ code{font-family:inherit;font-size:.92em;font-weight:500;color:var(--ink);backgr
   .footer .wrap{flex-direction:column;align-items:flex-start;padding-top:28px;padding-bottom:36px}
   .footer nav{gap:18px}
 }
+
+/* compare: original-vs-compressed slider in the results section (behaviour in compare.js).
+   Bottom video = HEVC web preview of the ProRes original, left of the handle; top video =
+   the untouched SkinnyVideo output, clipped to the right of --split. Nothing but the poster
+   loads until "Load comparison". Placed after the breakpoints so it wins over .tray img/.btn. */
+.compare{margin-top:72px}
+.compare [hidden]{display:none!important}
+.cmp-h{margin-bottom:24px}
+.cmp-stage{--split:50%;--px:50%;--py:50%;position:relative;aspect-ratio:16/9;overflow:hidden;isolation:isolate;border-radius:var(--r-frame-in);background:#000;box-shadow:0 0 0 1px var(--tray-img-line);user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.cmp-v{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:cover;object-position:var(--px) var(--py)}
+.cmp-comp{clip-path:inset(0 0 0 var(--split))}
+.cmp-stage.is-1to1{cursor:grab;touch-action:none}
+.cmp-stage.is-1to1 .cmp-v{object-fit:none}
+.cmp-stage.is-panning{cursor:grabbing}
+.cmp-poster{position:absolute;inset:0;z-index:4;display:grid;place-items:center;align-content:center;gap:12px}
+.cmp-poster picture{position:absolute;inset:0}
+.cmp-poster img{width:100%;height:100%;object-fit:cover;border-radius:0;box-shadow:none}
+.cmp-load{position:relative;border:0;font-family:inherit;cursor:pointer;box-shadow:0 12px 40px -12px rgba(0,0,0,.7)}
+.cmp-load:disabled{cursor:progress;opacity:1;transform:none}
+.cmp-note{position:relative;max-width:min(40ch,calc(100% - 32px));padding:10px 16px;border-radius:14px;background:rgba(17,17,17,.86);color:var(--ink);font-size:15px;font-weight:500;line-height:1.45;text-align:center;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+.cmp-tag{position:absolute;top:12px;z-index:2;max-width:calc(50% - 20px);padding:5px 11px;border-radius:999px;background:rgba(17,17,17,.74);color:var(--ink);font-size:12.5px;font-weight:500;line-height:1.35;pointer-events:none;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+.cmp-tag.l{left:12px}
+.cmp-tag.r{right:12px;text-align:right}
+.cmp-line{position:absolute;top:0;bottom:0;left:var(--split);z-index:3;width:2px;margin-left:-1px;background:var(--mint);box-shadow:0 0 0 1px rgba(17,17,17,.3);pointer-events:none}
+.cmp-handle{position:absolute;top:50%;left:var(--split);z-index:3;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;background:var(--mint);color:var(--btn-ink);display:grid;place-items:center;cursor:ew-resize;touch-action:none;box-shadow:0 0 0 3px rgba(17,17,17,.35),0 8px 24px -6px rgba(0,0,0,.6)}
+.cmp-handle svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.cmp-handle:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radius:50%}
+.cmp-bar{margin-top:16px;display:flex;align-items:center;flex-wrap:wrap;gap:10px}
+.cmp-btn{height:40px;padding:0 16px;border:0;border-radius:999px;background:var(--hover-bg);box-shadow:inset 0 0 0 1px var(--hair-2);color:var(--ink);font:500 14.5px/1 var(--font);letter-spacing:-.01em;white-space:nowrap;cursor:pointer;transition:background-color .25s var(--ease)}
+.cmp-btn:hover:not(:disabled){background:var(--hair-2)}
+.cmp-btn:disabled{color:var(--muted);cursor:not-allowed}
+.cmp-status{margin-left:auto;font-size:14px;font-weight:500;color:var(--muted)}
+.cmp-disc{margin-top:12px;font-size:14px;line-height:1.55;color:var(--muted);text-wrap:pretty}
+.cmp-dl{margin-top:36px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:28px 32px}
+.cmp-file{min-width:0;display:flex;flex-direction:column;align-items:flex-start}
+.cmp-file .btn{max-width:100%;height:auto;min-height:52px;padding:12px 26px;white-space:normal;text-align:center;line-height:1.3}
+.cmp-file .btn.ghost{background:transparent;color:var(--ink);box-shadow:inset 0 0 0 1px var(--hair-2)}
+.cmp-sumh{margin-top:16px;font-size:12px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.cmp-sum{margin-top:6px;width:100%;display:flex;align-items:center;gap:10px}
+.cmp-sum code{flex:1;min-width:0;padding:6px 10px;white-space:normal;word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;font-weight:400;line-height:1.5;color:var(--body)}
+.cmp-copy{flex:none;height:34px;padding:0 13px;font-size:13px}
+.cmp-facts{margin-top:36px;width:100%;border-collapse:collapse;border-top:1px solid var(--hair-2);font-size:15px}
+.cmp-facts th,.cmp-facts td{padding:12px 0;border-bottom:1px solid var(--hair);text-align:left;vertical-align:top;font-weight:500}
+.cmp-facts th{width:34%;padding-right:16px;color:var(--muted)}
+.cmp-facts td{color:var(--ink)}
+@media (max-width:1024px){.compare{margin-top:56px}}
+@media (max-width:640px){
+  .compare{margin-top:32px}
+  .cmp-h{margin-bottom:18px}
+  .cmp-stage{border-radius:10px}
+  .cmp-tag{top:8px;max-width:calc(50% - 14px);padding:3px 8px;font-size:10.5px;border-radius:9px}
+  .cmp-tag.l{left:8px}
+  .cmp-tag.r{right:8px}
+  .cmp-load{height:44px;padding:0 18px;font-size:15px}
+  .cmp-note{font-size:13.5px;padding:8px 12px}
+  .cmp-bar{flex-direction:column;align-items:stretch}
+  .cmp-btn{height:44px}
+  .cmp-copy{height:40px}
+  .cmp-status{margin-left:0;text-align:center}
+  .cmp-dl{grid-template-columns:1fr;margin-top:28px}
+  .cmp-file .btn{width:100%;min-height:50px;padding:12px 20px}
+  .cmp-facts{font-size:14.5px}
+  .cmp-facts tr{display:block;padding:11px 0;border-bottom:1px solid var(--hair)}
+  .cmp-facts th,.cmp-facts td{display:block;width:auto;padding:0;border:0}
+}
 </style>
 </head>
 <body>
@@ -349,6 +415,57 @@ code{font-family:inherit;font-size:.92em;font-weight:500;color:var(--ink);backgr
       <div class="ba">266 MB → <b>62 MB</b></div>
       <div class="tl slow-t">Slow But Better</div>
     </div>
+  </div>
+  <div class="compare" id="compare" role="region" aria-labelledby="cmp-h" data-compare>
+    <h3 class="h3 cmp-h" id="cmp-h">Original vs compressed, <em>side by side.</em></h3>
+    <div class="tray">
+      <div class="cmp-stage">
+        <video class="cmp-v cmp-orig" muted playsinline preload="none" disablepictureinpicture data-src="https://files.skinnyvideo.app/demo/v1/original-preview.mp4" data-mb="92.2" aria-label="Original, left of the handle"></video>
+        <video class="cmp-v cmp-comp" muted playsinline preload="none" disablepictureinpicture data-src="https://files.skinnyvideo.app/demo/v1/compressed.mp4" data-mb="13.3" aria-label="SkinnyVideo output, right of the handle"></video>
+        <span class="cmp-tag l" hidden>Original · ProRes 422 HQ · 593&nbsp;MB</span>
+        <span class="cmp-tag r" hidden>SkinnyVideo · HEVC · 13.3&nbsp;MB</span>
+        <div class="cmp-line" hidden></div>
+        <div class="cmp-handle" role="slider" tabindex="0" aria-label="Comparison split" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" aria-valuetext="50% original, 50% compressed" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 7-5 5 5 5M15 7l5 5-5 5"/></svg></div>
+        <div class="cmp-poster">
+          <picture><source type="image/webp" srcset="https://files.skinnyvideo.app/demo/v1/poster-1600.webp"><img src="https://files.skinnyvideo.app/demo/v1/poster.jpg" alt="Still frame from the 4K ProRes test clip used in this comparison" width="3840" height="2160" loading="lazy" decoding="async"></picture>
+          <button class="btn cmp-load" type="button">Load comparison · ~105&nbsp;MB</button>
+          <p class="cmp-note" hidden>Your browser can't play HEVC. Download both files below to compare.</p>
+        </div>
+      </div>
+    </div>
+    <div class="cmp-bar">
+      <button class="cmp-btn cmp-play" type="button" disabled>Play</button>
+      <button class="cmp-btn cmp-zoom" type="button" disabled>1:1 pixels</button>
+      <p class="cmp-status" role="status">Not loaded yet</p>
+    </div>
+    <p class="cmp-disc">The left side is a 100 Mb/s HEVC preview of the original — browsers can't play ProRes. The right side is the actual SkinnyVideo output. Download the real files to check.</p>
+    <div class="cmp-dl">
+      <div class="cmp-file">
+        <a class="btn ghost" href="https://files.skinnyvideo.app/demo/v1/original.mov" download rel="noopener">Download original · ProRes 422 HQ · 593&nbsp;MB</a>
+        <p class="cmp-sumh">SHA-256</p>
+        <div class="cmp-sum"><code id="sha-orig">a8df15dd22d4c8fab40c804fe9b9ca9fe1341d3b3c46b6dd63a4f6892b920cbe</code><button class="cmp-btn cmp-copy" type="button" data-copy="sha-orig" aria-label="Copy SHA-256 of the original">Copy</button></div>
+      </div>
+      <div class="cmp-file">
+        <a class="btn" href="https://files.skinnyvideo.app/demo/v1/compressed-download.mp4" download rel="noopener">Download compressed · HEVC · 13.3&nbsp;MB</a>
+        <p class="cmp-sumh">SHA-256</p>
+        <div class="cmp-sum"><code id="sha-comp">f50237e076369fc1dc5ae21d6c108c612855df384e1cfbb01e4a9bf7c2098062</code><button class="cmp-btn cmp-copy" type="button" data-copy="sha-comp" aria-label="Copy SHA-256 of the compressed file">Copy</button></div>
+      </div>
+    </div>
+    <table class="cmp-facts" aria-label="Test clip facts">
+      <tbody>
+        <tr><th scope="row">Resolution</th><td>3840 × 2160</td></tr>
+        <tr><th scope="row">Frame rate</th><td>25 fps · 184 frames</td></tr>
+        <tr><th scope="row">Duration</th><td>7.36 s · no audio</td></tr>
+        <tr><th scope="row">Color</th><td>Rec. 709 SDR</td></tr>
+        <tr><th scope="row">Original</th><td>ProRes 422 HQ · 10-bit 4:2:2 · 645 Mb/s</td></tr>
+        <tr><th scope="row">Output</th><td>HEVC Main 10 · 10-bit 4:2:0 · 14.4 Mb/s</td></tr>
+        <tr><th scope="row">Size reduction</th><td>97.8% · 593 MB → 13.3 MB</td></tr>
+        <tr><th scope="row">PSNR</th><td>49.5 dB</td></tr>
+        <tr><th scope="row">SSIM</th><td>0.990</td></tr>
+        <tr><th scope="row">Tier</th><td>Slow But Better</td></tr>
+        <tr><th scope="row">Encoder settings</th><td>SkinnyVideo defaults, zero config</td></tr>
+      </tbody>
+    </table>
   </div>
 </div></section>
 
