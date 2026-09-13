@@ -1,6 +1,9 @@
 // Original-vs-compressed comparison slider for the results section of index.html.
-// Nothing but the poster loads until "Load comparison" is pressed. The compressed video is
-// the master clock; the original preview (bottom layer, left of the handle) follows it.
+// Nothing but the poster loads until "Load comparison" is pressed. Both files are then
+// fetched in full and played from memory (blob: URLs), so the progress figure is real
+// bytes; if fetch is blocked (no CORS on the bucket) the R2 URLs are streamed directly.
+// The compressed video is the master clock. The original preview (bottom layer, left of
+// the handle) follows it by nudging playbackRate and only seeks on large drift.
 (() => {
   'use strict';
 
@@ -24,19 +27,29 @@
   const videos = [slave, master];
 
   const HEVC_TYPES = ['video/mp4; codecs="hvc1.2.4.L153.B0"', 'video/mp4; codecs="hvc1.1.6.L153.B0"'];
-  const MAX_DRIFT = 0.04; // seconds
+  const SOFT_DRIFT = 0.02; // seconds; within this the slave plays at normal speed
+  const HARD_DRIFT = 0.3; // seconds; beyond this, seek (cheap: the preview has a keyframe every second)
+  const NUDGE = 0.05; // playbackRate offset that closes drift in between
+  const MB = 1e6;
 
   let split = 50;
   let loaded = false; // both videos reached canplaythrough
+  let looping = false; // rewinding both to 0 at the end of the clip
   let wantPlay = true; // the Play/Pause button's intent
   let inView = true;
   let oneToOne = false;
   let pan = null;
   const pos = { x: 50, y: 50 };
   const stalled = new Set();
+  const objectUrls = [];
 
   const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
   const setStatus = (text) => { status.textContent = text; };
+
+  function setLoadText(text) {
+    if (loadBtn.textContent !== text) loadBtn.textContent = text;
+    if (status.textContent !== text) setStatus(text);
+  }
 
   function canPlayHevc() {
     const probe = document.createElement('video');
@@ -48,27 +61,48 @@
 
   // Loading
 
-  function bufferedFraction(v) {
-    const d = v.duration;
-    if (!Number.isFinite(d) || d <= 0) return 0;
-    let t = 0;
-    for (let i = 0; i < v.buffered.length; i++) t += v.buffered.end(i) - v.buffered.start(i);
-    return clamp(t / d, 0, 1);
-  }
+  // Downloads every file in full, reporting bytes received against Content-Length.
+  // Rejects on any failure (including CORS) after aborting the other downloads.
+  async function prefetch() {
+    const controller = new AbortController();
+    const got = videos.map(() => 0);
+    const total = videos.map(() => null); // null until that response's headers arrive
 
-  // Weighted by file size, so the figure tracks bytes rather than seconds.
-  function showProgress() {
-    if (loaded) return;
-    let done = 0;
-    let total = 0;
-    for (const v of videos) {
-      const mb = Number(v.dataset.mb) || 1;
-      done += bufferedFraction(v) * mb;
-      total += mb;
+    const showProgress = () => {
+      if (total.includes(null)) return;
+      const received = got.reduce((a, b) => a + b, 0);
+      if (total.every((t) => t > 0)) {
+        const size = total.reduce((a, b) => a + b, 0);
+        setLoadText(`Loading… ${Math.floor((received / size) * 100)}% of ~${Math.round(size / MB)} MB`);
+      } else {
+        // No Content-Length on a response: count megabytes rather than invent a percentage.
+        setLoadText(`Loading… ${Math.round(received / MB)} MB`);
+      }
+    };
+
+    const download = async (v, i) => {
+      const res = await fetch(v.dataset.src, { signal: controller.signal, credentials: 'omit' });
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status} for ${v.dataset.src}`);
+      total[i] = Number(res.headers.get('Content-Length')) || 0;
+      showProgress();
+      const reader = res.body.getReader();
+      const chunks = [];
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        got[i] += value.byteLength;
+        showProgress();
+      }
+      return new Blob(chunks, { type: 'video/mp4' });
+    };
+
+    try {
+      return await Promise.all(videos.map(download));
+    } catch (err) {
+      controller.abort(); // don't keep downloading the other file for nothing
+      throw err;
     }
-    const text = `Loading… ${Math.round((done / total) * 100)}%`;
-    loadBtn.textContent = text;
-    setStatus(text);
   }
 
   function onLoadError() {
@@ -79,7 +113,22 @@
     setStatus('Load failed');
   }
 
-  function load() {
+  function attachSources(srcs) {
+    let ready = 0;
+    videos.forEach((v, i) => {
+      v.muted = true;
+      v.addEventListener('canplaythrough', () => {
+        ready += 1;
+        if (ready === videos.length && !loaded) begin();
+      }, { once: true });
+      v.addEventListener('error', onLoadError, { once: true });
+      v.preload = 'auto';
+      v.src = srcs[i];
+      v.load();
+    });
+  }
+
+  async function load() {
     if (!canPlayHevc()) {
       loadBtn.hidden = true;
       note.hidden = false;
@@ -87,22 +136,26 @@
       return;
     }
     loadBtn.disabled = true;
-    const ready = new Set();
-    for (const v of videos) {
-      v.muted = true;
-      v.addEventListener('canplaythrough', () => {
-        ready.add(v);
-        if (ready.size === videos.length && !loaded) begin();
-      }, { once: true });
-      v.addEventListener('progress', showProgress);
-      v.addEventListener('loadedmetadata', showProgress);
-      v.addEventListener('error', onLoadError, { once: true });
-      v.preload = 'auto';
-      v.src = v.dataset.src;
-      v.load();
+    setLoadText('Loading…');
+    let blobs;
+    try {
+      blobs = await prefetch();
+    } catch {
+      // Blocked or failed: stream the files directly. The browser only buffers part of
+      // them, so there is no honest percentage to show.
+      setLoadText('Buffering…');
+      attachSources(videos.map((v) => v.dataset.src));
+      return;
     }
-    showProgress();
+    const urls = blobs.map((blob) => URL.createObjectURL(blob));
+    objectUrls.push(...urls);
+    attachSources(urls);
   }
+
+  window.addEventListener('pagehide', (e) => {
+    if (e.persisted) return; // kept in the back/forward cache, where the videos still need them
+    for (const url of objectUrls) URL.revokeObjectURL(url);
+  });
 
   // Playback and sync
 
@@ -114,13 +167,13 @@
 
   function apply() {
     if (!loaded) return;
-    const go = wantPlay && inView && stalled.size === 0;
-    if (go && !slave.seeking && Math.abs(slave.currentTime - master.currentTime) > MAX_DRIFT) {
+    const go = wantPlay && inView && stalled.size === 0 && !looping;
+    if (go && !slave.seeking && Math.abs(slave.currentTime - master.currentTime) > HARD_DRIFT) {
       slave.currentTime = master.currentTime;
     }
     for (const v of videos) {
       if (go) {
-        // An ended slave waits for the master's `ended` rewind instead of restarting alone.
+        // An ended slave waits for the master's rewind instead of restarting alone.
         if (v.paused && !v.ended) {
           v.play().catch((err) => {
             if (err && err.name === 'NotAllowedError') { wantPlay = false; apply(); }
@@ -135,9 +188,24 @@
 
   const hasFrameCallback = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
 
+  function setSlaveRate(rate) {
+    if (slave.playbackRate !== rate) slave.playbackRate = rate;
+  }
+
+  // Small drift is closed by running the slave slightly fast or slow; seeking is kept for
+  // drift a viewer would notice, since even a cheap seek briefly stalls the decoder.
   function tick() {
-    if (!slave.seeking && !master.seeking && Math.abs(slave.currentTime - master.currentTime) > MAX_DRIFT) {
-      slave.currentTime = master.currentTime;
+    if (loaded && !looping && !master.paused && !slave.seeking && !master.seeking) {
+      const d = slave.currentTime - master.currentTime;
+      const drift = Math.abs(d);
+      if (drift > HARD_DRIFT) {
+        setSlaveRate(1);
+        slave.currentTime = master.currentTime;
+      } else if (drift > SOFT_DRIFT) {
+        setSlaveRate(d > 0 ? 1 - NUDGE : 1 + NUDGE); // slave ahead → slow down; behind → speed up
+      } else {
+        setSlaveRate(1);
+      }
     }
     schedule();
   }
@@ -147,11 +215,22 @@
     else requestAnimationFrame(tick);
   }
 
+  // No loop attribute: pause both, rewind both, and only play once both seeks have landed.
+  async function restart() {
+    looping = true;
+    for (const v of videos) v.pause();
+    await Promise.all(videos.map((v) => new Promise((resolve) => {
+      v.addEventListener('seeked', resolve, { once: true });
+      v.currentTime = 0;
+    })));
+    setSlaveRate(1);
+    looping = false;
+    apply();
+  }
+
   function begin() {
     loaded = true;
     for (const v of videos) {
-      v.removeEventListener('progress', showProgress);
-      v.removeEventListener('loadedmetadata', showProgress);
       v.addEventListener('waiting', () => {
         if (v.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) return;
         stalled.add(v);
@@ -161,11 +240,7 @@
         if (stalled.delete(v)) apply();
       });
     }
-    master.addEventListener('ended', () => {
-      for (const v of videos) v.currentTime = 0;
-      for (const v of videos) v.play().catch(() => {});
-      render();
-    });
+    master.addEventListener('ended', restart);
 
     poster.hidden = true;
     line.hidden = false;
