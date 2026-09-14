@@ -1,0 +1,3 @@
+/download        https://github.com/pritam-malakar/skinnyvideo/releases/latest/download/SkinnyVideo-arm64.dmg  302
+/download/sha256 https://github.com/pritam-malakar/skinnyvideo/releases/latest/download/SHA256SUMS            302
+/download/*      https://github.com/pritam-malakar/skinnyvideo/releases/latest/download/SkinnyVideo-arm64.dmg  302
