@@ -52,7 +52,7 @@ function makeSampleMp4(dest) {
   await fsp.writeFile(localA, Buffer.alloc(4096, 1));
   const srcInoA = (await fsp.stat(localA)).ino;
   const hl = await stageFileList(101, [localA]);
-  const hlEntry = path.join(hl.stageDir, 'localA.mov');
+  const hlEntry = [...hl.stageMap.keys()][0];   // staged under the original parent folder's name
   const hlLstat = await fsp.lstat(hlEntry);
   check(!hlLstat.isSymbolicLink(), 'same-volume source is hardlinked, not symlinked');
   check((await fsp.stat(hlEntry)).ino === srcInoA, 'hardlinked entry shares the original inode (zero-copy)');
@@ -68,7 +68,10 @@ function makeSampleMp4(dest) {
   const gone = path.join(sandbox, 'gone.mov');
   const mix = await stageFileList(102, [localA, gone]);
   check(mix.missing.length === 1 && mix.missing[0] === gone, 'missing source recorded in `missing`');
-  check(fs.readdirSync(mix.stageDir).length === 1, 'missing source left NO entry (no dangling symlink)');
+  /* lstat, not stat: a dangling symlink must still be counted. */
+  const entries = fs.readdirSync(mix.stageDir, { recursive: true })
+    .filter((f) => !fs.lstatSync(path.join(mix.stageDir, f)).isDirectory());
+  check(entries.length === 1, 'missing source left NO entry (no dangling symlink)');
   await fsp.rm(mix.tmpRoot, { recursive: true, force: true });
 
   /* ── 3. walkAll FOLLOWS a symlinked staged entry (deterministic, fail-on-old)
@@ -101,7 +104,7 @@ function makeSampleMp4(dest) {
       const srcStat0 = await fsp.stat(nasSrc);
 
       staged = await stageFileList(104, [nasSrc]);
-      const entry = path.join(staged.stageDir, 'nas.mov');
+      const entry = [...staged.stageMap.keys()][0];
       const lst = await fsp.lstat(entry);
       check(lst.isSymbolicLink(), 'SMB source staged as a SYMLINK, not a copy (old code copied)');
       check(lst.isSymbolicLink() && (await fsp.readlink(entry)) === nasSrc,

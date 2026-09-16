@@ -43,8 +43,10 @@ const read = (p) => fs.readFileSync(p, 'utf8');
   const mp4s = top.filter((f) => f.endsWith('.mp4')).sort();
   check(lifted === 3, `lifted 3 outputs to top level (got ${lifted})`);
   check(mp4s.length === 3, `3 mp4 files at top level (got ${mp4s.join(', ')})`);
-  check(mp4s.includes('clip.mp4') && mp4s.includes('clip_2.mp4'),
-    'colliding clip.mp4 + clip_2.mp4 both present (suffix applied)');
+  check(mp4s.includes('clip.mp4') && mp4s.includes('ShootB_clip.mp4'),
+    'colliding clip.mp4 + ShootB_clip.mp4 both present (parent-folder prefix applied)');
+  check(read(path.join(runDir, 'clip.mp4')) === 'AAA' && read(path.join(runDir, 'ShootB_clip.mp4')) === 'BBB',
+    'sorted folder order: ShootA/Day1 keeps the plain name, ShootB gets the prefix');
   check(mp4s.includes('unique.mp4'), 'non-colliding unique.mp4 present');
 
   // No output lost: the three distinct payloads all survive somewhere.

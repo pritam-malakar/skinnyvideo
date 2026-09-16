@@ -206,19 +206,26 @@ svg { display: block; }
 .app > * { flex-shrink: 0; }
 .app::-webkit-scrollbar { width: 0; height: 0; display: none; }
 
+/* Version tag bottom-left, update preference bottom-right: one text style,
+   one baseline, the same 2px inset from each edge of the column. An update
+   notice, when present, wraps onto its own full-width row above that line. */
 .app-footer {
   margin-top: auto;
   display: flex;
-  justify-content: flex-end;
-  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
   padding: 34px 2px 2px;
 }
-.app-version {
+.app-version,
+.update-pref {
   font-size: 13px;
   font-weight: 500;
   color: var(--fg-3);
   line-height: 1;
 }
+.update-pref { cursor: pointer; white-space: nowrap; }
+.update-pref input { accent-color: var(--fill-primary); margin: 0 7px 0 0; vertical-align: -2px; }
 /* Dev-build tail ("dev.71df208"), appended only when main reports a descriptor
    with a -dev segment — a release badge never renders this element. Lemon, the
    caution token, worn as a FILL like .tl-tag.paused: ink on lemon reads the
@@ -1378,6 +1385,22 @@ body.pro-mode .safety-bar { display: flex; }
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
+
+/* Update offer — a slim bar in normal page flow, the footer's first row
+   (renderer prepends it). Never overlays anything: the page grows one line. */
+.update-notice {
+  flex: 1 1 100%;
+  display: flex; align-items: center; gap: 4px;
+  margin-bottom: 14px;
+  padding: 4px 6px 4px 16px;
+  border-radius: var(--r-pill);
+  background: var(--card);
+  color: var(--fg);
+  font-size: 13.5px; font-weight: 600;
+}
+.update-notice span { flex: 1; }
+.update-notice .btn { padding: 6px 14px; font-size: 13px; }
+.update-notice .btn.ghost { padding: 6px 10px; }
 
 /* ============================================================
    Nerd panel — card surface, tier accent from --accent

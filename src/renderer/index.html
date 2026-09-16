@@ -350,10 +350,13 @@
       <ul id="history-list" class="hs-list"></ul>
     </section>
 
-    <!-- Footer: app version, right-aligned. Single source of truth via
-         app.getVersion() (renderer fills #app-version at startup). -->
+    <!-- Footer: app version bottom-left (single source of truth via
+         app.getVersion(); renderer fills #app-version at startup), and the
+         "Check for updates automatically" preference bottom-right, mirroring
+         it. Persisted in prefs.json, default on; off = no network request. -->
     <footer class="app-footer">
       <span id="app-version" class="app-version"></span>
+      <label class="update-pref"><input type="checkbox" id="update-pref" checked>Check for updates automatically</label>
     </footer>
   </div>
 

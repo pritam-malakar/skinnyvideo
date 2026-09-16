@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
 const { spawn } = require('child_process');
+const { assignStems } = require('./naming');
 let _electronApp = null;
 try { _electronApp = require('electron').app; } catch {}
 
@@ -452,17 +453,23 @@ function relativeFromRoot(rootKind, root, file) {
   return rel;
 }
 
-function destForInput(runDir, rootKind, root, inputFile) {
+/* `stem` comes from ./naming, so two sources never share an output path. */
+function destForInput(runDir, rootKind, root, inputFile, stem) {
   const rel = relativeFromRoot(rootKind, root, inputFile);
-  const parsed = path.parse(rel);
-  const dir = path.join(runDir, parsed.dir);
-  const finalName = parsed.name + '.mp4';
+  const dir = path.join(runDir, path.dirname(rel));
   return {
-    finalPath: path.join(dir, finalName),
-    tmpPath: path.join(dir, parsed.name + '.tmp.mp4'),
+    finalPath: path.join(dir, stem + '.mp4'),
+    tmpPath: path.join(dir, stem + '.tmp.mp4'),
     dir
   };
 }
+
+/* finalPath → the source that produced it. "Already done" fires only when
+   the existing output is THIS source's.
+   ponytail: in-process only — after an app restart a same-minute rerun
+   re-encodes under a new name instead of skipping (the safe direction).
+   Persist it in the run folder if resume across restarts ever matters. */
+const madeFrom = new Map();
 
 function humanBytes(n) {
   if (!Number.isFinite(n)) return '0 B';
@@ -816,6 +823,8 @@ async function runBatch(batch, controlOrFn, onProgress) {
   log(`# ffmpeg version: ${await ffmpegVersionLine(bins.ffmpeg)}`);
 
   const scan = await scanFolder(src);
+  /* Named over the FULL scan (before skips) so a skip never renames others. */
+  const stems = assignStems(scan.videos.map((v) => v.file));
   /* BUG 2 (v2.1.15): drop user-skipped sources AT RUN TIME. batch.skip carries
      the live set of skipped ORIGINAL paths (set by main at this batch's turn).
      For a folder batch scan.videos[].file IS the original path, so this is the
@@ -931,7 +940,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
       });
       continue;
     }
-    const { finalPath, tmpPath, dir } = destForInput(runDir, scan.rootKind, scan.root, v.file);
+    let { finalPath, tmpPath, dir } = destForInput(runDir, scan.rootKind, scan.root, v.file, stems.get(v.file));
     /* BUG 3: is the destination still reachable? If it vanished, fail this
        file fast and stop the batch — every remaining file would fail the same
        way, and we must not block on a dead path. */
@@ -946,7 +955,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
       basename: path.basename(v.file)
     });
 
-    if (fs.existsSync(finalPath)) {
+    if (fs.existsSync(finalPath) && madeFrom.get(finalPath) === v.file) {
       alreadyDone++;
       done++;
       let existedSize = 0;
@@ -967,6 +976,12 @@ async function runBatch(batch, controlOrFn, onProgress) {
         outcome: 'skip-exists'
       });
       continue;
+    }
+    /* The name is held by ANOTHER source's output (e.g. a leftover in this
+       same-minute run folder). Never skip, never overwrite: next free number. */
+    for (let n = 2; fs.existsSync(finalPath); n++) {
+      ({ finalPath, tmpPath } = destForInput(runDir, scan.rootKind, scan.root, v.file, `${stems.get(v.file)}_${n}`));
+      if (!fs.existsSync(finalPath)) log(`NAME-TAKEN ${v.file} -> writing ${finalPath} instead`);
     }
 
     /* Pre-encode source check (NOT-YET-STARTED files only). This file hasn't
@@ -1237,6 +1252,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
 
     if (success) {
       await fsp.rename(tmpPath, finalPath);
+      madeFrom.set(finalPath, v.file);
       await setMtimeFromSource(v.file, finalPath);
       const outStat = await fsp.stat(finalPath);
       const saved = v.size - outStat.size;

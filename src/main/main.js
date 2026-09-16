@@ -33,7 +33,7 @@ const quitState = {
 let runPromise = null;
 /* Auto-update handle (installed at whenReady; a no-op object in dev). Held so
    the end of a run can flush a restart prompt that was held back mid-encode. */
-let updater = { notifyIdle() {} };
+let updater = { notifyIdle() {}, act() {} };
 /* The LIVE batch list the running queue is draining (the same array object
    passed to runQueue). Mid-run drops are appended here via 'enqueue-batch', and
    runQueue's loop re-reads `.length` each turn so it absorbs them in the SAME
@@ -153,8 +153,8 @@ function driveLabelForKey(k) {
 
 /* Output flattening lives in ../encoder/flatten (pure fs, unit-tested in
    test/trust_day1.js). main just calls flattenRunDir after each batch:
-   it mirrors source structure into a single flat run folder, suffixes
-   name collisions _2/_3, and sweeps any stray .tmp.mp4 partials. */
+   it mirrors source structure into a single flat run folder, names
+   collisions via ../encoder/naming, and sweeps any stray .tmp.mp4 partials. */
 
 /* Orphaned-partial detection lives in ../encoder/orphans (pure fs,
    unit-tested in test/trust_day1.js). findOrphanPartials scans an
@@ -314,11 +314,18 @@ app.whenReady().then(() => {
   installAboutAndCredits();
 
   /* Auto-update. Packaged builds only; the module no-ops in dev. isBusy is the
-     same pair the close-guard arms on, so a downloaded update can never
-     interrupt an encode or the container flush that follows it. */
+     same pair the close-guard arms on, so neither the update notice nor the
+     restart prompt can appear during an encode or its container flush. An
+     absent autoUpdateCheck key reads as ON (the default). */
   updater = installUpdater({
     isBusy: () => queueRunning || quitState.isFinalizing,
     getWindow: () => mainWindow,
+    isEnabled: () => prefs.autoUpdateCheck !== false,
+    isSkipped: (v) => !!v && prefs.skippedUpdateVersion === v,
+    onSkip: (v) => { prefs.skippedUpdateVersion = v; savePrefs(); },
+    showNotice: (version) => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update-available', { version });
+    },
   });
 
   /* Orphaned-partial sweep (BUG 2 — intended scope, documented):
@@ -405,6 +412,21 @@ ipcMain.handle('app-version', async () => buildDescriptor({
   packaged: app.isPackaged,
   gitDir: path.join(__dirname, '..', '..', '.git')
 }));
+
+/* Update notice buttons, and the "Check for updates automatically"
+   preference (default on; saved through the atomic savePrefs). */
+ipcMain.handle('update-action', async (_evt, action) => {
+  if (!['download', 'skip', 'later'].includes(action)) return { ok: false };
+  updater.act(action);
+  return { ok: true };
+});
+ipcMain.handle('get-update-pref', async () => prefs.autoUpdateCheck !== false);
+ipcMain.handle('set-update-pref', async (_evt, on) => {
+  if (typeof on !== 'boolean') return prefs.autoUpdateCheck !== false;
+  prefs.autoUpdateCheck = on;
+  savePrefs();
+  return on;
+});
 
 /* Pro Mode foundation: the per-tier encode defaults, resolved renderer-side
    into each batch payload's `settings` field at enqueue time. Single source

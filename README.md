@@ -6,7 +6,7 @@
 
 SkinnyVideo is a free, open-source video compressor for Mac. It batch-compresses camera footage to HEVC (H.265) on Apple Silicon using a bundled FFmpeg. Drop a folder, pick one of two quality tiers, start. Compressed copies land in a new folder next to your originals. The originals are never opened for writing, moved, renamed, or deleted.
 
-No settings to learn. No upload. No account. No paid tier.
+No settings to learn. Your videos never leave your Mac. No account. No paid tier.
 
 **[Download for Mac (.dmg)](https://github.com/pritam-malakar/skinnyvideo/releases/latest/download/SkinnyVideo-arm64.dmg)** · [Website](https://skinnyvideo.app) · [Releases](https://github.com/pritam-malakar/skinnyvideo/releases) · [Checksums](https://github.com/pritam-malakar/skinnyvideo/releases/latest/download/SHA256SUMS)
 
@@ -28,7 +28,7 @@ Savings depend on how much the footage moves and how hard the camera already com
 
 1. **Drop** a folder or a pile of files. Non-video files are ignored, not errors.
 2. **Pick a quality:** Make It Fast or Slow But Better. That is the only decision.
-3. **Start** and walk away. Results land in a new `Compressed_YYYY-MM-DD_HHMM` folder next to the source, flat. Each file keeps its name and gets an `.mp4` extension.
+3. **Start** and walk away. Results land in a new `Compressed_YYYY-MM-DD_HHMM` folder next to the source, flat. Each file keeps its name. If two would clash, the folder name is added in front. Every output is an `.mp4`.
 
 ## Two ways to compress: hardware HEVC or x265
 
@@ -38,11 +38,11 @@ Savings depend on how much the footage moves and how hard the camera already com
 
 Both tiers write HEVC (H.265) as `.mp4`, tagged `hvc1` with faststart, so the files open directly in QuickTime, Premiere Pro, After Effects, and Final Cut Pro.
 
-## Originals never touched. Nothing leaves your Mac.
+## Originals never touched. Your videos never leave your Mac.
 
 - Source files are read-only. Never moved, renamed, changed, or deleted.
 - Results go to a new folder. Don't like them? Trash the folder. Your masters are where they were.
-- Runs entirely offline. No internet connection needed to compress, no telemetry.
+- Compression runs entirely on your Mac, with no telemetry. The app's only internet use is an optional check for new versions on GitHub, which you can turn off.
 - Keeps the receipts: what went in, what came out, and reclaimed totals per drive, in the History panel.
 
 ## Nerd Mode: CRF, x265 presets, VideoToolbox quality
@@ -85,7 +85,7 @@ HandBrake is a full manual transcoder with hundreds of settings and a queue you 
 
 Open the `.dmg`, drag SkinnyVideo to Applications, launch. No Gatekeeper warnings, no workarounds. There is no Intel build.
 
-SkinnyVideo checks this repo's Releases for updates and offers to restart when a new version is ready.
+SkinnyVideo checks this repo's Releases for new versions, and you can turn that off in the app ("Check for updates automatically"). It asks before downloading an update and installs it only when you choose Restart.
 
 **Verify the download** (optional):
 
@@ -114,7 +114,7 @@ No. SkinnyVideo runs only on Apple Silicon Macs, including MacBook Neo, on macOS
 HEVC is lossy, so yes, technically. Both tiers are tuned to look visually identical; Slow But Better keeps the most detail at the smallest size.
 
 **Does it upload my videos anywhere?**
-No. It runs entirely on your Mac with no internet connection and no telemetry. Your footage never leaves the machine.
+No. Compression runs entirely on your Mac and your videos never leave it. The app's only internet use is an optional check for new versions on GitHub, which you can turn off.
 
 **Is it safe to install?**
 Yes. It's signed and notarized by Apple, open source under GPL-2.0-or-later, and every release publishes a SHA-256 checksum.

@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
 const os = require('os');
+const { assignStems, safeFolderName } = require('./naming');
 
 /* ─── File-list staging ──────────────────────────────────────────────
    A file-list batch (file-pick / multi-file-drop, or a folder batch with
@@ -31,23 +32,22 @@ async function stageFileList(batchId, fileSources) {
     await fsp.mkdir(stageDir, { recursive: true });
     const stageMap = new Map();
     const missing = [];
-    const used = new Set();
     /* Per-batch tally of HOW each source was staged, surfaced to the run log so
        the SMB zero-copy fix is observable in the field: a NAS batch should read
        symlinked=N, copied=0 (a non-zero `copied` means a source FS supported
        neither hardlink nor symlink and we fell back to a full copy). */
     const methods = { linked: 0, symlinked: 0, copied: 0 };
+    /* Staged names follow ./naming, so picks that share a basename never
+       collide (A/C0001.MP4 + B/C0001.MP4 → C0001.MP4 + B_C0001.MP4).
+       Each pick sits under its ORIGINAL parent folder's name, so the output
+       folder the pipeline mirrors — and any prefix flatten adds when a later
+       batch clashes — says "CardB", never "Selected files (N)". A name with
+       nothing usable becomes "_", which ./naming reads as no prefix (→ _2). */
+    const stems = assignStems(fileSources);
     for (const fp of fileSources) {
-      const base = path.basename(fp);
-      let safe = base;
-      let n = 1;
-      while (used.has(safe)) {
-        const ext = path.extname(base);
-        const stem = base.slice(0, base.length - ext.length);
-        safe = `${stem} (${n})${ext}`;
-        n++;
-      }
-      const linkPath = path.join(stageDir, safe);
+      const parentDir = path.join(stageDir, safeFolderName(path.basename(path.dirname(fp))) || '_');
+      await fsp.mkdir(parentDir, { recursive: true });
+      const linkPath = path.join(parentDir, stems.get(fp) + path.extname(fp));
       /* Stage each source as a stable entry the pipeline walker can read, in
          strict zero-copy-first order:
            1. HARDLINK — shares the original's inode, so deleting/moving the
@@ -99,7 +99,6 @@ async function stageFileList(batchId, fileSources) {
         }
       }
       if (staged) {
-        used.add(safe);            // reserve the basename slot only on success
         stageMap.set(linkPath, fp);
       } else {
         missing.push(fp);          // per-file failure — does not sink the batch
