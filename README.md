@@ -2,7 +2,7 @@
 
 [![Latest release](https://img.shields.io/github/v/release/pritam-malakar/skinnyvideo?label=download&color=5EE39B)](https://github.com/pritam-malakar/skinnyvideo/releases/latest)
 [![License: GPL-2.0-or-later](https://img.shields.io/badge/license-GPL--2.0--or--later-blue)](LICENSE)
-[![Platform: macOS 11+, Apple Silicon](https://img.shields.io/badge/platform-macOS%2011%2B%20%C2%B7%20Apple%20Silicon-lightgrey)](#install)
+[![Platform: macOS 13+, Apple Silicon](https://img.shields.io/badge/platform-macOS%2013%2B%20%C2%B7%20Apple%20Silicon-lightgrey)](#install)
 
 SkinnyVideo is a free, open-source video compressor for Mac. It batch-compresses camera footage to HEVC (H.265) on Apple Silicon using a bundled FFmpeg. Drop a folder, pick one of two quality tiers, start. Compressed copies land in a new folder next to your originals. The originals are never opened for writing, moved, renamed, or deleted.
 
@@ -78,7 +78,7 @@ HandBrake is a full manual transcoder with hundreds of settings and a queue you 
 | | |
 |---|---|
 | Mac | Apple Silicon Macs, including MacBook Neo |
-| macOS | 11 or later |
+| macOS | 13 or later |
 | Download | [`SkinnyVideo-arm64.dmg`](https://github.com/pritam-malakar/skinnyvideo/releases/latest/download/SkinnyVideo-arm64.dmg), about 135 MB |
 | Security | Signed with a Developer ID certificate and notarized by Apple |
 | License | GPL-2.0-or-later |
@@ -108,7 +108,7 @@ The bundled `ffmpeg`/`ffprobe` are produced by [`scripts/build-ffmpeg.sh`](scrip
 ## Frequently asked questions
 
 **Does it work on Intel Macs?**
-No. SkinnyVideo runs only on Apple Silicon Macs, including MacBook Neo, on macOS 11 and up.
+No. SkinnyVideo runs only on Apple Silicon Macs, including MacBook Neo, on macOS 13 and up.
 
 **Does it lose quality?**
 HEVC is lossy, so yes, technically. Both tiers are tuned to look visually identical; Slow But Better keeps the most detail at the smallest size.

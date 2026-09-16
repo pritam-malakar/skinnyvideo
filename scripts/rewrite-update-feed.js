@@ -104,6 +104,15 @@ if (pathIdx !== -1) {
   }
 }
 
+/* Electron 44 needs macOS 13. electron-updater compares this against
+   os.release(), which is the DARWIN version (macOS 13 = Darwin 22), and skips
+   the update on older systems instead of installing an app that won't launch. */
+const MIN_DARWIN = '22.0.0';
+const minIdx = lines.findIndex((l) => /^minimumSystemVersion:/.test(l));
+if (minIdx !== -1) lines[minIdx] = `minimumSystemVersion: "${MIN_DARWIN}"`;
+else lines.splice(lines[lines.length - 1] === '' ? lines.length - 1 : lines.length, 0, `minimumSystemVersion: "${MIN_DARWIN}"`);
+changed.push(`minimumSystemVersion: "${MIN_DARWIN}"`);
+
 fs.writeFileSync(ymlPath, lines.join('\n'));
 
 for (const v of verified) console.log('  verified: ' + v);

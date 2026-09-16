@@ -101,6 +101,18 @@ rm -f \
 echo "release: removed: ${removed:-(nothing — dist was already clean)}"
 
 # ── 2. Build ─────────────────────────────────────────────────────────────────
+# Electron 42+ no longer downloads its binary on npm install; it arrives on the
+# first `electron` run. extraResources copies node_modules/electron/dist/LICENSE
+# and LICENSES.chromium.html, so make sure dist/ exists before building.
+echo "release: ensuring the Electron binary is installed"
+./node_modules/.bin/install-electron
+for f in LICENSE LICENSES.chromium.html; do
+  if [ ! -f "node_modules/electron/dist/$f" ]; then
+    echo "release: node_modules/electron/dist/$f is missing after install-electron. Refusing to build." >&2
+    exit 1
+  fi
+done
+
 echo "release: building (Developer ID + hardened runtime + notarize)…"
 ./node_modules/.bin/electron-builder --mac --arm64 --publish never
 
@@ -187,19 +199,11 @@ xcrun stapler validate "$DMG"
 # ── 6. Regenerate the blockmap — the staple rewrote the dmg ──────────────────
 # electron-builder computed the .dmg.blockmap BEFORE the staple above, so the
 # one on disk describes a file that no longer exists byte-for-byte. Same
-# invocation electron-builder uses (app-builder-lib createBlockmap):
-#   app-builder blockmap --input <file> --output <file>.blockmap
+# function electron-builder 26 uses (app-builder-lib createBlockmap, gzip); the
+# app-builder-bin binary that 25.x shelled out to is gone.
 BLOCKMAP="$DMG.blockmap"
-APP_BUILDER=$(node -e 'process.stdout.write(require("app-builder-bin").appBuilderPath)' 2>/dev/null || true)
-if [ -n "$APP_BUILDER" ] && [ -x "$APP_BUILDER" ]; then
-  echo "release: regenerating $BLOCKMAP post-staple"
-  "$APP_BUILDER" blockmap --input "$DMG" --output "$BLOCKMAP" >/dev/null
-else
-  if [ -f "$BLOCKMAP" ]; then
-    rm -f "$BLOCKMAP"
-    echo "release: WARNING — could not locate the app-builder binary to regenerate the blockmap; deleted the stale $BLOCKMAP rather than leave an incorrect one on disk." >&2
-  fi
-fi
+echo "release: regenerating $BLOCKMAP post-staple"
+node -e 'require("app-builder-lib/out/targets/blockmap/blockmap").buildBlockMap(process.argv[1], "gzip", process.argv[2]).catch((e) => { console.error(e); process.exit(1); })' "$DMG" "$BLOCKMAP"
 
 # ── 7. Repoint the update feed at the stapled dmg ────────────────────────────
 # See the header. The dmg the updater will download is the STAPLED one; the yml

@@ -447,7 +447,10 @@ ipcMain.handle('check-engine', async () => {
 
 ipcMain.handle('choose-destination', async (_evt, defaultPath) => {
   const opts = { properties: ['openDirectory', 'createDirectory'] };
+  /* Always pass defaultPath: since Electron 43 an omitted one opens Downloads. */
   if (defaultPath && fs.existsSync(defaultPath)) opts.defaultPath = defaultPath;
+  else if (prefs.lastSrc && fs.existsSync(prefs.lastSrc)) opts.defaultPath = prefs.lastSrc;
+  else opts.defaultPath = app.getPath('home');
   const r = await dialog.showOpenDialog(mainWindow, opts);
   if (r.canceled || !r.filePaths.length) return null;
   return r.filePaths[0];

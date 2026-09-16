@@ -8,7 +8,7 @@
     "start": "electron .",
     "test": "for t in test/*_test.js; do echo \"\\n### $t\"; if grep -q \"require('electron')\" \"$t\"; then ./node_modules/.bin/electron \"$t\"; else node \"$t\"; fi || exit 1; done",
     "dist": "sh scripts/release.sh",
-    "postinstall": "node scripts/fix-electron.js"
+    "postinstall": "install-electron"
   },
   "author": "Pritam Malakar",
   "license": "GPL-2.0-or-later",
@@ -24,8 +24,8 @@
     "node": "22.x"
   },
   "devDependencies": {
-    "electron": "^33.2.0",
-    "electron-builder": "^25.1.8"
+    "electron": "^44.4.1",
+    "electron-builder": "^26.16.1"
   },
   "build": {
     "appId": "com.pritammalakar.skinnyvideo",
@@ -80,7 +80,7 @@
     "mac": {
       "category": "public.app-category.video",
       "icon": "build/skinnyvideo.icns",
-      "minimumSystemVersion": "11.0",
+      "minimumSystemVersion": "13.0",
       "target": [
         {
           "target": "dmg",
