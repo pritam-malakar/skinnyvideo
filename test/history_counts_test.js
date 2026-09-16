@@ -90,7 +90,7 @@ app.whenReady().then(async () => {
 
   const win = new BrowserWindow({
     width: 1280, height: 1000, show: false, backgroundColor: '#111111',
-    webPreferences: { preload: path.join(ROOT, 'src/main/preload.js'), contextIsolation: true, sandbox: false }
+    webPreferences: { preload: path.join(ROOT, 'src/main/preload.js'), contextIsolation: true, sandbox: true }
   });
   await win.loadFile(path.join(ROOT, 'src/renderer/index.html'));
   const run = (js) => win.webContents.executeJavaScript(js);

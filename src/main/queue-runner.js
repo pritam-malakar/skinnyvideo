@@ -27,8 +27,9 @@ function releasePauseGate(state) {
      send(channel, payload)  — emit an IPC message to the renderer
      isStopRequested()       — true once the user asked to stop after current file
      rt(batchId)             — per-batch runtime state (skips, child, cancelled, …)
+     onPartial(path)         — optional; each partial's exact path before it is written
    Returns the accumulated totals. */
-async function runQueue(batches, { send, isStopRequested, rt }) {
+async function runQueue(batches, { send, isStopRequested, rt, onPartial }) {
   const totals = { processed: 0, failed: 0, failedCopied: 0, failedNoCopy: 0, failedDestLost: 0, destLost: false, skippedNonVideo: 0, reclaimed: 0, alreadyDone: 0, hdrMetaDropped: 0 };
 
   /* OPTION A — DRAIN THE LIVE QUEUE: `batches` is a LIVE array. main appends
@@ -59,6 +60,7 @@ async function runQueue(batches, { send, isStopRequested, rt }) {
     state.resumeWaiters = [];   // fresh gate per batch — no stale resolver leaks in
 
     const control = {
+      onPartial,
       shouldStop: () => isStopRequested(),
       isCancelled: () => state.cancelled,
       isPaused: () => state.paused,
@@ -227,7 +229,7 @@ async function runQueue(batches, { send, isStopRequested, rt }) {
     /* Flatten EVERYTHING into runDir (flat canonical layout). Non-fatal. */
     if (!isDry && result && result.runDir && fs.existsSync(result.runDir)) {
       try {
-        const lifted = await flattenRunDir(result.runDir);
+        const lifted = await flattenRunDir(result.runDir, result.partials);
         try {
           if (stageMethods) {
             fs.appendFileSync(

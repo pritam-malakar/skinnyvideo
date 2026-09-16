@@ -80,7 +80,7 @@ const pctNum = (w) => { const n = parseFloat(w); return Number.isFinite(n) ? n :
 app.whenReady().then(async () => {
   fs.rmSync(DEST, { recursive: true, force: true }); fs.mkdirSync(DEST, { recursive: true });
   win = new BrowserWindow({ width: 1100, height: 1000, show: false, backgroundColor: '#0c0e12',
-    webPreferences: { preload: path.join(ROOT, 'src/main/preload.js'), contextIsolation: true, sandbox: false } });
+    webPreferences: { preload: path.join(ROOT, 'src/main/preload.js'), contextIsolation: true, sandbox: true } });
   const run = (js) => win.webContents.executeJavaScript(js);
   await win.loadFile(path.join(ROOT, 'src/renderer/index.html'));
   await wait(400);

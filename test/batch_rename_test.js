@@ -71,7 +71,7 @@ ipcMain.handle('check-engine', async () => ({ ok: true }));   // engine present 
 app.whenReady().then(async () => {
   fs.mkdirSync(TEST_DEST, { recursive: true });
   win = new BrowserWindow({ width: 1100, height: 1000, show: false,
-    webPreferences: { preload: path.join(ROOT, 'src/main/preload.js'), contextIsolation: true, sandbox: false } });
+    webPreferences: { preload: path.join(ROOT, 'src/main/preload.js'), contextIsolation: true, sandbox: true } });
   const errs = [];
   win.webContents.on('console-message', (_e, lvl, m) => { if (/error|is not defined|undefined/i.test(m)) errs.push(m); });
   await win.loadFile(path.join(ROOT, 'src/renderer/index.html'));

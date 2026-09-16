@@ -12,10 +12,13 @@ const { assignStems } = require('./naming');
    Lifted names come from ./naming, seeded with what is already at the top
    level (e.g. an earlier batch in the same run folder), so no output is
    ever overwritten: B/C0001.mp4 lands as B_C0001.mp4, then _2, _3.
-   .tmp.mp4 partials — if any escaped pipeline's own cleanup — are
-   deleted rather than promoted, so a partial never poses as a final.
+   Partials — if any escaped pipeline's own cleanup — are deleted rather than
+   promoted, so a partial never poses as a final. ONLY the exact paths the
+   pipeline recorded (result.partials) count as partials: matching the
+   ".tmp.mp4" suffix deleted real outputs of sources like "holiday.tmp.mov".
    Pure fs/path only (no electron) so it is unit-testable in plain node. */
-async function flattenRunDir(runDir) {
+async function flattenRunDir(runDir, partials = []) {
+  const recorded = new Set(partials);
   const taken = new Set();
   try {
     for (const e of await fsp.readdir(runDir, { withFileTypes: true })) {
@@ -32,11 +35,9 @@ async function flattenRunDir(runDir) {
       if (e.isDirectory()) {
         if (depth === 0 && e.name === '_FAILED') continue;   // keep nested
         await collect(p, depth + 1);
+      } else if (e.isFile() && recorded.has(p)) {
+        try { await fsp.unlink(p); } catch {}
       } else if (e.isFile() && depth > 0) {
-        if (e.name.endsWith('.tmp.mp4')) {
-          try { await fsp.unlink(p); } catch {}
-          continue;
-        }
         outputs.push(p);
       }
     }

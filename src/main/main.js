@@ -1,11 +1,11 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, MenuItem, nativeTheme } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, MenuItem, nativeTheme, powerSaveBlocker } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
 const os = require('os');
-const { runBatch, dryRunBatch, scanFolder, isVideoFile, getBinaries, ffmpegStatus, ENGINE_MISSING_MESSAGE, VIDEO_EXTS, tierDefaults } = require('../encoder/pipeline');
+const { runBatch, dryRunBatch, scanFolder, isVideoFile, getBinaries, ffmpegStatus, ENGINE_MISSING_MESSAGE, VIDEO_EXTS, tierDefaults, TIER_CONSTANTS } = require('../encoder/pipeline');
 const { flattenRunDir } = require('../encoder/flatten');
-const { findOrphanPartials, deletePartials } = require('../encoder/orphans');
+const { findOrphanPartials, deletePartials, isUnderRoots } = require('../encoder/orphans');
 const { stageFileList } = require('../encoder/stage');
 const { runQueue, releasePauseGate } = require('./queue-runner');
 const { revealInFinder, revealFolder } = require('./reveal');
@@ -16,6 +16,12 @@ const { beginCancel, quitViaCancel } = require('./quit-teardown');
 const { installUpdater } = require('./updater');
 const { canvasFor } = require('../shared/theme');
 const { buildDescriptor } = require('./build-id');
+const { validateBatch, validateBatchList } = require('./ipc-validate');
+const { createKeepAwake } = require('./keep-awake');
+
+const TIERS = Object.keys(TIER_CONSTANTS);
+/* One idle-sleep blocker for the life of a run — see ./keep-awake. */
+const keepAwake = createKeepAwake(powerSaveBlocker);
 
 let mainWindow = null;
 let stopRequested = false;
@@ -40,6 +46,17 @@ let updater = { notifyIdle() {}, act() {} };
    run. Null whenever no run is active — an enqueue then is a fresh-run drop, not
    a resurrection of the finished run. */
 let liveBatches = null;
+
+/* Every folder SkinnyVideo is known to write into: each destination ever used,
+   this run's in-flight ones, and any live batch's. open-path, reveal-path and
+   partial cleanup only act on paths whose realpath is under one of these. */
+function knownOutputRoots() {
+  return [...new Set([
+    ...(Array.isArray(prefs.outputRoots) ? prefs.outputRoots : []),
+    ...(Array.isArray(prefs.pendingDests) ? prefs.pendingDests : []),
+    ...(Array.isArray(liveBatches) ? liveBatches.map((b) => b && b.dest) : [])
+  ].filter((d) => typeof d === 'string' && d))];
+}
 
 // ----- Lightweight per-user preferences (no external dep) -------------------
 // Persists the last-used source folder so the browse picker defaults there.
@@ -200,7 +217,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: true
     }
   });
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
@@ -337,14 +354,16 @@ app.whenReady().then(() => {
      filesystem: scope is "known SkinnyVideo output locations". pendingDests is
      cleared after the scan; outputRoots persists so a partial the operator
      chooses to keep is re-offered next launch until it's resolved. */
-  const sweepRoots = [...new Set([
-    ...(Array.isArray(prefs.outputRoots) ? prefs.outputRoots : []),
-    ...(Array.isArray(prefs.pendingDests) ? prefs.pendingDests : [])
-  ])];
-  if (sweepRoots.length) {
-    findOrphanPartials(sweepRoots)
+  /* Only partials the pipeline RECORDED (prefs.pendingPartials) are offered —
+     never a suffix match. Entries that are gone or fail the safety contract are
+     dropped; ones still on disk stay recorded so a kept partial is re-offered. */
+  const sweepRoots = knownOutputRoots();
+  const recordedPartials = Array.isArray(prefs.pendingPartials) ? prefs.pendingPartials : [];
+  if (sweepRoots.length && recordedPartials.length) {
+    findOrphanPartials(recordedPartials, sweepRoots)
       .then((orphans) => {
         prefs.pendingDests = [];
+        prefs.pendingPartials = orphans.map((o) => o.path);
         savePrefs();
         if (orphans.length && mainWindow && !mainWindow.isDestroyed()) {
           const send = () => {
@@ -360,6 +379,9 @@ app.whenReady().then(() => {
         }
       })
       .catch(() => { prefs.pendingDests = []; savePrefs(); });
+  } else if (Array.isArray(prefs.pendingDests) && prefs.pendingDests.length) {
+    prefs.pendingDests = [];
+    savePrefs();
   }
 
   app.on('activate', () => {
@@ -374,6 +396,9 @@ app.on('window-all-closed', () => {
 /* Close-guard for ⌘Q / app-level quit — IDENTICAL behavior to the red button:
    same predicate, same dialog, same teardown. forceQuit (set once teardown
    finishes) lets the re-entrant quit through. */
+/* Belt and braces: whatever path the quit took, never leave a blocker behind. */
+app.on('will-quit', () => keepAwake.stop());
+
 app.on('before-quit', (e) => {
   handleCloseAttempt(quitState, {
     preventDefault: () => e.preventDefault(),
@@ -457,6 +482,8 @@ ipcMain.handle('choose-destination', async (_evt, defaultPath) => {
 });
 
 ipcMain.handle('scan-source', async (_evt, srcPath) => {
+  // A rejected invoke: the renderer's catch shows e.message as the scan error.
+  if (typeof srcPath !== 'string' || !srcPath) throw new Error('scan-source: path must be a non-empty string');
   return await scanFolder(srcPath);
 });
 
@@ -527,6 +554,8 @@ ipcMain.handle('scan-files', async (_evt, srcPaths) => {
 });
 
 ipcMain.handle('start-queue', async (_evt, batches) => {
+  const invalid = validateBatchList(batches, TIERS);
+  if (invalid) return { ok: false, error: `start-queue refused: ${invalid}` };
   if (queueRunning) return { ok: false, error: 'Already running' };
   /* NO SILENT FALLBACK: refuse to start — and never reach runQueue/spawn — if
      the bundled engine is gone. Returned to the renderer as engineMissing so it
@@ -536,6 +565,7 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
   queueRunning = true;
   quitState.queueRunning = true;   // arm the close-guard for the WHOLE run
   stopRequested = false;
+  keepAwake.start();               // released in the finally below, however the run ends
 
   /* Mark this run's real (non-dry) destinations as in-flight so a crash
      mid-encode is recoverable: the next launch scans these for orphaned
@@ -555,6 +585,18 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
     savePrefs();
   } catch { /* non-fatal */ }
 
+  /* Record every partial BEFORE ffmpeg writes it, so a crash leaves an exact
+     list for the next launch's cleanup. This run's entries are dropped in the
+     finally: by then each was renamed, unlinked, or swept by flatten. */
+  const runPartials = new Set();
+  const onPartial = (p) => {
+    runPartials.add(p);
+    const rec = new Set(Array.isArray(prefs.pendingPartials) ? prefs.pendingPartials : []);
+    if (rec.has(p)) return;
+    rec.add(p); prefs.pendingPartials = [...rec];
+    savePrefs();
+  };
+
   const send = (channel, payload) => {
     // Track the finalizing window off the same progress stream the renderer sees.
     applyProgressToQuitState(quitState, channel, payload);
@@ -568,16 +610,22 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
     liveBatches = batches;
     /* Hold the promise so the close-guard's "Stop and quit" can await REAL
        encoder exit + this finally block, rather than a guessed timeout. */
-    runPromise = runQueue(batches, { send, isStopRequested: () => stopRequested, rt });
+    runPromise = runQueue(batches, { send, isStopRequested: () => stopRequested, rt, onPartial });
     totals = await runPromise;
   } finally {
+    keepAwake.stop();
     liveBatches = null;   // run over → further drops start a fresh run
     queueRunning = false;
     runPromise = null;
     quitState.queueRunning = false;   // run ended → guard disarms, close is instant
     quitState.isFinalizing = false;   // run ended → never leave the guard armed
     // Run reached a clean end — no orphaned partials to recover next launch.
-    try { prefs.pendingDests = []; savePrefs(); } catch { /* non-fatal */ }
+    try {
+      prefs.pendingDests = [];
+      prefs.pendingPartials = (Array.isArray(prefs.pendingPartials) ? prefs.pendingPartials : [])
+        .filter((p) => !runPartials.has(p));
+      savePrefs();
+    } catch { /* non-fatal */ }
     send('queue-finished', {
       totals: totals || { processed: 0, failed: 0, failedCopied: 0, failedNoCopy: 0, failedDestLost: 0, destLost: false, skippedNonVideo: 0, reclaimed: 0, alreadyDone: 0 },
       stopped: stopRequested
@@ -608,7 +656,9 @@ ipcMain.handle('stop-queue', async () => {
    no window where an absorbed batch is stranded unrun.) Honors stop the same way
    the loop does: a stopped run won't reach an appended batch. */
 ipcMain.handle('enqueue-batch', async (_evt, batch) => {
-  if (!queueRunning || !liveBatches || !batch) return { ok: true, absorbed: false };
+  const invalid = validateBatch(batch, TIERS);
+  if (invalid) return { ok: false, absorbed: false, error: `enqueue-batch refused: ${invalid}` };
+  if (!queueRunning || !liveBatches) return { ok: true, absorbed: false };
   liveBatches.push(batch);
   /* Keep orphan-recovery bookkeeping honest for the new destination too. */
   if (!batch.dryRun && batch.dest) {
@@ -833,19 +883,28 @@ ipcMain.handle('free-space', async (_evt, p) => {
 
 /* ─── Orphaned-partial deletion ───────────────────────────────────────
    Renderer hands back the subset the operator approved. deletePartials
-   re-validates every path defensively (only ".tmp.mp4" under a
-   "Compressed_" run folder is ever unlinked) — see ../encoder/orphans. */
+   re-validates every path defensively (only a RECORDED partial, still a
+   ".tmp.mp4" under a "Compressed_" run folder, realpath under a known output
+   root, is ever unlinked) — see ../encoder/orphans. */
 ipcMain.handle('delete-orphans', async (_evt, paths) => {
-  const deleted = await deletePartials(paths);
+  const recorded = Array.isArray(prefs.pendingPartials) ? prefs.pendingPartials : [];
+  const deleted = await deletePartials(paths, { recorded, roots: knownOutputRoots() });
+  prefs.pendingPartials = recorded.filter((p) => fs.existsSync(p));
+  savePrefs();
   return { deleted };
 });
 
+/* Open the last run's log / reveal its folder — only inside a known output root. */
 ipcMain.handle('open-path', async (_evt, p) => {
-  if (p && fs.existsSync(p)) shell.openPath(p);
+  if (!(await isUnderRoots(p, knownOutputRoots()))) return { ok: false, error: 'open-path refused: not inside a SkinnyVideo output folder' };
+  const err = await shell.openPath(p);
+  return err ? { ok: false, error: err } : { ok: true };
 });
 
 ipcMain.handle('reveal-path', async (_evt, p) => {
-  if (p && fs.existsSync(p)) shell.showItemInFolder(p);
+  if (!(await isUnderRoots(p, knownOutputRoots()))) return { ok: false, error: 'reveal-path refused: not inside a SkinnyVideo output folder' };
+  shell.showItemInFolder(p);
+  return { ok: true };
 });
 
 /* Reveal an ORIGINAL source file in Finder, clicked from a queue file row.

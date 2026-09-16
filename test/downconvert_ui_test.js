@@ -39,7 +39,7 @@ ipcMain.handle('get-lifetime-drives', async () => []);
 
 app.whenReady().then(async () => {
   win = new BrowserWindow({ width: 1100, height: 1000, show: false, backgroundColor: '#0c0e12',
-    webPreferences: { preload: path.join(ROOT, 'src/main/preload.js'), contextIsolation: true, sandbox: false } });
+    webPreferences: { preload: path.join(ROOT, 'src/main/preload.js'), contextIsolation: true, sandbox: true } });
   const run = (js) => win.webContents.executeJavaScript(js);
   const errors = [];
   win.webContents.on('console-message', (_e, level, msg) => { if (level >= 2) errors.push(msg); });

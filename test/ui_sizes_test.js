@@ -110,7 +110,7 @@ app.whenReady().then(async () => {
   ];
 
   win = new BrowserWindow({ width: 1100, height: 1000, show: false, backgroundColor: '#0c0e12',
-    webPreferences: { preload: path.join(ROOT, 'src/main/preload.js'), contextIsolation: true, sandbox: false } });
+    webPreferences: { preload: path.join(ROOT, 'src/main/preload.js'), contextIsolation: true, sandbox: true } });
   const errs = [];
   win.webContents.on('console-message', (_e, lvl, m) => { if (/error|is not defined|undefined/i.test(m)) errs.push(m); });
   await win.loadFile(path.join(ROOT, 'src/renderer/index.html'));

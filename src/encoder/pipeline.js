@@ -2,7 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
 const { spawn } = require('child_process');
-const { assignStems } = require('./naming');
+const { assignStems, reserveTempStem } = require('./naming');
 let _electronApp = null;
 try { _electronApp = require('electron').app; } catch {}
 
@@ -387,14 +387,15 @@ async function walkAll(dir, out) {
     /* A staged file-list entry can be a SYMLINK to the original source — that is
        how staging stays zero-copy when the source FS can't hardlink (e.g. an SMB
        share; see stage.js). A symlink dirent reports isFile()===false, so resolve
-       it with stat() (follows the link) and treat the target as a file/dir. A
+       it with stat() (follows the link) and treat a FILE target as a file. A
+       symlinked DIRECTORY is skipped: following it can loop back on itself
+       (a link to "." or a parent) and count every video once per level. A
        dangling link (original vanished after staging) is skipped here and handled
        as source-missing downstream by the pre-encode readable guard. */
     if (e.isSymbolicLink()) {
       try {
         const st = await fsp.stat(full);
-        if (st.isDirectory()) await walkAll(full, out);
-        else if (st.isFile()) out.push(full);
+        if (st.isFile()) out.push(full);
       } catch { /* dangling symlink — skip; downstream guard reports it */ }
     }
   }
@@ -454,12 +455,12 @@ function relativeFromRoot(rootKind, root, file) {
 }
 
 /* `stem` comes from ./naming, so two sources never share an output path. */
-function destForInput(runDir, rootKind, root, inputFile, stem) {
+function destForInput(runDir, rootKind, root, inputFile, stem, tmpStem) {
   const rel = relativeFromRoot(rootKind, root, inputFile);
   const dir = path.join(runDir, path.dirname(rel));
   return {
     finalPath: path.join(dir, stem + '.mp4'),
-    tmpPath: path.join(dir, stem + '.tmp.mp4'),
+    tmpPath: path.join(dir, tmpStem + '.mp4'),
     dir
   };
 }
@@ -755,6 +756,10 @@ async function runBatch(batch, controlOrFn, onProgress) {
   const shouldStop  = ctl.shouldStop  || (() => false);
   const isCancelled = ctl.isCancelled || (() => false);
   const onSpawn     = ctl.onSpawn     || null;
+  /* Called with each partial's exact path BEFORE ffmpeg writes it, so main can
+     persist it — cleanup after a crash deletes only recorded paths. */
+  const onPartial   = ctl.onPartial   || (() => {});
+  const partials = [];
   const isPaused    = ctl.isPaused    || (() => false);
   const isSkipped   = ctl.isSkipped   || (() => false);
   const waitWhilePaused = ctl.waitWhilePaused || (() => Promise.resolve());
@@ -825,6 +830,10 @@ async function runBatch(batch, controlOrFn, onProgress) {
   const scan = await scanFolder(src);
   /* Named over the FULL scan (before skips) so a skip never renames others. */
   const stems = assignStems(scan.videos.map((v) => v.file));
+  /* Temp names are reserved against the FULL set of finished names (and each
+     other) up front, so no encode order can make a temp path equal an output. */
+  const nameTaken = new Set([...stems.values()].map((n) => n.toLowerCase()));
+  const tmpStems = new Map([...stems].map(([f, n]) => [f, reserveTempStem(n, nameTaken)]));
   /* BUG 2 (v2.1.15): drop user-skipped sources AT RUN TIME. batch.skip carries
      the live set of skipped ORIGINAL paths (set by main at this batch's turn).
      For a folder batch scan.videos[].file IS the original path, so this is the
@@ -940,7 +949,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
       });
       continue;
     }
-    let { finalPath, tmpPath, dir } = destForInput(runDir, scan.rootKind, scan.root, v.file, stems.get(v.file));
+    let { finalPath, tmpPath, dir } = destForInput(runDir, scan.rootKind, scan.root, v.file, stems.get(v.file), tmpStems.get(v.file));
     /* BUG 3: is the destination still reachable? If it vanished, fail this
        file fast and stop the batch — every remaining file would fail the same
        way, and we must not block on a dead path. */
@@ -979,9 +988,11 @@ async function runBatch(batch, controlOrFn, onProgress) {
     }
     /* The name is held by ANOTHER source's output (e.g. a leftover in this
        same-minute run folder). Never skip, never overwrite: next free number. */
-    for (let n = 2; fs.existsSync(finalPath); n++) {
-      ({ finalPath, tmpPath } = destForInput(runDir, scan.rootKind, scan.root, v.file, `${stems.get(v.file)}_${n}`));
-      if (!fs.existsSync(finalPath)) log(`NAME-TAKEN ${v.file} -> writing ${finalPath} instead`);
+    for (let n = 1; fs.existsSync(finalPath);) {
+      let alt;
+      do { alt = `${stems.get(v.file)}_${++n}`; } while (nameTaken.has(alt.toLowerCase()));   // never a reserved name
+      ({ finalPath } = destForInput(runDir, scan.rootKind, scan.root, v.file, alt, tmpStems.get(v.file)));
+      if (!fs.existsSync(finalPath)) { nameTaken.add(alt.toLowerCase()); log(`NAME-TAKEN ${v.file} -> writing ${finalPath} instead`); }
     }
 
     /* Pre-encode source check (NOT-YET-STARTED files only). This file hasn't
@@ -1000,6 +1011,15 @@ async function runBatch(batch, controlOrFn, onProgress) {
        watchdog. */
     if (!(await isSourceReadable(v.file))) { recordSourceMissing(v, i); continue; }
 
+    /* Something already sits at the reserved temp path (e.g. an earlier run's
+       output in this same-minute folder): take the next free temp name rather
+       than unlink it below. */
+    while (fs.existsSync(tmpPath)) {
+      tmpStems.set(v.file, reserveTempStem(stems.get(v.file), nameTaken));
+      ({ tmpPath } = destForInput(runDir, scan.rootKind, scan.root, v.file, stems.get(v.file), tmpStems.get(v.file)));
+    }
+    partials.push(tmpPath);
+    try { onPartial(tmpPath); } catch {}
     try { await fsp.unlink(tmpPath); } catch {}
 
     const probe = await ffprobeJson(v.file);
@@ -1308,7 +1328,8 @@ async function runBatch(batch, controlOrFn, onProgress) {
     skippedNonVideo: scan.ignored,
     reclaimed,
     totalFiles,
-    hdrMetaDropped
+    hdrMetaDropped,
+    partials
   };
 }
 

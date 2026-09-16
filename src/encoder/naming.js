@@ -57,4 +57,16 @@ function assignStems(paths, taken = new Set()) {
   return out;
 }
 
-module.exports = { assignStems, safeFolderName };
+/* Temp (in-progress) stem for an output stem: "<stem>.tmp", else "<stem>.tmp_2", …
+   Never a name in `taken`. Seed `taken` with EVERY finished stem of the run
+   before reserving any temp: a temp may then never equal an output, whatever
+   order files encode in ("holiday" must not write to holiday.tmp.mov's
+   "holiday.tmp"). Updates `taken` in place, case-insensitively like above. */
+function reserveTempStem(stem, taken) {
+  let name = `${stem}.tmp`;
+  for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${stem}.tmp_${n}`;
+  taken.add(name.toLowerCase());
+  return name;
+}
+
+module.exports = { assignStems, safeFolderName, reserveTempStem };

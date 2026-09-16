@@ -31,13 +31,13 @@ const read = (p) => fs.readFileSync(p, 'utf8');
   await fsp.writeFile(path.join(srcA, 'clip.mp4'), 'AAA');           // collision #1
   await fsp.writeFile(path.join(srcB, 'clip.mp4'), 'BBB');           // collision #2
   await fsp.writeFile(path.join(srcB, 'unique.mp4'), 'UNIQUE');      // no collision
-  await fsp.writeFile(path.join(srcA, 'half.tmp.mp4'), 'PARTIAL');   // stray partial → swept
+  await fsp.writeFile(path.join(srcA, 'half.tmp.mp4'), 'PARTIAL');   // recorded partial → swept
   await fsp.writeFile(path.join(runDir, 'compress.log'), 'log');     // top-level → stays
   const failedDir = path.join(runDir, '_FAILED', 'ShootA');
   await fsp.mkdir(failedDir, { recursive: true });
   await fsp.writeFile(path.join(failedDir, 'broken.mov'), 'FAILSRC'); // preserved nested
 
-  const lifted = await flattenRunDir(runDir);
+  const lifted = await flattenRunDir(runDir, [path.join(srcA, 'half.tmp.mp4')]);
 
   const top = fs.readdirSync(runDir).sort();
   const mp4s = top.filter((f) => f.endsWith('.mp4')).sort();
@@ -75,7 +75,10 @@ const read = (p) => fs.readFileSync(p, 'utf8');
   await fsp.mkdir(origDir, { recursive: true });
   await fsp.writeFile(path.join(origDir, 'orig.tmp.mp4'), 'NOT-OURS');
 
-  const found = await findOrphanPartials([dest]);
+  // Partials are the paths the pipeline RECORDED; the look-alike is recorded
+  // too, to prove the Compressed_ gate still refuses it.
+  const recorded = [path.join(run1, 'a.tmp.mp4'), path.join(run1sub, 'c.tmp.mp4'), path.join(origDir, 'orig.tmp.mp4')];
+  const found = await findOrphanPartials(recorded, [dest]);
   const foundPaths = found.map((o) => o.path).sort();
   check(found.length === 2, `found 2 partials (got ${found.length})`);
   check(foundPaths.includes(path.join(run1, 'a.tmp.mp4'))
@@ -86,23 +89,25 @@ const read = (p) => fs.readFileSync(p, 'utf8');
     'look-alike outside Compressed_ not flagged');
 
   // Safety predicate
-  check(isDeletablePartial(path.join(run1, 'a.tmp.mp4')) === true, 'predicate: Compressed_ .tmp.mp4 → deletable');
-  check(isDeletablePartial(path.join(run1, 'b.mp4')) === false, 'predicate: finished .mp4 → not deletable');
-  check(isDeletablePartial(path.join(origDir, 'orig.tmp.mp4')) === false, 'predicate: .tmp.mp4 outside Compressed_ → not deletable');
-  check(isDeletablePartial('/Users/me/footage/master.mov') === false, 'predicate: an original → not deletable');
+  const rec = new Set([...recorded, path.join(run1, 'b.mp4'), '/Users/me/footage/master.mov']);
+  check(await isDeletablePartial(path.join(run1, 'a.tmp.mp4'), rec, [dest]) === true, 'predicate: recorded Compressed_ .tmp.mp4 → deletable');
+  check(await isDeletablePartial(path.join(run1, 'a.tmp.mp4'), new Set(), [dest]) === false, 'predicate: unrecorded → not deletable');
+  check(await isDeletablePartial(path.join(run1, 'b.mp4'), rec, [dest]) === false, 'predicate: finished .mp4 → not deletable');
+  check(await isDeletablePartial(path.join(origDir, 'orig.tmp.mp4'), rec, [dest]) === false, 'predicate: .tmp.mp4 outside Compressed_ → not deletable');
+  check(await isDeletablePartial('/Users/me/footage/master.mov', rec, [dest]) === false, 'predicate: an original → not deletable');
 
   // deletePartials must refuse anything that fails the predicate, even if
   // explicitly handed to it.
   const refused = await deletePartials([
     path.join(origDir, 'orig.tmp.mp4'),   // outside Compressed_
     path.join(run1, 'b.mp4')              // finished output
-  ]);
+  ], { recorded: [...rec], roots: [dest] });
   check(refused === 0, 'deletePartials refused both unsafe paths (deleted 0)');
   check(exists(path.join(origDir, 'orig.tmp.mp4')), 'look-alike original still present');
   check(exists(path.join(run1, 'b.mp4')), 'finished output still present');
 
   // Now delete the genuine orphans.
-  const deleted = await deletePartials(found.map((o) => o.path));
+  const deleted = await deletePartials(found.map((o) => o.path), { recorded, roots: [dest] });
   check(deleted === 2, `deleted the 2 real orphans (got ${deleted})`);
   check(!exists(path.join(run1, 'a.tmp.mp4')) && !exists(path.join(run1sub, 'c.tmp.mp4')),
     'both orphan partials removed');
@@ -151,12 +156,13 @@ const read = (p) => fs.readFileSync(p, 'utf8');
   const outsideMaster = path.join(rootB, 'master.mov');
   await fsp.writeFile(outsideMaster, 'PRECIOUS-ORIGINAL');
 
-  const sweep = await findOrphanPartials([rootA, rootB]);
+  const recordedAB = [path.join(cmpA, 'p1.tmp.mp4'), path.join(cmpB, 'p2.tmp.mp4'), path.join(cmpB, 'Nested', 'p3.tmp.mp4')];
+  const sweep = await findOrphanPartials(recordedAB, [rootA, rootB]);
   check(sweep.length === 3, `multi-root sweep found all 3 partials (got ${sweep.length})`);
   const sizesAccurate = sweep.every((o) => o.size === fs.statSync(o.path).size && o.size > 0);
   check(sizesAccurate, 'each reported size equals the file’s actual bytes on disk');
 
-  const deletedSweep = await deletePartials(sweep.map((o) => o.path));
+  const deletedSweep = await deletePartials(sweep.map((o) => o.path), { recorded: recordedAB, roots: [rootA, rootB] });
   check(deletedSweep === 3, `deleted all 3 partials across both roots (got ${deletedSweep})`);
   check(exists(path.join(cmpA, 'clip.mp4')), 'finished clip.mp4 survived the sweep');
   check(read(path.join(cmpA, 'clip.mp4')) === 'FINISHED-CLIP', 'finished clip.mp4 bytes intact');

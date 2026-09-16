@@ -38,7 +38,7 @@ ipcMain.handle('scan-files', async () => ({ rootKind: 'files', root: '/fake', ig
 
 app.whenReady().then(async () => {
   const win = new BrowserWindow({ width: 1280, height: 900, show: false, backgroundColor: '#111111',
-    webPreferences: { preload: path.join(ROOT, 'src/main/preload.js'), contextIsolation: true, sandbox: false } });
+    webPreferences: { preload: path.join(ROOT, 'src/main/preload.js'), contextIsolation: true, sandbox: true } });
   const errs = [];
   win.webContents.on('console-message', (_e, lvl, m) => { if (/error|is not defined|undefined/i.test(m)) errs.push(m); });
   await win.loadFile(path.join(ROOT, 'src/renderer/index.html'));
