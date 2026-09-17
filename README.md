@@ -32,7 +32,7 @@ Savings depend on how much the footage moves and how hard the camera already com
 
 ## Two ways to compress: hardware HEVC or x265
 
-**Make It Fast** (recommended) — hardware HEVC via Apple VideoToolbox. Encodes on the media engine in your Mac's chip, faster than the footage plays, and the Mac stays usable while it runs.
+**Make It Fast** (Regular) — hardware HEVC via Apple VideoToolbox. Encodes on the media engine in your Mac's chip, faster than the footage plays, and the Mac stays usable while it runs.
 
 **Slow But Better** (archival) — software HEVC via libx265. Spends more time on every frame for a smaller file at the same visible quality. Uses more of your Mac while it runs. On fanless or lower-core Macs such as MacBook Neo it is noticeably slower, but it completes normally.
 

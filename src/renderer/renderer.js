@@ -1069,7 +1069,7 @@ function updateTierHint() {
      tier step is live (files staged), say so softly so the zero-thinking
      default isn't contradicted and no tier action is forced. */
   if (current.scanned && current.videoCount > 0) {
-    tierHintEl.textContent = 'Recommended already selected — change only if you want';
+    tierHintEl.textContent = 'Regular already selected — change only if you want';
   } else {
     tierHintEl.textContent = 'Applies to all files in this batch';
   }
