@@ -37,8 +37,6 @@ contextBridge.exposeInMainWorld('api', {
   onBatchStatus: (cb) => ipcRenderer.on('batch-status', (_e, d) => cb(d)),
   onQueueFinished: (cb) => ipcRenderer.on('queue-finished', (_e, d) => cb(d)),
   onOrphansFound: (cb) => ipcRenderer.on('orphans-found', (_e, d) => cb(d)),
-  onUpdateAvailable: (cb) => ipcRenderer.on('update-available', (_e, d) => cb(d)),
-  updateAction: (action) => ipcRenderer.invoke('update-action', action),
   getUpdatePref: () => ipcRenderer.invoke('get-update-pref'),
   setUpdatePref: (on) => ipcRenderer.invoke('set-update-pref', !!on),
   pathForFile: (file) => {

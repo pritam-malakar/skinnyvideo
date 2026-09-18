@@ -39,7 +39,7 @@ const quitState = {
 let runPromise = null;
 /* Auto-update handle (installed at whenReady; a no-op object in dev). Held so
    the end of a run can flush a restart prompt that was held back mid-encode. */
-let updater = { notifyIdle() {}, act() {} };
+let updater = { notifyIdle() {} };
 /* The LIVE batch list the running queue is draining (the same array object
    passed to runQueue). Mid-run drops are appended here via 'enqueue-batch', and
    runQueue's loop re-reads `.length` each turn so it absorbs them in the SAME
@@ -340,9 +340,6 @@ app.whenReady().then(() => {
     isEnabled: () => prefs.autoUpdateCheck !== false,
     isSkipped: (v) => !!v && prefs.skippedUpdateVersion === v,
     onSkip: (v) => { prefs.skippedUpdateVersion = v; savePrefs(); },
-    showNotice: (version) => {
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update-available', { version });
-    },
   });
 
   /* Orphaned-partial sweep (BUG 2 — intended scope, documented):
@@ -440,11 +437,6 @@ ipcMain.handle('app-version', async () => buildDescriptor({
 
 /* Update notice buttons, and the "Check for updates automatically"
    preference (default on; saved through the atomic savePrefs). */
-ipcMain.handle('update-action', async (_evt, action) => {
-  if (!['download', 'skip', 'later'].includes(action)) return { ok: false };
-  updater.act(action);
-  return { ok: true };
-});
 ipcMain.handle('get-update-pref', async () => prefs.autoUpdateCheck !== false);
 ipcMain.handle('set-update-pref', async (_evt, on) => {
   if (typeof on !== 'boolean') return prefs.autoUpdateCheck !== false;

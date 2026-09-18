@@ -4,16 +4,16 @@
      · CHECK — 10 s after launch, then every 6 h, and only while the "Check for
        updates automatically" preference is on. Off = check() returns before
        electron-updater is touched, so no network request is made at all.
-     · DOWNLOAD — never automatic. A found update is offered in the window as a
-       non-blocking notice: Download / Skip this version / Later.
+     · DOWNLOAD — never automatic. A found update is offered as a sheet on the
+       main window: Download / Skip This Version / Later.
      · INSTALL — only when the user picks Restart in the dialog shown after the
        download. "Later" installs nothing, on quit or otherwise.
      · Errors are logged and never shown. A failed check means the machine is
        offline or GitHub is down — neither is worth a dialog.
      · NEVER interrupt an encode. quitAndInstall() would terminate ffmpeg
-       mid-write and leave a partial with no moov atom. Both the notice and the
-       restart prompt are held while a queue runs; main.js calls notifyIdle()
-       when it drains.
+       mid-write and leave a partial with no moov atom. Both the offer sheet and
+       the restart prompt are held while a queue runs; main.js calls
+       notifyIdle() when it drains.
 
    Packaged builds only. In dev (`npm start`) it stays off unless
    SKINNYVIDEO_DEV_UPDATER=1, which points it at the real GitHub feed and logs
@@ -23,23 +23,23 @@
    The feed itself is package.json's build.publish → latest-mac.yml,
    published as a GitHub release asset. */
 
-const { app, dialog, session } = require('electron');
+const { app, dialog: electronDialog, session } = require('electron');
 
 /* Late enough not to compete with window creation and the first paint. */
 const FIRST_CHECK_DELAY_MS = 10 * 1000;
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 const log = (msg) => console.log(`[SkinnyVideo] updater: ${msg}`);
-const NOOP = { notifyIdle() {}, act() {}, check() {} };
+const NOOP = { notifyIdle() {}, check() {} };
 
 /* deps.isBusy()      — true while a queue is running or finalizing.
    deps.getWindow()   — the window to parent the restart dialog on, or null.
    deps.isEnabled()   — the "Check for updates automatically" preference.
-   deps.isSkipped(v)  — true if the user chose "Skip this version" for v.
+   deps.isSkipped(v)  — true if the user chose "Skip This Version" for v.
    deps.onSkip(v)     — persist that choice.
-   deps.showNotice(v) — show the Download / Skip / Later notice for version v.
+   deps.dialog        — test seam; defaults to electron's dialog module.
    deps.autoUpdater   — test seam; defaults to electron-updater's instance.
-   Returns { notifyIdle, act, check }; a no-op object when updates are off. */
+   Returns { notifyIdle, check }; a no-op object when updates are off. */
 function installUpdater(deps = {}) {
   const fn = (f, fallback) => (typeof f === 'function' ? f : fallback);
   const isBusy = fn(deps.isBusy, () => false);
@@ -47,7 +47,13 @@ function installUpdater(deps = {}) {
   const isEnabled = fn(deps.isEnabled, () => true);
   const isSkipped = fn(deps.isSkipped, () => false);
   const onSkip = fn(deps.onSkip, () => {});
-  const showNotice = fn(deps.showNotice, () => {});
+  const dialog = deps.dialog || electronDialog;
+
+  /* Both prompts are sheets on the main window when there is one. */
+  const ask = (opts) => {
+    const win = getWindow();
+    return (win && !win.isDestroyed()) ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts);
+  };
 
   let autoUpdater = deps.autoUpdater;
   const devForced = !app.isPackaged && process.env.SKINNYVIDEO_DEV_UPDATER === '1';
@@ -66,7 +72,16 @@ function installUpdater(deps = {}) {
     }
     if (devForced) {
       autoUpdater.forceDevUpdateConfig = true;
-      autoUpdater.setFeedURL(require('../../package.json').build.publish[0]);
+      /* Dev only: point the check at a local feed instead of the GitHub release,
+         so the offer sheet can be exercised without publishing anything.
+         Ignored in a packaged build — devForced is false there. */
+      const devFeed = process.env.SKINNYVIDEO_DEV_FEED_URL;
+      if (devFeed) {
+        autoUpdater.setFeedURL({ provider: 'generic', url: devFeed });
+        log(`dev build — feed overridden by SKINNYVIDEO_DEV_FEED_URL: ${devFeed}`);
+      } else {
+        autoUpdater.setFeedURL(require('../../package.json').build.publish[0]);
+      }
       /* Same partition + options electron-updater opens for its own requests. */
       session.fromPartition('electron-updater', { cache: false }).webRequest
         .onBeforeRequest((d, cb) => { log(`network request: ${d.method} ${d.url}`); cb({}); });
@@ -86,6 +101,7 @@ function installUpdater(deps = {}) {
   let available = null;    // info for a found update the user has not answered
   let pending = null;      // info for a downloaded update not yet acted on
   let dialogOpen = false;  // never stack two restart prompts
+  let offerOpen = false;   // never stack two offer sheets
 
   autoUpdater.on('checking-for-update', () => log('checking for an update'));
   autoUpdater.on('update-not-available', () => log('already up to date'));
@@ -115,34 +131,50 @@ function installUpdater(deps = {}) {
   function flush() {
     if (!available && !pending) return;
     if (isBusy()) {
-      log(`holding the update ${pending ? 'restart prompt' : 'notice'} — a queue is still running`);
+      log(`holding the update ${pending ? 'restart prompt' : 'offer'} — a queue is still running`);
       return;
     }
     if (pending) prompt();
-    else showNotice(available.version);
+    else offer();
   }
 
-  /* The notice's buttons, relayed by main.js. */
-  function act(action) {
+  /* The offer sheet: Download / Skip This Version / Later. Nothing downloads
+     until the operator picks Download. */
+  function offer() {
+    if (offerOpen || !available) return;
+    offerOpen = true;
     const info = available;
-    if (!info) return;            // nothing on offer (stale click)
-    available = null;
-    if (action === 'download') {
-      log(`downloading ${info.version} — the user chose Download`);
-      Promise.resolve(autoUpdater.downloadUpdate()).catch(() => { /* logged by 'error' */ });
-    } else if (action === 'skip') {
-      onSkip(info.version);
-      log(`skipping ${info.version} — the user chose Skip this version`);
-    } else {
-      log(`update ${info.version} deferred — offered again on a later check`);
-    }
+    const version = info.version || 'A new version';
+    ask({
+      type: 'info',
+      buttons: ['Download', 'Skip This Version', 'Later'],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true,     // plain buttons, never a "Skip This Version" link
+      message: `SkinnyVideo ${version} is available`,
+      detail: 'Download it now? You can install it whenever you’re ready.',
+    }).then(({ response }) => {
+      offerOpen = false;
+      available = null;
+      if (response === 0) {
+        log(`downloading ${version} — the user chose Download`);
+        Promise.resolve(autoUpdater.downloadUpdate()).catch(() => { /* logged by 'error' */ });
+      } else if (response === 1) {
+        onSkip(version);
+        log(`skipping ${version} — the user chose Skip This Version`);
+      } else {
+        log(`update ${version} deferred — offered again on a later check`);
+      }
+    }).catch((e) => {
+      offerOpen = false;
+      log(`could not show the update offer: ${(e && e.message) || e}`);
+    });
   }
 
   function prompt() {
     if (dialogOpen) return;
     dialogOpen = true;
     const version = pending.version || 'A new version';
-    const win = getWindow();
     const opts = {
       type: 'info',
       buttons: ['Restart', 'Later'],
@@ -151,11 +183,7 @@ function installUpdater(deps = {}) {
       message: `SkinnyVideo ${version} is ready. Restart now?`,
       detail: 'If you choose Later, nothing is installed. SkinnyVideo will offer the update again on a later check.',
     };
-    const shown = win && !win.isDestroyed()
-      ? dialog.showMessageBox(win, opts)
-      : dialog.showMessageBox(opts);
-
-    shown.then(({ response }) => {
+    ask(opts).then(({ response }) => {
       dialogOpen = false;
       if (response === 0) {
         log(`restarting to install ${version}`);
@@ -194,7 +222,6 @@ function installUpdater(deps = {}) {
   return {
     /* Called by main.js when a run ends: flushes anything held back mid-encode. */
     notifyIdle: flush,
-    act,
     check,
   };
 }

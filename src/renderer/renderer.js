@@ -2175,7 +2175,6 @@ startBtn.addEventListener('click', async () => {
      No pre-filtering / kind-conversion here — that's what let an all-skipped
      batch fall through the cracks and stall. */
   const payload = toRun.map(batchToPayload);
-  hideUpdateNotice();   // never on screen during a run; main re-offers when idle
   await window.api.startQueue(payload);
 });
 
@@ -3053,32 +3052,3 @@ if (updatePrefEl) {
   });
 }
 
-function hideUpdateNotice() {
-  const el = document.getElementById('update-notice');
-  if (el) el.remove();
-}
-
-window.api.onUpdateAvailable(({ version } = {}) => {
-  hideUpdateNotice();
-  const el = document.createElement('div');
-  el.id = 'update-notice';
-  el.className = 'update-notice';
-  el.setAttribute('role', 'status');
-  const text = document.createElement('span');
-  text.textContent = `SkinnyVideo ${version} is available`;
-  el.appendChild(text);
-  [['Download', 'download', 'btn'], ['Skip this version', 'skip', 'btn ghost'], ['Later', 'later', 'btn ghost']]
-    .forEach(([label, action, cls]) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = cls;
-      btn.textContent = label;
-      btn.addEventListener('click', () => {
-        hideUpdateNotice();
-        window.api.updateAction(action).catch(() => {});
-      });
-      el.appendChild(btn);
-    });
-  // In page flow, directly above the version / checkbox line — never an overlay.
-  document.querySelector('.app-footer').prepend(el);
-});

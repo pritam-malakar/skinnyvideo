@@ -84,7 +84,6 @@ app.whenReady().then(async () => {
       await t('getHistory', () => a.getHistory());
       await t('getUpdatePref', () => a.getUpdatePref());
       await t('setUpdatePref', () => a.setUpdatePref(false));
-      await t('updateAction', () => a.updateAction('later'));
       await t('setBatchSkips', () => a.setBatchSkips(9999, []));
       await t('pauseBatch', () => a.pauseBatch(9999));
       await t('resumeBatch', () => a.resumeBatch(9999));
@@ -94,7 +93,7 @@ app.whenReady().then(async () => {
       await t('deleteOrphans', () => a.deleteOrphans([]));
       await t('revealInFinder', () => a.revealInFinder(${JSON.stringify(path.join(SANDBOX, 'nope.mov'))}));
       await t('revealFolder', () => a.revealFolder(${JSON.stringify(path.join(SANDBOX, 'nope'))}));
-      for (const on of ['onProgress', 'onBatchStatus', 'onQueueFinished', 'onOrphansFound', 'onUpdateAvailable']) await t(on, () => { a[on](() => {}); });
+      for (const on of ['onProgress', 'onBatchStatus', 'onQueueFinished', 'onOrphansFound']) await t(on, () => { a[on](() => {}); });
       return out;
     })()`);
     const failed = Object.entries(results).filter(([, r]) => !r.ok);

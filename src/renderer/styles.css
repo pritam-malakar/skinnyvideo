@@ -1386,21 +1386,6 @@ body.pro-mode .safety-bar { display: flex; }
   transform: translateX(-50%) translateY(0);
 }
 
-/* Update offer — a slim bar in normal page flow, the footer's first row
-   (renderer prepends it). Never overlays anything: the page grows one line. */
-.update-notice {
-  flex: 1 1 100%;
-  display: flex; align-items: center; gap: 4px;
-  margin-bottom: 14px;
-  padding: 4px 6px 4px 16px;
-  border-radius: var(--r-pill);
-  background: var(--card);
-  color: var(--fg);
-  font-size: 13.5px; font-weight: 600;
-}
-.update-notice span { flex: 1; }
-.update-notice .btn { padding: 6px 14px; font-size: 13px; }
-.update-notice .btn.ghost { padding: 6px 10px; }
 
 /* ============================================================
    Nerd panel — card surface, tier accent from --accent
