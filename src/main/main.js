@@ -611,11 +611,15 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
     runPromise = null;
     quitState.queueRunning = false;   // run ended → guard disarms, close is instant
     quitState.isFinalizing = false;   // run ended → never leave the guard armed
-    // Run reached a clean end — no orphaned partials to recover next launch.
+    /* A recorded partial leaves the tracking set ONLY when it is confirmed gone
+       from disk — renamed onto its final name, unlinked by the pipeline, or
+       swept by flatten. Anything still on disk stays recorded (e.g. a final
+       rename that threw, which fails the batch before flatten runs), so the
+       next launch can still offer to clean it up. */
     try {
       prefs.pendingDests = [];
       prefs.pendingPartials = (Array.isArray(prefs.pendingPartials) ? prefs.pendingPartials : [])
-        .filter((p) => !runPartials.has(p));
+        .filter((p) => !runPartials.has(p) || fs.existsSync(p));
       savePrefs();
     } catch { /* non-fatal */ }
     send('queue-finished', {

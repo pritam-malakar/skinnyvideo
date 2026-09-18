@@ -1357,10 +1357,12 @@ async function stageFiles(paths) {
     current.files = scan.videos.map((v) => ({
       path: v.file, name: v.file.split('/').pop(), size: v.size || 0, pix_fmt: v.pix_fmt
     }));
-    /* Restrict fileSources to those that probed as real videos so the
-       symlink stage on the main side doesn't waste links on non-videos. */
-    const videoPaths = new Set(scan.videos.map((v) => v.file));
-    current.fileSources = paths.filter((p) => videoPaths.has(p));
+    /* Stage every video the scan FOUND, not the dropped paths that happen to
+       be videos themselves. A dropped FOLDER is not in scan.videos — its clips
+       are — so filtering the drop list against them dropped whole folders on
+       the floor: the count said 4 while 2 (or none) were encoded. Staging the
+       found files also keeps non-videos out, which is what that filter was for. */
+    current.fileSources = [...new Set(scan.videos.map((v) => v.file))];
     current.scanned = true;
     dropStatusPath.textContent = current.srcName;
     dropStatusPath.style.color = '';

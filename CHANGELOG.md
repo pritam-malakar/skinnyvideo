@@ -1,5 +1,54 @@
 # Changelog
 
+## 3.2.1 — 2026-09-18
+
+- The update offer is now a native dialog on the window rather than a bar
+  inside the page. Same three choices — Download, Skip This Version, Later —
+  and the same rules behind them: nothing downloads until you pick Download, a
+  skipped version is never offered again, and Later asks again next launch. An
+  update found while a queue is running still waits until the queue finishes.
+  The "Check for updates automatically" checkbox is unchanged, and so is the
+  Restart / Later dialog shown after a download.
+- Dropping several folders at once, or a folder together with loose files, now
+  stages every video found inside them. Before, two folders dropped together
+  showed the right count but could not be added to the queue at all, and a
+  folder dropped with loose files lost the folder's clips — only the loose
+  files were compressed.
+- A finished file whose final rename fails (for example because the output
+  folder became read-only) now stays tracked as an unfinished partial, so the
+  next launch still offers to clean it up. It used to drop out of tracking and
+  be left behind.
+
+## 3.2.0 — 2026-09-17
+
+- **Requires macOS 13 or later.** SkinnyVideo now runs on the current Electron,
+  which needs macOS 13. If you're on macOS 11 or 12, 3.1.0 keeps working and
+  won't be offered this update.
+- Your Mac stays awake while a batch runs. No more overnight queues that stall
+  because the Mac dozed off.
+- Safer cleanup. SkinnyVideo now tracks exactly which temporary files it
+  created and only ever removes those. A source file with `.tmp` in its name is
+  no longer mistaken for an unfinished encode.
+- Folder shortcuts that loop are skipped, so the same video can't be counted or
+  compressed many times.
+- Small wording fix. The Make It Fast tier is now tagged "Regular" instead of
+  "Recommended".
+- Under the hood: Electron 44, renderer sandbox on, stricter checks on
+  everything the window asks the app to do.
+
+## 3.1.0 — 2026-09-17
+
+- Nothing gets skipped anymore. If a folder has `C0001.MP4` and `C0001.MOV`,
+  older versions quietly skipped the second one. Now both are compressed.
+- Clearer names when files clash. Same name in different folders → the folder
+  name goes in front (`B_C0001.mp4`). Same name, different extension → the
+  extension is added (`C0001_mov.mp4`). One rule everywhere.
+- Updates now ask first. SkinnyVideo tells you when a new version is available
+  and only downloads when you click. You can turn the check off entirely
+  (bottom-right of the window). "Later" no longer installs on quit.
+- Honest wording. Compression runs entirely on your Mac and your videos never
+  leave it. The app's only internet use is this optional update check.
+
 ## 3.0.2 — 2026-09-07
 
 - The release script now clears the previous run's artifacts from `dist/`
