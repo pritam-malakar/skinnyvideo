@@ -34,8 +34,66 @@ const fsp = fs.promises;
 const os = require('os');
 
 const { spawnSync } = require('child_process');
+const { EventEmitter } = require('events');
+const { PassThrough } = require('stream');
+
+/* ── spawn spy — MUST be installed before pipeline.js is required (it
+   destructures spawn at load). Real spawn unless a test sets `fake`; then
+   ffprobe/-version answer instantly and an encode is a scripted child that
+   ticks time= every 50ms: SIGSTOP freezes the ticker, SIGCONT restarts it,
+   SIGTERM/SIGKILL close 255, the last tick closes 0. Every signal lands in
+   fake.signals. */
+const cp = require('child_process');
+const realSpawn = cp.spawn;
+let fake = null;
+cp.spawn = function (cmd, args, opts) {
+  if (!fake) return realSpawn.call(this, cmd, args, opts);
+  const F = fake;   // a child outliving its test must not touch the next test's record
+  const c = new EventEmitter();
+  c.stdout = new PassThrough(); c.stderr = new PassThrough();
+  let timer = null, closed = false, n = 0;
+  const close = (code) => {
+    if (closed) return; closed = true; clearInterval(timer);
+    c.emit('exit', code, null);
+    setTimeout(() => { c.stdout.end(); c.stderr.end(); c.emit('close', code, null); }, 10);
+  };
+  c.kill = (sig = 'SIGTERM') => {
+    F.signals.push(sig);
+    if (closed) return false;
+    if (sig === 'SIGSTOP') { clearInterval(timer); timer = null; }
+    else if (sig === 'SIGCONT') { if (!timer) tick(); }
+    else close(255);
+    return true;
+  };
+  const tick = () => {
+    timer = setInterval(() => {
+      n++;
+      c.stderr.write(`frame=${n} time=00:00:${String(n % 60).padStart(2, '0')}.00 speed=1x\r`);
+      if (n >= F.ticks) { fs.appendFileSync(out, 'done'); close(0); }
+    }, 50);
+  };
+  const file = args[args.length - 1];
+  if (/ffprobe$/.test(cmd)) {
+    const frames = args.some((a) => String(a).startsWith('frame='));
+    setTimeout(() => {
+      c.stdout.write(JSON.stringify(frames ? { frames: [{}] } : {
+        streams: [{ codec_type: 'video', codec_name: 'h264', width: 1920, height: 1080, pix_fmt: 'yuv420p', duration: '20.0' }],
+        format: { duration: '20.0', size: '100' } }));
+      close(0);
+    }, 5);
+    return c;
+  }
+  if (args.includes('-version')) { setTimeout(() => { c.stdout.write('ffmpeg version fake\n'); close(0); }, 5); return c; }
+  const out = file;
+  fs.writeFileSync(out, 'partial');
+  F.encodes++;
+  tick();
+  return c;
+};
+
 const ROOT = path.join(__dirname, '..');
-const { runQueue, releasePauseGate } = require(path.join(ROOT, 'src/main/queue-runner'));
+const { runQueue, releasePauseGate, requestStop } = require(path.join(ROOT, 'src/main/queue-runner'));
+const { beginCancel } = require(path.join(ROOT, 'src/main/quit-teardown'));
 const { ffmpegStatus, getBinaries } = require(path.join(ROOT, 'src/encoder/pipeline'));
 
 const PASS = [], FAIL = [];
@@ -50,11 +108,13 @@ const LONG = process.env.SKINNYVIDEO_TEST_CLIP_LONG || path.join(__dirname, 'fix
 // ---- per-batch runtime state, exactly like main.js's runtime Map ----
 const rtm = new Map();
 const rt = (id) => { if (!rtm.has(id)) rtm.set(id, { child: null, paused: false, cancelled: false }); return rtm.get(id); };
-// Pause/resume/cancel MIRROR of src/main/main.js (updated); uses the REAL
-// releasePauseGate so the event-gate wake path can't drift from production.
-const doPause = (id) => { const s = rt(id); if (s.paused || s.resolved) return false; s.paused = true; if (s.child) { try { s.child.kill('SIGSTOP'); } catch {} } return true; };
+// Pause/resume MIRROR of src/main/main.js; cancel and stop are the REAL
+// beginCancel / requestStop main.js calls, so they can't drift from production.
+let stopFlag = false;
+const doPause = (id) => { const s = rt(id); if (s.paused || s.resolved || stopFlag) return false; s.paused = true; if (s.child) { try { s.child.kill('SIGSTOP'); } catch {} } return true; };
 const doResume = (id) => { const s = rt(id); if (!s.paused) return false; s.paused = false; releasePauseGate(s); if (s.child) { try { s.child.kill('SIGCONT'); } catch {} } return true; };
-const doCancel = (id) => { const s = rt(id); s.cancelled = true; if (s.paused) { if (s.child) { try { s.child.kill('SIGCONT'); } catch {} } s.paused = false; } releasePauseGate(s); if (s.child) { try { s.child.kill('SIGTERM'); } catch {} } };
+const doCancel = (id) => beginCancel(rt(id), { releasePauseGate });
+const doStop = () => requestStop(rtm, { setStopFlag: () => { stopFlag = true; } });
 
 async function freshDir(d) { await fsp.rm(d, { recursive: true, force: true }); await fsp.mkdir(d, { recursive: true }); return d; }
 function folderBatch(id, src, dest) {
@@ -167,7 +227,7 @@ async function testTeardown(mode) {
 
   const evs = [];
   let fileStarts = 0, f2path = null;
-  let stopFlag = false;
+  stopFlag = false;
   const send = (ch, p) => {
     evs.push({ ch, p });
     if (ch === 'progress' && p.type === 'file-start') {
@@ -179,14 +239,84 @@ async function testTeardown(mode) {
   const runP = withTimeout(runQueue([folderBatch(BID, src, dest)], { send, isStopRequested: () => stopFlag, rt }), 60000);
   await until(() => f2path !== null, 40000);
   await sleep(300);                        // firmly parked on the gate, paused
-  if (mode === 'stop') { stopFlag = true; releasePauseGate(rt(BID)); }   // mirror stop-queue
-  else doCancel(BID);                                                    // mirror cancel-batch
+  if (mode === 'stop') doStop();          // real requestStop
+  else doCancel(BID);                     // real beginCancel
 
   const res = await runP;
   const hung = res === 'TIMEOUT';
   const f2done = evs.some((e) => e.ch === 'progress' && e.p.type === 'file-done' && e.p.file === f2path && e.p.outcome !== 'fail');
   check(!hung, `${mode} while paused (no child) released the gate — queue tore down, no hang (hung: ${hung})`);
   check(!f2done, `${mode} while paused: the held 2nd encoder did NOT run (encoded-anyway: ${f2done})`);
+}
+
+/* v3.2.2 — STOP WHILE PAUSED MID-ENCODE (fake child, deterministic). Pause
+   SIGSTOPs the live encoder; "Stop after current file" must SIGCONT it so
+   the file can finish, never kill it. FAIL-ON-OLD: stop only raised the flag
+   and woke the (empty) pause gate — the stopped child never resumed, the
+   watchdog skips paused encoders, and runQueue hung (TIMEOUT). */
+async function testStopWhilePausedFake() {
+  const src = await freshDir(path.join(os.tmpdir(), 'skinnyvideo-pause-fstop-src'));
+  const dest = await freshDir(path.join(os.tmpdir(), 'skinnyvideo-pause-fstop-out'));
+  await fsp.writeFile(path.join(src, 'f1.mov'), 'x');
+  await fsp.writeFile(path.join(src, 'f2.mov'), 'x');
+  const BID = 'FS1';
+  stopFlag = false;
+  fake = { ticks: 20, signals: [], encodes: 0 };
+  const evs = [];
+  let paused = false;
+  const send = (ch, p) => {
+    evs.push({ ch, p });
+    if (!paused && ch === 'progress' && p.type === 'file-progress') {
+      paused = true;
+      doPause(BID);
+      setTimeout(doStop, 200);              // stop lands while the child is SIGSTOPped
+    }
+  };
+  const res = await withTimeout(runQueue([folderBatch(BID, src, dest)], { send, isStopRequested: () => stopFlag, rt }), 3000);
+  const sigs = fake.signals.slice();
+  fake = null;
+  const prog = evs.filter((e) => e.ch === 'progress').map((e) => e.p);
+  const done1 = prog.find((p) => p.type === 'file-done' && /f1\.mov$/.test(p.file));
+  const starts2 = prog.filter((p) => p.type === 'file-start' && /f2\.mov$/.test(p.file));
+  const statuses = evs.filter((e) => e.ch === 'batch-status').map((e) => e.p.status);
+  const outs = findOutput(dest).map((p) => path.basename(p));
+  check(res !== 'TIMEOUT', `stop while paused: run finished, no hang (result: ${res === 'TIMEOUT' ? 'TIMEOUT' : 'settled'})`);
+  check(!!done1 && done1.outcome === 'ok' && outs.includes('f1.mp4'), `stop while paused: file 1 finished ok and its output exists (outcome ${done1 && done1.outcome}, outputs [${outs}])`);
+  const iStop = sigs.indexOf('SIGSTOP'), iCont = sigs.indexOf('SIGCONT');
+  check(iStop === 0 && iCont > iStop, `stop while paused: SIGSTOP then SIGCONT (signals ${JSON.stringify(sigs)})`);
+  check(!sigs.includes('SIGTERM') && !sigs.includes('SIGKILL'), `stop stays graceful: no SIGTERM/SIGKILL (signals ${JSON.stringify(sigs)})`);
+  check(starts2.length === 0, `stop while paused: file 2 never started (file-start events: ${starts2.length})`);
+  check(statuses[statuses.length - 1] === 'Stopped', `stopped batch ends "Stopped", not Done (statuses ${JSON.stringify(statuses)})`);
+}
+
+/* Cancel while paused through the REAL beginCancel: the child is continued
+   before it is terminated, and the file ends cancelled (guard — passes old+new). */
+async function testCancelWhilePausedFake() {
+  const src = await freshDir(path.join(os.tmpdir(), 'skinnyvideo-pause-fcan-src'));
+  const dest = await freshDir(path.join(os.tmpdir(), 'skinnyvideo-pause-fcan-out'));
+  await fsp.writeFile(path.join(src, 'f1.mov'), 'x');
+  const BID = 'FC1';
+  stopFlag = false;
+  fake = { ticks: 40, signals: [], encodes: 0 };
+  const evs = [];
+  let paused = false;
+  const send = (ch, p) => {
+    evs.push({ ch, p });
+    if (!paused && ch === 'progress' && p.type === 'file-progress') {
+      paused = true;
+      doPause(BID);
+      setTimeout(() => doCancel(BID), 200);
+    }
+  };
+  const res = await withTimeout(runQueue([folderBatch(BID, src, dest)], { send, isStopRequested: () => stopFlag, rt }), 3000);
+  const sigs = fake.signals.slice();
+  fake = null;
+  const done1 = evs.find((e) => e.ch === 'progress' && e.p.type === 'file-done');
+  check(res !== 'TIMEOUT', 'cancel while paused: run finished, no hang');
+  check(JSON.stringify(sigs.slice(0, 3)) === JSON.stringify(['SIGSTOP', 'SIGCONT', 'SIGTERM']),
+    `cancel while paused: [SIGSTOP, SIGCONT, SIGTERM, …] (signals ${JSON.stringify(sigs)})`);
+  check(!!done1 && done1.p.outcome === 'cancelled', `cancel while paused: file outcome cancelled (got ${done1 && done1.p.outcome})`);
+  check(findOutput(dest).length === 0, 'cancel while paused: no output left behind');
 }
 
 (async () => {
@@ -196,6 +326,8 @@ async function testTeardown(mode) {
     process.exit(0);
   }
   try {
+    await testStopWhilePausedFake();
+    await testCancelWhilePausedFake();
     await testA();
     await testTeardown('stop');
     await testTeardown('cancel');

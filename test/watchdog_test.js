@@ -130,8 +130,33 @@ async function caseCeiling() {
     `died at ~the 12s ceiling, not the 3s window (${wall.toFixed(1)}s)`);
 }
 
+/* v3.2.2 — a long PAUSE must not count toward the probe-blind ceiling. Paused
+   2.75s (> the 2s ceiling), then resumed with every probe UNKNOWN. The ceiling
+   must restart from the pause, not from the last output before it.
+   FAIL-ON-OLD: lastAliveAt was never refreshed while paused, so the first
+   post-resume probe saw 3s > 2s and killed immediately (~0.25s after resume). */
+async function casePauseCeiling() {
+  const out = path.join(TMP, 'pauseceiling.out');
+  const [cmd, args] = sh(`
+    echo "frame= 1 starting" 1>&2
+    sleep 300
+  `);
+  let paused = true;
+  const RESUME_AT = 2750;
+  setTimeout(() => { paused = false; }, RESUME_AT);
+  const t0 = Date.now();
+  const r = await runCmd(cmd, args, {
+    stallTimeoutMs: 500, stallCeilingMs: 2000, outPath: out,
+    probeOutSize: async () => null, isPaused: () => paused
+  });
+  const afterResume = Date.now() - t0 - RESUME_AT;
+  console.log(`  pauseceiling: stalled=${!!r.stalled} reason=${r.stallReason} killed ${afterResume}ms after resume`);
+  check(r.stalled === true && r.stallReason === 'probe-blind', 'still killed at the ceiling once resumed (reason: probe-blind)');
+  check(afterResume >= 1400, `pause time did not count toward the ceiling — survived ${afterResume}ms after resume (ceiling 2000ms)`);
+}
+
 (async () => {
-  const cases = { growing: caseGrowing, fullscale: caseFullscale, dead: caseDead, nofile: caseNofile, ceiling: caseCeiling };
+  const cases = { growing: caseGrowing, fullscale: caseFullscale, dead: caseDead, nofile: caseNofile, ceiling: caseCeiling, pauseceiling: casePauseCeiling };
   const torun = MODE === 'all' ? Object.keys(cases) : [MODE];
   for (const k of torun) {
     console.log(`\n— ${k} —`);

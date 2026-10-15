@@ -225,7 +225,7 @@ function computeQueueWork() {
   for (const b of queue) {
     const bpms = bpmsFor(b.tier);
     for (const f of b.files) {
-      if (f.status === 'skipped') continue;
+      if (f.status === 'skipped' || f.status === 'notstarted') continue;
       const size = (Number.isFinite(f.size) && f.size > 0) ? f.size : 0;
       totalBytes += size;
       if (f.status === 'done' || f.status === 'existed' || f.status === 'failed' || f.status === 'cancelled') {
@@ -261,7 +261,7 @@ function computeQueueFileText() {
   let total = 0, terminal = 0, runningName = '', runningBatchName = '', running = false;
   for (const b of queue) {
     for (const f of b.files) {
-      if (f.status === 'skipped') continue;
+      if (f.status === 'skipped' || f.status === 'notstarted') continue;
       total++;
       if (f.status === 'running') { runningName = f.name; runningBatchName = b.srcName || ''; running = true; }
       else if (f.status === 'done' || f.status === 'existed' || f.status === 'failed' || f.status === 'cancelled') terminal++;
@@ -323,7 +323,7 @@ function updateOverallProgressEta() {
 /* A file row in a settled state — done/failed/cancelled/already-present/
    operator-skipped. Used to resolve file-done events to the right row and to
    reconcile leftovers when a batch reaches a terminal status (BUG A). */
-const TERMINAL_FILE_STATUSES = new Set(['done', 'failed', 'cancelled', 'existed', 'skipped']);
+const TERMINAL_FILE_STATUSES = new Set(['done', 'failed', 'cancelled', 'existed', 'skipped', 'notstarted']);
 function isTerminalFileStatus(s) { return TERMINAL_FILE_STATUSES.has(s); }
 
 /* BUG A — once a batch reaches a terminal status, make sure NO file row is
@@ -331,12 +331,14 @@ function isTerminalFileStatus(s) { return TERMINAL_FILE_STATUSES.has(s); }
    still 'running' when the batch finished actually completed (its file-done
    just didn't resolve) → done; a row never started (e.g. its source was
    removed before the run scanned it) → failed. On cancel, all leftovers →
-   cancelled. */
+   cancelled. On Stop, every encoded file already got its own file-done, so
+   leftovers were never encoded → not started (never failed, never done). */
 function reconcileBatchFiles(item) {
-  const kind = item.status; // 'done' | 'failed' | 'cancelled'
+  const kind = item.status; // 'done' | 'failed' | 'cancelled' | 'stopped'
   for (const f of item.files) {
     if (isTerminalFileStatus(f.status)) continue;
     if (kind === 'cancelled') f.status = 'cancelled';
+    else if (kind === 'stopped') { f.status = 'notstarted'; f.progress = 0; continue; }
     else if (kind === 'failed') f.status = 'failed';
     else f.status = (f.status === 'running') ? 'done' : 'failed';
     f.progress = 100;
@@ -806,7 +808,9 @@ function openRowMenu(anchorEl, item) {
     menu.appendChild(btn);
   }
 
-  if (item.status === 'running') {
+  // No Pause once "Stopping after current file…" — main refuses it (a SIGSTOP
+  // would hold the very file the stop waits on). Resume stays: it is harmless.
+  if (item.status === 'running' && !stopBtn.disabled) {
     addAction(
       'Pause',
       '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>',
@@ -894,18 +898,26 @@ function hideEta() {
 }
 
 
-/* Item 2: end-of-run tally, built from queue file state. Every file lands
-   in exactly one bucket. "skipped" folds operator-skips and already-present
-   outputs; "cancelled" only appears if the operator stopped a file in
-   flight. done is the lone green (success); failed red; rest neutral. */
+/* Batches the CURRENT run started (filled on each first 'Running', reset at
+   Start). Earlier runs' batches stay in the queue view but never in this run's
+   summary. */
+let runBatchIds = new Set();
+
+/* Item 2: end-of-run tally, built from this run's batches' file state. Every
+   file lands in exactly one bucket. "skipped" folds operator-skips and
+   already-present outputs; "cancelled" only appears if the operator cancelled
+   a file in flight; "not started" only after a Stop. done is the lone green
+   (success); failed red; rest neutral. */
 function summaryCountsHtml() {
-  let done = 0, failed = 0, skipped = 0, cancelled = 0;
+  let done = 0, failed = 0, skipped = 0, cancelled = 0, notStarted = 0;
   for (const b of queue) {
+    if (!runBatchIds.has(b.id)) continue;
     for (const f of b.files) {
       if (f.status === 'done') done++;
       else if (f.status === 'failed') failed++;
       else if (f.status === 'skipped' || f.status === 'existed') skipped++;
       else if (f.status === 'cancelled') cancelled++;
+      else if (f.status === 'notstarted') notStarted++;
     }
   }
   const seg = (n, label, cls) =>
@@ -916,6 +928,9 @@ function summaryCountsHtml() {
     + `<span class="vsep">·</span>` + seg(skipped, 'skipped', 'c-skip');
   if (cancelled > 0) {
     html += `<span class="vsep">·</span>` + seg(cancelled, 'cancelled', 'c-skip');
+  }
+  if (notStarted > 0) {
+    html += `<span class="vsep">·</span>` + seg(notStarted, 'not started', 'c-skip');
   }
   return `<div class="summary-counts">${html}</div>`;
 }
@@ -1141,22 +1156,23 @@ dropzone.addEventListener('drop', async (ev) => {
     dropStatus.classList.remove('hidden');
     return;
   }
-  /* Routing rule:
-       - Exactly one path AND it's a directory → existing folder workflow
-         (untouched: scanSource → scanFolder).
-       - Anything else (1 file, multiple files, multiple folders, mix) →
-         file-list branch (scan-files), which keeps folder behavior
-         entirely off this path. */
-  if (paths.length === 1) {
-    const stat = await window.api.statPath(paths[0]);
-    if (stat && stat.isDirectory) {
-      await stageSource(paths[0]);
-      return;
-    }
-  }
-  await stageFiles(paths);
+  await stagePicked(paths);
   /* Two-step staging: do NOT auto-add. Operator confirms tier + clicks Add. */
 });
+
+/* Routing rule, shared by drop and Browse so the two behave the same:
+     - Exactly one path AND it's a directory → existing folder workflow
+       (scanSource → scanFolder).
+     - Anything else (1 file, multiple files, multiple folders, mix) →
+       file-list branch (scan-files), which keeps folder behavior
+       entirely off this path. */
+async function stagePicked(paths) {
+  if (paths.length === 1) {
+    const stat = await window.api.statPath(paths[0]);
+    if (stat && stat.isDirectory) return stageSource(paths[0]);
+  }
+  return stageFiles(paths);
+}
 
 chooseDestBtn.addEventListener('click', async () => {
   /* Dest can be picked at any time (before or after drop) — sticky across
@@ -1177,15 +1193,13 @@ chooseDestBtn.addEventListener('click', async () => {
 });
 
 /* Drop-zone icon (and the small "click to browse" text) opens the native
-   FILE picker (multi-select). macOS can't pick folders + files in the same
-   dialog, so the browse button is files-only; folders still arrive via
-   drag-drop. defaultPath cascades through the persisted lastSrc → output
-   parent → ~ in the main process. */
+   picker (files and/or folders, multi-select). defaultPath cascades through
+   the persisted lastSrc → output parent → ~ in the main process. */
 async function browseAndStage() {
   const suggested = current.dest || null;
   const chosen = await window.api.browseSourceFiles(suggested);
   if (!chosen || !chosen.length) return;
-  await stageFiles(chosen);
+  await stagePicked(chosen);
 }
 if (dzBrowseBtn) dzBrowseBtn.addEventListener('click', browseAndStage);
 if (dzBrowseTextBtn) dzBrowseTextBtn.addEventListener('click', browseAndStage);
@@ -1277,6 +1291,13 @@ function flipDropzoneHeight(mutate) {
   timer = setTimeout(cleanup, 360);                  // .30s tween + margin
 }
 
+/* Staging line: "N videos", plus — only when non-zero — how many the scan left
+   out because they sit inside SkinnyVideo's own output folders. */
+function scanCountText(scan) {
+  const n = scan.videos.length, m = scan.skippedOutputs || 0;
+  return `${n} video${n === 1 ? '' : 's'}` + (m > 0 ? ` · ${m} skipped inside SkinnyVideo output folders` : '');
+}
+
 async function stageSource(p) {
   current.src = p;
   current.srcName = p.split('/').pop();
@@ -1311,7 +1332,7 @@ async function stageSource(p) {
     current.scanned = true;
     dropStatusPath.textContent = p;
     dropStatusPath.style.color = '';
-    dropStatusCount.textContent = `${scan.videos.length} video${scan.videos.length === 1 ? '' : 's'}`;
+    dropStatusCount.textContent = scanCountText(scan);
     const parts = [];
     if (current.totalSize > 0) parts.push(`${humanBytes(current.totalSize)} total`);
     if (scan.ignored > 0) parts.push(`${scan.ignored} ignored`);
@@ -1366,7 +1387,7 @@ async function stageFiles(paths) {
     current.scanned = true;
     dropStatusPath.textContent = current.srcName;
     dropStatusPath.style.color = '';
-    dropStatusCount.textContent = `${scan.videos.length} video${scan.videos.length === 1 ? '' : 's'}`;
+    dropStatusCount.textContent = scanCountText(scan);
     const parts = [];
     if (current.totalSize > 0) parts.push(`${humanBytes(current.totalSize)} total`);
     if (scan.ignored > 0) parts.push(`${scan.ignored} ignored`);
@@ -1542,6 +1563,7 @@ if (addBtn) addBtn.addEventListener('click', addCurrentToQueue);
 const PILL_LABEL = {
   queued: 'Queued', running: 'Running', paused: 'Paused',
   done: 'Done', failed: 'Failed', cancelled: 'Cancelled', cancelling: 'Cancelling…',
+  stopped: 'Stopped', notstarted: 'Not started',
   skipped: 'Skipped',    // operator-skipped via the ✕ on the row
   existed: 'Existing'    // pipeline resumability: output already present
 };
@@ -1654,7 +1676,7 @@ function buildBatchGroup(batch, idx) {
   const pbi = document.createElement('i');
   let pct;
   if (batch.status === 'done') pct = 100;
-  else if (batch.status === 'failed' || batch.status === 'cancelled') pct = Math.max(8, batch.progress);
+  else if (batch.status === 'failed' || batch.status === 'cancelled' || batch.status === 'stopped') pct = Math.max(8, batch.progress);
   else pct = batch.progress;
   pbi.style.width = `${pct}%`;
   pbar.appendChild(pbi);
@@ -1668,7 +1690,7 @@ function buildBatchGroup(batch, idx) {
      filters the in-memory list and re-renders. No file is touched (outputs
      and originals stay on disk) and lifetime-reclaimed totals — already
      persisted to prefs when the batch finished — are unaffected. */
-  const REMOVABLE = new Set(['queued', 'done', 'failed', 'cancelled']);
+  const REMOVABLE = new Set(['queued', 'done', 'failed', 'cancelled', 'stopped']);
   const actionsCell = document.createElement('div');
   actionsCell.className = 'qbatch-actions';
   if (REMOVABLE.has(batch.status)) {
@@ -1836,6 +1858,7 @@ function buildFileRow(file, i, batchId, entering, batchStatus) {
   const pill = document.createElement('span');
   pill.className = 'pill';
   pill.innerHTML = `<span class="dot"></span>${PILL_LABEL[file.status] || file.status}`;
+  if (file.status === 'failed' && file.failReason) pill.title = file.failReason;
   statusCol.appendChild(pill);
   /* HDR deferral made visible: this source carried HDR metadata (mastering
      display / content light / Dolby Vision) that a re-encode cannot carry.
@@ -2159,6 +2182,7 @@ startBtn.addEventListener('click', async () => {
   startBtn.classList.add('hidden');
   stopBtn.classList.remove('hidden');
   runActive = true;
+  runBatchIds = new Set();
   updateFlowState();   // run in progress → clear the orange cue
   /* FIX 2: throughput model starts now. Show a calm "Estimating…" until the
      first live signal, then a continuous whole-queue countdown. A 1s ticker
@@ -2211,6 +2235,7 @@ window.api.onBatchStatus(({ id, status, result }) => {
     const wasPaused = item.status === 'paused';
     item.status = 'running';
     if (!wasPaused) {
+      runBatchIds.add(id);
       item.progress = 0;
       currentBatchId = id;
       perFileTimes = [];
@@ -2252,10 +2277,18 @@ window.api.onBatchStatus(({ id, status, result }) => {
   } else if (status === 'Failed') {
     item.status = 'failed';
     if (result) item.lastResult = result;
+  } else if (status === 'Stopped') {
+    item.status = 'stopped';
+    if (result) {
+      item.lastResult = result;
+      item.processed = result.processed || 0;
+      item.failed = result.failed || 0;
+      item.reclaimed = result.reclaimed || 0;
+    }
   }
   /* BUG A: once terminal, reconcile leftover file rows so the pill and the
      per-file rows always agree (no batch DONE over a row stuck RUNNING). */
-  if (item.status === 'done' || item.status === 'failed' || item.status === 'cancelled') {
+  if (item.status === 'done' || item.status === 'failed' || item.status === 'cancelled' || item.status === 'stopped') {
     reconcileBatchFiles(item);
   }
   /* Terminal states are credited to the lifetime tracker. dryRun is the
@@ -2423,6 +2456,7 @@ window.api.onProgress((d) => {
         if (d.outcome === 'fail') {
           f.status = 'failed';
           f.outputSize = null;
+          f.failReason = d.reason || null;
         } else if (d.outcome === 'cancelled') {
           f.status = 'cancelled';
           f.outputSize = null;
@@ -2477,7 +2511,7 @@ window.api.onQueueFinished(({ totals, stopped }) => {
      folds operator-skips + already-present, cancelled shown only if any. */
   lines.push(summaryCountsHtml());
   if (stopped) lines.push(`<div class="muted">Stopped by user — one file at a time, never mid-file.</div>`);
-  const doneBatches = queue.filter((q) => q.status === 'done').length;
+  const doneBatches = queue.filter((q) => runBatchIds.has(q.id) && q.status === 'done').length;
   lines.push(
     `<div class="reclaimed-line">Reclaimed <strong>${humanBytes(totals.reclaimed)}</strong> across `
     + `<strong>${totals.processed}</strong> file${totals.processed === 1 ? '' : 's'} `
@@ -2509,7 +2543,13 @@ window.api.onQueueFinished(({ totals, stopped }) => {
     const copied = totals.failedCopied || 0;
     const noCopy = totals.failedNoCopy || 0;
     const destLost = totals.failedDestLost || 0;
+    const changing = totals.failedChanging || 0;
     const plural = (n) => (n === 1 ? '' : 's');
+
+    /* Source still being written (copy/export in progress) when its turn came. */
+    if (changing > 0) {
+      lines.push(`<div class="failed-line">${changing} file${plural(changing)} ${changing === 1 ? 'was' : 'were'} still being written when ${changing === 1 ? 'its' : 'their'} turn came, so ${changing === 1 ? 'it wasn’t' : 'they weren’t'} compressed. Run ${changing === 1 ? 'it' : 'them'} again once copying finishes. Open “Show log” for details.</div>`);
+    }
 
     /* BUG 3: destination drive vanished — a destination problem, never a
        source one. Say so plainly and never blame the original or point at
@@ -2541,7 +2581,7 @@ window.api.onQueueFinished(({ totals, stopped }) => {
 
     /* Fallback for an inconsistent breakdown (legacy result): never go silent
        about failures. */
-    if (ordinary === 0 && destLost === 0 && !totals.destLost) {
+    if (ordinary === 0 && destLost === 0 && !totals.destLost && changing === 0) {
       const f = totals.failed;
       lines.push(`<div class="failed-line">${f} file${plural(f)} couldn’t be processed and ${f === 1 ? 'was' : 'were'} skipped. Open “Show log” for details.</div>`);
     }
@@ -2576,7 +2616,7 @@ window.api.onQueueFinished(({ totals, stopped }) => {
   /* E: ETA visible only during the run. */
   hideEta();
   // P7: any further drops are "another folder" — flip the idle copy.
-  if (totals.processed > 0 || totals.failed > 0 || queue.some((q) => q.status === 'done' || q.status === 'failed')) {
+  if (totals.processed > 0 || totals.failed > 0 || queue.some((q) => q.status === 'done' || q.status === 'failed' || q.status === 'stopped')) {
     hasCompletedRun = true;
     updateIdleCopy();
   }
@@ -2599,7 +2639,7 @@ dismissSummaryBtn.addEventListener('click', () => {
 });
 
 /* ─────────── Lifetime reclaimed ─────────── */
-const TERMINAL_STATUSES = new Set(['done', 'failed', 'cancelled']);
+const TERMINAL_STATUSES = new Set(['done', 'failed', 'cancelled', 'stopped']);
 
 /* Credit a batch's contribution to the persistent per-drive ledger.
    Idempotent via batch.creditedToLifetime. The two required guards:
@@ -2978,7 +3018,8 @@ refreshHistory();
 
 /* Item 6: orphaned-partial recovery. On launch the main process scans the
    last interrupted run's destination(s) for leftover ".tmp.mp4" partials —
-   unplayable, partly-written files from a crash/quit mid-encode. Offer to
+   partly-written files from a crash/quit mid-encode. Not "unplayable": an
+   encoder stopped by SIGTERM/SIGINT finalises a playable but truncated file. Offer to
    delete them. Only those temp files are ever removed; originals and
    finished outputs are untouched. Dismissing keeps everything. */
 window.api.onOrphansFound(async ({ orphans } = {}) => {
@@ -2988,7 +3029,7 @@ window.api.onOrphansFound(async ({ orphans } = {}) => {
   const body =
     `<div>SkinnyVideo found <strong>${n}</strong> unfinished file${n === 1 ? '' : 's'} left over from `
     + `one or more interrupted runs (about <strong>${humanBytes(totalBytes)}</strong> in total). `
-    + `${n === 1 ? 'It’s' : 'They’re'} incomplete and can’t be played.</div>`
+    + `${n === 1 ? 'It’s' : 'They’re'} incomplete.</div>`
     + `<div class="fine">Deleting ${n === 1 ? 'it' : 'them'} only removes the leftover, partly-written `
     + `file${n === 1 ? '' : 's'}. Your original videos and any finished compressed files are not affected.</div>`;
   const choice = await showModal({

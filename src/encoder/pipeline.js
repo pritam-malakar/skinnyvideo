@@ -258,8 +258,9 @@ function runCmd(cmd, args, { onStderr, onStdout, signal, onSpawn, stallTimeoutMs
       clearStall();
       stallTimer = setTimeout(async () => {
         // A paused encode (SIGSTOP) legitimately emits nothing — never kill
-        // it; just keep watching until it resumes.
-        if (isPaused && isPaused()) { armStall(); return; }
+        // it; just keep watching until it resumes. Paused time is not silence:
+        // refresh lastAliveAt so the probe-blind ceiling restarts at resume.
+        if (isPaused && isPaused()) { lastAliveAt = Date.now(); armStall(); return; }
         if (!outPath) { killStalled('silent', Math.round(stallTimeoutMs / 1000)); return; }
         let size = null;
         try { size = await probe(outPath); } catch { size = null; }
@@ -376,13 +377,29 @@ async function isVideoFile(file) {
   return !!pickVideoStream(probe.streams);
 }
 
-async function walkAll(dir, out) {
+/* SkinnyVideo's own output never re-enters a scan of the operator's folders:
+   a destination inside the source tree would otherwise re-compress earlier
+   runs' Compressed_<ts> folders and in-progress <stem>.tmp(_N).mp4 partials.
+   Not applied to a staged file-list dir (keepAll) — those are explicit picks,
+   and a picked file may legitimately live in an old run folder. Every video
+   left out this way is counted in skipped.n so the skip is never silent. */
+const RUN_FOLDER_RE = /^Compressed_\d{4}-\d{2}-\d{2}_\d{4}$/;
+const TEMP_OUTPUT_RE = /\.tmp(_\d+)?\.mp4$/i;
+
+async function walkAll(dir, out, keepAll = false, skipped = { n: 0 }) {
   let entries;
   try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { return; }
   for (const e of entries) {
     if (e.name.startsWith('.')) continue;
     const full = path.join(dir, e.name);
-    if (e.isDirectory()) { await walkAll(full, out); continue; }
+    if (e.isDirectory()) {
+      if (keepAll || !RUN_FOLDER_RE.test(e.name)) { await walkAll(full, out, keepAll, skipped); continue; }
+      const inside = [];
+      await walkAll(full, inside, true);
+      skipped.n += inside.filter((f) => VIDEO_EXTS.has(path.extname(f).toLowerCase())).length;
+      continue;
+    }
+    if (!keepAll && TEMP_OUTPUT_RE.test(e.name)) { skipped.n++; continue; }
     if (e.isFile()) { out.push(full); continue; }
     /* A staged file-list entry can be a SYMLINK to the original source — that is
        how staging stays zero-copy when the source FS can't hardlink (e.g. an SMB
@@ -401,19 +418,20 @@ async function walkAll(dir, out) {
   }
 }
 
-async function gatherInputs(srcPath) {
+async function gatherInputs(srcPath, keepAll) {
   const stat = await fsp.stat(srcPath);
   const out = [];
   if (stat.isFile()) {
     out.push(srcPath);
-    return { rootKind: 'file', root: srcPath, files: out };
+    return { rootKind: 'file', root: srcPath, files: out, skippedOutputs: 0 };
   }
-  await walkAll(srcPath, out);
-  return { rootKind: 'dir', root: srcPath, files: out };
+  const skipped = { n: 0 };
+  await walkAll(srcPath, out, keepAll, skipped);
+  return { rootKind: 'dir', root: srcPath, files: out, skippedOutputs: skipped.n };
 }
 
-async function scanFolder(srcPath) {
-  const { rootKind, root, files } = await gatherInputs(srcPath);
+async function scanFolder(srcPath, { keepAll = false } = {}) {
+  const { rootKind, root, files, skippedOutputs } = await gatherInputs(srcPath, keepAll);
   const videos = [];
   let ignored = 0;
   for (const f of files) {
@@ -427,12 +445,13 @@ async function scanFolder(srcPath) {
        the actual file — NOT ffprobe's format.size (container-reported, can
        differ from disk). Every downstream number (row size, batch/run totals,
        reclaimed, lifetime) derives from this, so it must match disk exactly. */
-    let realSize;
-    try { realSize = (await fsp.stat(f)).size; }
+    let realSize, mtimeMs = null;   // mtimeMs: snapshot for the pre-encode stability check
+    try { const st = await fsp.stat(f); realSize = st.size; mtimeMs = st.mtimeMs; }
     catch { realSize = Number(probe.format?.size || 0); }
     videos.push({
       file: f,
       size: realSize,
+      mtimeMs,
       codec: vs.codec_name,
       width: vs.width,
       height: vs.height,
@@ -440,7 +459,7 @@ async function scanFolder(srcPath) {
       duration: Number(probe.format?.duration || 0)
     });
   }
-  return { rootKind, root, videos, ignored, totalSize: videos.reduce((a, v) => a + v.size, 0) };
+  return { rootKind, root, videos, ignored, skippedOutputs, totalSize: videos.reduce((a, v) => a + v.size, 0) };
 }
 
 function tsRunFolder(date = new Date()) {
@@ -714,6 +733,50 @@ function parseFFmpegTime(stderr) {
   return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
 }
 
+/* Decoder/demuxer trouble on stderr. With -loglevel error ffmpeg prints these
+   and still exits 0 (a truncated source encodes to a short, playable file). */
+const DECODE_ERR_RE = /invalid data|invalid nal unit|corrupt|error while decoding|decoding error|error during demuxing|missing|concealing|could not find codec parameters/i;
+
+/* One encode attempt's stderr: a bounded tail for failure log lines, the last
+   40 non-stats lines (so a decode error survives a long run of -stats lines),
+   and a progress callback per time= stamp. */
+function stderrSink(onTime) {
+  let tail = '', partial = '';
+  const lines = [];
+  return {
+    onStderr(chunk) {
+      tail += chunk;
+      if (tail.length > 20000) tail = tail.slice(-10000);
+      const parts = (partial + chunk).split(/[\r\n]+/);
+      partial = parts.pop().slice(-4000);
+      for (const l of parts) {
+        if (l && !l.startsWith('frame=')) { lines.push(l); if (lines.length > 40) lines.shift(); }
+      }
+      const t = parseFFmpegTime(chunk);
+      if (t != null) onTime(t);
+    },
+    tail: () => tail,
+    decodeError: () => [...lines, partial].find((l) => l && !l.startsWith('frame=') && DECODE_ERR_RE.test(l)) || null
+  };
+}
+
+/* Duration of the VIDEO stream in seconds — never the container's, so a longer
+   audio track can neither mask a short picture nor fake one. MKV/WebM carry it
+   only as a DURATION tag. null when unknowable. */
+async function videoDuration(file) {
+  const vs = pickVideoStream((await ffprobeJson(file))?.streams);
+  if (!vs) return null;
+  const d = Number(vs.duration);
+  if (d > 0) return d;
+  const m = /^(\d+):(\d+):([\d.]+)/.exec((vs.tags && vs.tags.DURATION) || '');
+  return m ? Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) : null;
+}
+
+/* A source whose size/mtime moved since the scan gets one settle window
+   before it is judged "still being written". */
+const SOURCE_SETTLE_MS = 2000;
+const statOrNull = (p) => withTimeout(fsp.stat(p), REACH_TIMEOUT_MS, null);
+
 async function ensureDir(d) { await fsp.mkdir(d, { recursive: true }); }
 
 async function copyToFailed(runDir, rootKind, root, file) {
@@ -827,7 +890,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
   log(`# ffmpeg: ${bins.ffmpeg}`);
   log(`# ffmpeg version: ${await ffmpegVersionLine(bins.ffmpeg)}`);
 
-  const scan = await scanFolder(src);
+  const scan = await scanFolder(src, { keepAll: batch.kind === 'files' });   // staged picks are never filtered
   /* Named over the FULL scan (before skips) so a skip never renames others. */
   const stems = assignStems(scan.videos.map((v) => v.file));
   /* Temp names are reserved against the FULL set of finished names (and each
@@ -846,6 +909,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
     if (scan.videos.length !== before) log(`# Skipped ${before - scan.videos.length} file(s) by user request`);
   }
   log(`# Found ${scan.videos.length} video file(s); ${scan.ignored} ignored (non-video)`);
+  if (scan.skippedOutputs) log(`SKIPPED_OUTPUTS ${scan.skippedOutputs} file(s) inside SkinnyVideo output folders`);
 
   const totalFiles = scan.videos.length;
   let done = 0;
@@ -854,7 +918,9 @@ async function runBatch(batch, controlOrFn, onProgress) {
   let failedCopied = 0;     // failed, but original preserved to _FAILED/
   let failedNoCopy = 0;     // failed AND original unreadable/missing — no copy made
   let failedDestLost = 0;   // failed because the destination drive went away
+  let failedChanging = 0;   // failed because the source was still being written
   let destLost = false;     // sticky once the destination is confirmed gone
+  let stopped = false;      // left files unstarted on "Stop after current file"
   let alreadyDone = 0;
   let reclaimed = 0;
   let hdrMetaDropped = 0;   // files whose HDR side data (mastering/CLL/DV) can't survive re-encode
@@ -865,7 +931,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
   /* Record an ordinary file failure (corrupt/undecodable, or a stuck encode
      on a HEALTHY dest): try to preserve the source to _FAILED/ and classify
      whether that copy actually landed. Mutates the closure counters. */
-  async function recordPlainFailure(v, i) {
+  async function recordPlainFailure(v, i, reason) {
     failed++; done++;
     let copied = false;
     /* Only attempt the _FAILED/ copy if the source is still readable —
@@ -890,7 +956,22 @@ async function runBatch(batch, controlOrFn, onProgress) {
       file: v.file, basename: path.basename(v.file),
       reclaimed, processed, failed, alreadyDone,
       elapsedMs: Date.now() - startTs, outcome: 'fail',
-      failKind: copied ? 'copied' : 'nocopy'
+      failKind: copied ? 'copied' : 'nocopy', reason
+    });
+  }
+
+  /* The source moved between scan and its turn and was still moving after the
+     settle window — an encode now would freeze a half-written file (ffmpeg
+     exits 0 on the truncation). No _FAILED/ copy: it would be partial too. */
+  function recordSourceChanging(v, i) {
+    failed++; failedChanging++; done++;
+    log(`SOURCE_CHANGING ${v.file} (size changed between scan and encode)`);
+    onProgress && onProgress({
+      type: 'file-done', index: i + 1, total: totalFiles,
+      file: v.file, basename: path.basename(v.file),
+      reclaimed, processed, failed, alreadyDone,
+      elapsedMs: Date.now() - startTs, outcome: 'fail',
+      failKind: 'source-changing', reason: 'file was still being written'
     });
   }
 
@@ -927,6 +1008,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
 
   for (let i = 0; i < scan.videos.length; i++) {
     if (shouldStop() || isCancelled()) {
+      stopped = !isCancelled();
       log(`# Stopped by user after ${done} of ${totalFiles}`);
       break;
     }
@@ -1011,6 +1093,17 @@ async function runBatch(batch, controlOrFn, onProgress) {
        watchdog. */
     if (!(await isSourceReadable(v.file))) { recordSourceMissing(v, i); continue; }
 
+    /* Source stability: compare against the scan snapshot. A file still being
+       copied/exported encodes to a short output that exits 0, so if it moved,
+       give it SOURCE_SETTLE_MS; still moving → fail before spawning ffmpeg. */
+    const now = await statOrNull(v.file);
+    if (now && (now.size !== v.size || (v.mtimeMs != null && now.mtimeMs !== v.mtimeMs))) {
+      await new Promise((r) => setTimeout(r, SOURCE_SETTLE_MS));
+      const later = await statOrNull(v.file);
+      if (later && (later.size !== now.size || later.mtimeMs !== now.mtimeMs)) { recordSourceChanging(v, i); continue; }
+      v.size = (later || now).size;   // settled: account against the real final size
+    }
+
     /* Something already sits at the reserved temp path (e.g. an earlier run's
        output in this same-minute folder): take the next free temp name rather
        than unlink it below. */
@@ -1043,11 +1136,17 @@ async function runBatch(batch, controlOrFn, onProgress) {
 
     const args = buildArgs({ input: v.file, tmpOut: tmpPath, tier, settings, videoStream: vs, audioStream: as, colorStamp });
 
-    let stderrBuf = '';
     /* Latest parsed progress fraction for THIS encode attempt (0..1), fed to
        runCmd's finalization detector via getProgress. Reset before each attempt
        (primary / retry / fallback) so a fresh encode debounces from zero. */
     let lastProgress = 0;
+    const onTime = (t) => {
+      if (!(durationSec > 0)) return;
+      lastProgress = Math.max(0, Math.min(1, t / durationSec));
+      onProgress && onProgress({ type: 'file-progress', index: i + 1, total: totalFiles, fileProgress: lastProgress });
+    };
+    const sink1 = stderrSink(onTime);
+    let okSink = sink1;   // the attempt whose output we keep (WARN reads its stderr)
     /* Emitted ONCE per file by runCmd's finalization detector: the encode has
        reached ~100% but the process is still alive flushing the container (the
        multi-second SMB moov write). The renderer upgrades to "writing to disk". */
@@ -1063,7 +1162,11 @@ async function runBatch(batch, controlOrFn, onProgress) {
        encoder from starting. Releases on resume/cancel/stop. A mid-encode pause
        (past this point) is still handled by SIGSTOP parking the live child. */
     await waitWhilePaused();
-    if (shouldStop() || isCancelled()) break;
+    if (shouldStop() || isCancelled()) {
+      stopped = !isCancelled();
+      if (stopped) log(`# Stopped by user after ${done} of ${totalFiles}`);
+      break;
+    }
     const result = await runCmd(ffmpeg, args, {
       signal: null,
       onSpawn,
@@ -1073,16 +1176,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
       isCancelled,
       onFinalizing: emitFinalizing,
       getProgress: () => lastProgress,
-      onStderr: (chunk) => {
-        stderrBuf += chunk;
-        if (stderrBuf.length > 20000) stderrBuf = stderrBuf.slice(-10000);
-        const t = parseFFmpegTime(chunk);
-        if (t != null && durationSec > 0) {
-          const frac = Math.max(0, Math.min(1, t / durationSec));
-          lastProgress = frac;
-          onProgress && onProgress({ type: 'file-progress', index: i + 1, total: totalFiles, fileProgress: frac });
-        }
-      }
+      onStderr: sink1.onStderr
     });
 
     /* BUG C — cancel wins over everything. runCmd resolves immediately when the
@@ -1127,7 +1221,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
 
     if (!success) {
       try { await fsp.unlink(tmpPath); } catch {}
-      log(`PRIMARY-FAIL ${v.file} :: code=${result.code} :: ${stderrBuf.trim().split('\n').slice(-3).join(' | ')}`);
+      log(`PRIMARY-FAIL ${v.file} :: code=${result.code} :: ${sink1.tail().trim().split('\n').slice(-3).join(' | ')}`);
 
       /* Same cancel-honoring rule before kicking off the fallback. */
       if (isCancelled()) {
@@ -1156,10 +1250,10 @@ async function runBatch(batch, controlOrFn, onProgress) {
          media problem — so retry this file ONCE on the SAME encoder with all
          color tags stripped before falling back. A cosmetic tag is never
          worth a dead job. */
-      const optRejected = /Error applying encoder options|Error applying option .* to filter 'setparams'/.test(stderrBuf);
+      const optRejected = /Error applying encoder options|Error applying option .* to filter 'setparams'/.test(sink1.tail());
       if (optRejected) {
         const bareArgs = buildArgs({ input: v.file, tmpOut: tmpPath, tier, settings, videoStream: vs, audioStream: as, dropColorTags: true });
-        let stderrBuf3 = '';
+        const sink3 = stderrSink(onTime);
         lastProgress = 0;   // fresh encode → debounce finalization from zero
         const r3 = await runCmd(ffmpeg, bareArgs, {
           onSpawn,
@@ -1169,16 +1263,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
           isCancelled,
           onFinalizing: emitFinalizing,
           getProgress: () => lastProgress,
-          onStderr: (chunk) => {
-            stderrBuf3 += chunk;
-            if (stderrBuf3.length > 20000) stderrBuf3 = stderrBuf3.slice(-10000);
-            const t = parseFFmpegTime(chunk);
-            if (t != null && durationSec > 0) {
-              const frac = Math.max(0, Math.min(1, t / durationSec));
-              lastProgress = frac;
-              onProgress && onProgress({ type: 'file-progress', index: i + 1, total: totalFiles, fileProgress: frac });
-            }
-          }
+          onStderr: sink3.onStderr
         });
         if (isCancelled()) {
           try { await fsp.unlink(tmpPath); } catch {}
@@ -1204,10 +1289,11 @@ async function runBatch(batch, controlOrFn, onProgress) {
         success = r3.code === 0 && fs.existsSync(tmpPath);
         if (success) {
           usedColorStrip = true;
+          okSink = sink3;
           log(`RETRY-OK ${v.file} (encoder rejected a color tag; re-encoded without color tags)`);
         } else {
           try { await fsp.unlink(tmpPath); } catch {}
-          log(`RETRY-FAIL ${v.file} :: code=${r3.code} :: ${stderrBuf3.trim().split('\n').slice(-3).join(' | ')}`);
+          log(`RETRY-FAIL ${v.file} :: code=${r3.code} :: ${sink3.tail().trim().split('\n').slice(-3).join(' | ')}`);
         }
       }
 
@@ -1216,7 +1302,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
          rejected — its color args share the same vocabulary, so re-sending
          them would fail identically. */
       const fallbackArgs = buildFallbackArgs({ input: v.file, tmpOut: tmpPath, tier, settings, videoStream: vs, audioStream: as, dropColorTags: optRejected, colorStamp });
-      let stderrBuf2 = '';
+      const sink2 = stderrSink(onTime);
       lastProgress = 0;   // fresh encode → debounce finalization from zero
       const r2 = await runCmd(ffmpeg, fallbackArgs, {
         onSpawn,
@@ -1226,16 +1312,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
         isCancelled,
         onFinalizing: emitFinalizing,
         getProgress: () => lastProgress,
-        onStderr: (chunk) => {
-          stderrBuf2 += chunk;
-          if (stderrBuf2.length > 20000) stderrBuf2 = stderrBuf2.slice(-10000);
-          const t = parseFFmpegTime(chunk);
-          if (t != null && durationSec > 0) {
-            const frac = Math.max(0, Math.min(1, t / durationSec));
-            lastProgress = frac;
-            onProgress && onProgress({ type: 'file-progress', index: i + 1, total: totalFiles, fileProgress: frac });
-          }
-        }
+        onStderr: sink2.onStderr
       });
 
       /* Cancel wins (runCmd resolved immediately on the flag). */
@@ -1263,14 +1340,28 @@ async function runBatch(batch, controlOrFn, onProgress) {
       }
       success = r2.code === 0 && fs.existsSync(tmpPath);
       usedFallback = success;
+      okSink = sink2;
       if (!success) {
         try { await fsp.unlink(tmpPath); } catch {}
-        log(`FALLBACK-FAIL ${v.file} :: code=${r2.code} :: ${stderrBuf2.trim().split('\n').slice(-3).join(' | ')}`);
+        log(`FALLBACK-FAIL ${v.file} :: code=${r2.code} :: ${sink2.tail().trim().split('\n').slice(-3).join(' | ')}`);
       }
       }
     }
 
     if (success) {
+      /* Exit 0 is not proof of a whole file: ffmpeg finishes "successfully" on
+         a truncated or erroring source. Surface decoder errors (never decisive
+         alone), then let the video-stream durations decide. */
+      const decodeErr = okSink.decodeError();
+      if (decodeErr) log(`WARN ${v.file} decoder reported errors: ${decodeErr}`);
+      const srcDur = await videoDuration(v.file);   // re-probed now, not the scan value
+      const outDur = await videoDuration(tmpPath);
+      if (srcDur && outDur != null && srcDur - outDur > Math.max(1.0, srcDur * 0.02)) {
+        try { await fsp.unlink(tmpPath); } catch {}
+        log(`SHORT ${v.file} (source ${srcDur.toFixed(2)}s, output ${outDur.toFixed(2)}s)`);
+        await recordPlainFailure(v, i, 'output shorter than source');
+        continue;
+      }
       await fsp.rename(tmpPath, finalPath);
       madeFrom.set(finalPath, v.file);
       await setMtimeFromSource(v.file, finalPath);
@@ -1323,7 +1414,9 @@ async function runBatch(batch, controlOrFn, onProgress) {
     failedCopied,
     failedNoCopy,
     failedDestLost,
+    failedChanging,
     destLost,
+    stopped,
     alreadyDone,
     skippedNonVideo: scan.ignored,
     reclaimed,
@@ -1335,7 +1428,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
 
 async function dryRunBatch(batch, onProgress) {
   const { src, tier } = batch;
-  const scan = await scanFolder(src);
+  const scan = await scanFolder(src, { keepAll: batch.kind === 'files' });
   let estReclaim = 0;
   const ratios = { regular: 0.45, preserve: 0.55 };
   const r = ratios[tier] ?? 0.45;

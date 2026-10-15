@@ -18,6 +18,24 @@ function releasePauseGate(state) {
   for (const w of waiters) { try { w(); } catch {} }
 }
 
+/* The one graceful stop ("Stop after current file", and the stop half of
+   Quit). Never SIGTERM/SIGKILL — cancel (quit-teardown.beginCancel) owns
+   killing. A SIGSTOPped encoder can never reach its file boundary, so it is
+   continued first (onResumed(id) lets main repaint the row); every pause gate
+   is woken so a probe-window pipeline re-checks stop; then setStopFlag()
+   raises the flag runQueue/runBatch read at file boundaries. */
+function requestStop(runtime, { setStopFlag, onResumed }) {
+  for (const [id, state] of runtime) {
+    if (state.paused && state.child) {
+      try { state.child.kill('SIGCONT'); } catch {}
+      state.paused = false;
+      if (onResumed) onResumed(id);
+    }
+    releasePauseGate(state);
+  }
+  setStopFlag();
+}
+
 /* The queue runner — extracted verbatim from main.js's start-queue handler so it
    can be exercised by tests against the REAL code (not a mirror). main.js owns
    the IPC wrapper, prefs/orphan bookkeeping, queueRunning flag, and the final
@@ -30,7 +48,7 @@ function releasePauseGate(state) {
      onPartial(path)         — optional; each partial's exact path before it is written
    Returns the accumulated totals. */
 async function runQueue(batches, { send, isStopRequested, rt, onPartial }) {
-  const totals = { processed: 0, failed: 0, failedCopied: 0, failedNoCopy: 0, failedDestLost: 0, destLost: false, skippedNonVideo: 0, reclaimed: 0, alreadyDone: 0, hdrMetaDropped: 0 };
+  const totals = { processed: 0, failed: 0, failedCopied: 0, failedNoCopy: 0, failedDestLost: 0, failedChanging: 0, destLost: false, skippedNonVideo: 0, reclaimed: 0, alreadyDone: 0, hdrMetaDropped: 0 };
 
   /* OPTION A — DRAIN THE LIVE QUEUE: `batches` is a LIVE array. main appends
      mid-run drops to this same object (via 'enqueue-batch'), so the condition
@@ -253,6 +271,7 @@ async function runQueue(batches, { send, isStopRequested, rt, onPartial }) {
     totals.failedCopied += result.failedCopied || 0;
     totals.failedNoCopy += result.failedNoCopy || 0;
     totals.failedDestLost += result.failedDestLost || 0;
+    totals.failedChanging += result.failedChanging || 0;
     if (result.destLost) totals.destLost = true;
     totals.skippedNonVideo += result.skippedNonVideo || 0;
     totals.reclaimed += result.reclaimed || 0;
@@ -262,6 +281,7 @@ async function runQueue(batches, { send, isStopRequested, rt, onPartial }) {
     let finalStatus;
     if (state.cancelled)                                 finalStatus = 'Cancelled';
     else if (result.destLost && (result.processed || 0) === 0) finalStatus = 'Failed';
+    else if (result.stopped)                             finalStatus = 'Stopped';   // files left unstarted
     else if (result.failed > 0)                          finalStatus = 'Done (with failures)';
     else                                                 finalStatus = 'Done';
 
@@ -286,4 +306,4 @@ async function runQueue(batches, { send, isStopRequested, rt, onPartial }) {
   return totals;
 }
 
-module.exports = { runQueue, releasePauseGate };
+module.exports = { runQueue, releasePauseGate, requestStop };

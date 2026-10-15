@@ -1,5 +1,42 @@
 # Changelog
 
+## 3.2.2 — 2026-10-15
+
+- **Stop after current file now works while a batch is paused.** Before, Stop
+  on a paused batch waited forever for a file that couldn't move. Now the
+  paused file resumes, finishes, and the run stops. Pause isn't offered again
+  once a stop is on its way. Quitting while paused also resumes the encoder
+  before ending it.
+- A stopped batch now says **Stopped** (in the Stop button's orange) instead of
+  Done. Its files that never began read **Not started** and get their own
+  count in the run summary. They used to be reported as failed.
+- **A shorter-than-source output is no longer accepted as finished.** If a
+  source ends early (still copying, damaged, or unreadable partway), the
+  encoder can still report success. SkinnyVideo now compares the length of the
+  picture in the output with the source. If the output is more than 1 second
+  (or 2%) short, the file is marked failed ("output shorter than source"), the
+  short file is removed, and the original goes to `_FAILED/` as usual.
+- Decoder errors on a file that otherwise finished are now written to the run
+  log as a `WARN` line, so a damaged source leaves a trace.
+- **Files still being copied are left alone.** If a source changed size since
+  the scan and is still changing two seconds later, it's skipped with "file was
+  still being written". Compressing a half-copied file used to produce a short
+  output.
+- A scan no longer picks up SkinnyVideo's own output. When the output folder
+  sits inside the folder being compressed, earlier `Compressed_…` run folders
+  and unfinished `.tmp.mp4` files are skipped, and the staging line and run
+  log say how many. Files you pick yourself are always honoured.
+- The run summary now covers only the run that just finished. Batches left in
+  the queue from an earlier run no longer add to its done, failed, or batch
+  counts.
+- Browse now accepts folders as well as files, in the same picker. Picking one
+  folder works exactly like dropping it, and the picker reopens where you left
+  off.
+- The cleanup prompt for leftover unfinished files now calls them
+  "incomplete". It used to say they "can't be played", which isn't always true.
+- A long pause no longer counts toward the stuck-encoder timeout, so a slow
+  network drive can't make the watchdog end a file right after you resume.
+
 ## 3.2.1 — 2026-09-18
 
 - The update offer is now a native dialog on the window rather than a bar

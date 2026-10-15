@@ -7,7 +7,7 @@ const { runBatch, dryRunBatch, scanFolder, isVideoFile, getBinaries, ffmpegStatu
 const { flattenRunDir } = require('../encoder/flatten');
 const { findOrphanPartials, deletePartials, isUnderRoots } = require('../encoder/orphans');
 const { stageFileList } = require('../encoder/stage');
-const { runQueue, releasePauseGate } = require('./queue-runner');
+const { runQueue, releasePauseGate, requestStop } = require('./queue-runner');
 const { revealInFinder, revealFolder } = require('./reveal');
 const { writeJsonAtomic } = require('./prefs-store');
 const { appendHistoryEntry, readHistory } = require('./history-store');
@@ -259,7 +259,7 @@ function stopRunThenQuit(finish) {
   quitViaCancel({
     runtime,
     releasePauseGate,
-    stopQueue: () => { stopRequested = true; },
+    stopQueue: stopAfterCurrentFile,
     runPromise: () => runPromise,
     onSettled: () => {
       quitState.forceQuit = true;   // set only now — teardown is genuinely done
@@ -490,20 +490,28 @@ ipcMain.handle('stat-path', async (_evt, p) => {
   } catch { return null; }
 });
 
-/* File picker — multi-select, video-typed. macOS dialogs can't pick folders
-   AND files in one dialog, so the browse button now picks files; folders
-   still arrive via drag-drop. */
+/* lastSrc — the picker's next anchor. A folder is remembered as itself, a
+   file as its parent. The ONE writer: browse and the renderer's saves both
+   route here, so they can't disagree. */
+async function rememberSource(p) {
+  if (typeof p !== 'string' || !p) return;
+  let isDir = false;
+  try { isDir = (await fsp.stat(p)).isDirectory(); } catch {}
+  prefs.lastSrc = isDir ? p : path.dirname(p);
+  savePrefs();
+}
+
+/* File/folder picker — multi-select, video-typed (filters apply to files). */
 ipcMain.handle('browse-source-files', async (_evt, suggestedFallback) => {
   const exts = [...VIDEO_EXTS].map((e) => e.replace(/^\./, ''));
   const opts = {
-    properties: ['openFile', 'multiSelections'],
+    properties: ['openFile', 'openDirectory', 'multiSelections'],
     filters: [
       { name: 'Video files', extensions: exts },
       { name: 'All files', extensions: ['*'] }
     ]
   };
   if (prefs.lastSrc && fs.existsSync(prefs.lastSrc)) {
-    // lastSrc may be a folder OR a file — defaultPath as a file is fine.
     opts.defaultPath = prefs.lastSrc;
   } else if (suggestedFallback && fs.existsSync(suggestedFallback)) {
     opts.defaultPath = suggestedFallback;
@@ -512,10 +520,7 @@ ipcMain.handle('browse-source-files', async (_evt, suggestedFallback) => {
   }
   const r = await dialog.showOpenDialog(mainWindow, opts);
   if (r.canceled || !r.filePaths.length) return null;
-  // Persist the picker's anchor as the parent of the first selected file
-  // — next open lands in the same folder.
-  prefs.lastSrc = path.dirname(r.filePaths[0]);
-  savePrefs();
+  await rememberSource(r.filePaths[0]);
   return r.filePaths;
 });
 
@@ -526,10 +531,11 @@ ipcMain.handle('browse-source-files', async (_evt, suggestedFallback) => {
    dropped/picked file-list batch here. */
 ipcMain.handle('scan-files', async (_evt, srcPaths) => {
   if (!Array.isArray(srcPaths) || srcPaths.length === 0) {
-    return { rootKind: 'files', root: null, videos: [], ignored: 0, totalSize: 0 };
+    return { rootKind: 'files', root: null, videos: [], ignored: 0, skippedOutputs: 0, totalSize: 0 };
   }
   const videos = [];
   let ignored = 0;
+  let skippedOutputs = 0;
   let totalSize = 0;
   for (const p of srcPaths) {
     if (!p || typeof p !== 'string') { ignored++; continue; }
@@ -537,12 +543,13 @@ ipcMain.handle('scan-files', async (_evt, srcPaths) => {
       const sub = await scanFolder(p);     // handles both file + dir cases
       videos.push(...sub.videos);
       ignored += sub.ignored || 0;
+      skippedOutputs += sub.skippedOutputs || 0;
       totalSize += sub.totalSize || 0;
     } catch {
       ignored++;
     }
   }
-  return { rootKind: 'files', root: srcPaths[0], videos, ignored, totalSize };
+  return { rootKind: 'files', root: srcPaths[0], videos, ignored, skippedOutputs, totalSize };
 });
 
 ipcMain.handle('start-queue', async (_evt, batches) => {
@@ -633,11 +640,17 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
   return { ok: true };
 });
 
+/* Every stop — the Stop button, and Quit before it cancels — routes here.
+   A paused encoder is continued so it can finish; its row goes back to Running. */
+function stopAfterCurrentFile() {
+  requestStop(runtime, {
+    setStopFlag: () => { stopRequested = true; },
+    onResumed: (id) => sendBatchUpdate(id, 'Running')
+  });
+}
+
 ipcMain.handle('stop-queue', async () => {
-  stopRequested = true;
-  // Wake any pipeline parked on the pause gate so it re-checks shouldStop and
-  // tears down — the event gate has no poll to notice the stop on its own.
-  for (const state of runtime.values()) releasePauseGate(state);
+  stopAfterCurrentFile();
   return { ok: true };
 });
 
@@ -703,8 +716,9 @@ function sendBatchUpdate(batchId, status) {
 
 ipcMain.handle('pause-batch', async (_evt, batchId) => {
   const state = rt(batchId);
-  // Already paused, or the batch has resolved (nothing left to pause) → no-op.
-  if (state.paused || state.resolved) return { ok: false };
+  // Already paused, the batch has resolved, or a stop is pending (a SIGSTOP now
+  // would hold the file the stop is waiting on, forever) → no-op.
+  if (state.paused || state.resolved || stopRequested) return { ok: false };
   /* Set the flag FIRST, independent of a live child. Between files (the ffprobe
      window) there is no child to SIGSTOP, but the pre-spawn gate in queue-runner
      reads state.paused to hold the next encoder — so pause must register even
@@ -776,12 +790,7 @@ ipcMain.handle('browse-source', async (_evt, suggestedFallback) => {
   return r.filePaths[0];
 });
 
-ipcMain.handle('save-last-src', async (_evt, p) => {
-  if (typeof p === 'string' && p.length > 0) {
-    prefs.lastSrc = p;
-    savePrefs();
-  }
-});
+ipcMain.handle('save-last-src', async (_evt, p) => rememberSource(p));
 
 /* ─────────── Lifetime reclaimed: IPC ───────────
    - get-lifetime-drives → sorted (totalReclaimed desc) array of records.

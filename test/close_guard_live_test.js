@@ -22,7 +22,8 @@ const ROOT = path.join(__dirname, '..');
 const { handleCloseAttempt } = require(path.join(ROOT, 'src/main/close-guard'));
 /* The REAL teardown — not a stand-in. "Stop and quit" uses the cancel path, so
    this test drives the same function main.js calls. */
-const { quitViaCancel } = require(path.join(ROOT, 'src/main/quit-teardown'));
+const { quitViaCancel, HARD_KILL_MS } = require(path.join(ROOT, 'src/main/quit-teardown'));
+const { requestStop } = require(path.join(ROOT, 'src/main/queue-runner'));
 const FFMPEG = path.join(ROOT, 'resources/bin/ffmpeg');
 const OUT = '/tmp/skinnyvideo-closeguard-live.mp4';
 const DONE_FILE = '/tmp/skinnyvideo-closeguard-done.mp4';
@@ -67,6 +68,9 @@ app.whenReady().then(async () => {
     child = spawn(FFMPEG, ['-y', '-re', '-f', 'lavfi', '-i', 'testsrc=size=640x480:rate=30',
       '-t', '300', '-c:v', 'h264_videotoolbox', OUT], { stdio: 'ignore' });
     child.on('exit', () => { quitState.queueRunning = false; });
+    // Record every signal the teardown sends, in order.
+    const realKill = child.kill.bind(child);
+    child.kill = (sig) => { signals.push(sig); return realKill(sig); };
     quitState.queueRunning = true;
     // main.js shape: runtime state carries the live child; runPromise unwinds
     // once the encoder is gone (pipeline breaks out on the cancel flag).
@@ -80,12 +84,14 @@ app.whenReady().then(async () => {
   const runtime = new Map();
   let runPromise = null;
   let stopQueueCalls = 0;
+  const signals = [];
   const stopRunThenQuit = (done) => {
     teardownRuns++;
     quitViaCancel({
       runtime,
       releasePauseGate: (st) => { gateReleases.push(st); },
-      stopQueue: () => { stopQueueCalls++; },
+      // main.js: stopQueue is stopAfterCurrentFile → the REAL requestStop
+      stopQueue: () => { stopQueueCalls++; requestStop(runtime, { setStopFlag: () => {} }); },
       runPromise: () => runPromise,
       onSettled: () => {
         quitState.forceQuit = true;
@@ -96,19 +102,23 @@ app.whenReady().then(async () => {
   };
   const gateReleases = [];
 
-  const win = new BrowserWindow({ width: 900, height: 600, show: false });
-  await win.loadFile(path.join(ROOT, 'src/renderer/index.html'));
-
-  // VERBATIM from main.js createWindow()
-  win.on('close', (e) => {
-    handleCloseAttempt(quitState, {
-      preventDefault: () => e.preventDefault(),
-      confirmQuit: () => { dialogCount++; return answer === 1; },
-      proceed: () => stopRunThenQuit(() => {
-        if (win && !win.isDestroyed()) win.close();
-      })
+  let win = null;
+  const openGuardedWindow = async () => {
+    win = new BrowserWindow({ width: 900, height: 600, show: false });
+    await win.loadFile(path.join(ROOT, 'src/renderer/index.html'));
+    const w = win;
+    // VERBATIM from main.js createWindow()
+    w.on('close', (e) => {
+      handleCloseAttempt(quitState, {
+        preventDefault: () => e.preventDefault(),
+        confirmQuit: () => { dialogCount++; return answer === 1; },
+        proceed: () => stopRunThenQuit(() => {
+          if (w && !w.isDestroyed()) w.close();
+        })
+      });
     });
-  });
+  };
+  await openGuardedWindow();
 
   // ── 1. IDLE: close must pass straight through, no dialog ──
   {
@@ -165,6 +175,8 @@ app.whenReady().then(async () => {
 
   // ── 4. PAUSED run is guarded identically (queueRunning stays true) ──
   {
+    // main.js pause-batch / resume-batch: flag + SIGSTOP, then SIGCONT.
+    runtime.get(1).paused = true;
     try { child.kill('SIGSTOP'); } catch {}
     const d0 = dialogCount;
     answer = 0;
@@ -172,6 +184,7 @@ app.whenReady().then(async () => {
     await wait(400);
     check(!win.isDestroyed() && dialogCount === d0 + 1,
       `paused run: close guarded the same as running (dialogs=${dialogCount - d0})`);
+    runtime.get(1).paused = false;
     try { child.kill('SIGCONT'); } catch {}
   }
 
@@ -181,6 +194,7 @@ app.whenReady().then(async () => {
      completes in seconds. */
   {
     answer = 1;
+    signals.length = 0;                   // case 4's pause/resume signals are not this quit's
     const pid = child.pid;
     // A finished output already in the run folder must survive the cancel.
     fs.writeFileSync(DONE_FILE, 'finished-output');
@@ -204,6 +218,34 @@ app.whenReady().then(async () => {
     check(win.isDestroyed(), 'Stop and quit: window actually closed after teardown');
     check(fs.existsSync(DONE_FILE) && fs.readFileSync(DONE_FILE, 'utf8') === 'finished-output',
       'Stop and quit: already-finished output in the run folder untouched');
+    /* Quit WHILE RUNNING: nothing is suspended, so no SIGCONT — straight to
+       SIGTERM, then beginCancel's bounded SIGKILL once its timer fires. */
+    await wait(HARD_KILL_MS + 300);
+    check(signals[0] === 'SIGTERM' && signals.includes('SIGKILL') && !signals.includes('SIGCONT'),
+      `quit while running: SIGTERM then SIGKILL on the timer, no SIGCONT (signals ${JSON.stringify(signals)})`);
+  }
+
+  /* ── 6. "Stop and quit" WHILE PAUSED — a fresh run and window. A SIGSTOPped
+     encoder can't act on SIGTERM, so it must be continued first. ── */
+  {
+    Object.assign(quitState, { forceQuit: false, closing: false, dialogOpen: false });
+    await openGuardedWindow();
+    startRun();
+    await wait(1500);
+    signals.length = 0;
+    runtime.get(1).paused = true;         // main.js pause-batch: flag, then SIGSTOP
+    try { child.kill('SIGSTOP'); } catch {}
+    await wait(300);
+    answer = 1;
+    const pid = child.pid, runs0 = teardownRuns;
+    win.close();
+    for (let i = 0; i < 100 && !win.isDestroyed(); i++) await wait(100);
+    check(teardownRuns === runs0 + 1, `quit while paused: teardown ran once (got ${teardownRuns - runs0})`);
+    const iStop = signals.indexOf('SIGSTOP'), iCont = signals.indexOf('SIGCONT'), iTerm = signals.indexOf('SIGTERM');
+    check(iStop === 0 && iCont > iStop && iTerm > iCont,
+      `quit while paused: SIGCONT precedes SIGTERM (signals ${JSON.stringify(signals)})`);
+    check(!alive(pid), 'quit while paused: encoder child terminated');
+    check(win.isDestroyed(), 'quit while paused: window closed after teardown');
   }
 
   try { if (child) child.kill('SIGKILL'); } catch {}

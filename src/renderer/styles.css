@@ -37,7 +37,7 @@
   --tier-arch:#A97DFF;     /* Slow But Better */
   --lemon:#FFD84D;
   --coral:#FF6B6B;
-  --orange:#FFAA5E;        /* interrupt actions ONLY (Stop) — never status pills */
+  --orange:#FFAA5E;        /* Stop: the interrupt action and the Stopped pill it leaves — no other status pill */
   --ink:#141414;
   --paper:#F5F5F5;
 
@@ -777,7 +777,8 @@ body.pro-mode .safety-bar { display: flex; }
 .tierchip.archival { background: var(--tier-arch); color: var(--ink); }
 
 /* status pills — decision map: mint running, lemon paused, coral failed,
-   fill-primary done (+✓), card-2 neutrals. Label strings untouched. */
+   orange stopped (the Stop colour), fill-primary done (+✓), card-2 neutrals.
+   Label strings untouched. */
 .qbatch-status .pill,
 .qrow .status .pill {
   font-size: 13px; font-weight: 700;
@@ -798,6 +799,8 @@ body.pro-mode .safety-bar { display: flex; }
 .qbatch-status.queued .pill,    .qrow .status.queued .pill    { background: var(--card-2); color: var(--fg-2); }
 .qbatch-status.cancelled .pill, .qrow .status.cancelled .pill { background: var(--card-2); color: var(--fg-2); }
 .qbatch-status.cancelling .pill                                { background: var(--card-2); color: var(--fg-2); }
+.qbatch-status.stopped .pill                                   { background: var(--orange); color: var(--ink); }
+.qrow .status.notstarted .pill                                 { background: var(--card-2); color: var(--fg-2); }
 .qrow .status.existed .pill                                    { background: var(--card-2); color: var(--fg-2); }
 .qrow .status.skipped .pill                                    { background: var(--card-2); color: var(--fg-2); }
 
@@ -817,6 +820,7 @@ body.pro-mode .safety-bar { display: flex; }
 .qbatch-status.paused .progressbar > i    { background: var(--lemon); }
 .qbatch-status.cancelled .progressbar > i { background: var(--track); }
 .qbatch-status.cancelling .progressbar > i{ background: var(--lemon); }
+.qbatch-status.stopped .progressbar > i   { background: var(--orange); }
 
 /* header action buttons (remove ✕ / ⋯ menu) */
 .qbatch-remove {
@@ -907,13 +911,15 @@ body.pro-mode .safety-bar { display: flex; }
 .qbatch-files .qrow .status.failed .progressbar > i    { background: var(--coral); }
 .qbatch-files .qrow .status.existed .progressbar > i   { background: var(--track); }
 .qbatch-files .qrow .status.cancelled .progressbar > i { background: var(--track); }
+.qbatch-files .qrow .status.notstarted .progressbar > i { background: var(--track); }
 
 .qbatch-files .qrow.status-skipped { opacity: 0.5; }
 .qbatch-files .qrow.status-skipped .file .name {
   text-decoration: line-through;
   text-decoration-color: var(--fg-3);
 }
-.qbatch-files .qrow.status-cancelled { opacity: 0.7; }
+.qbatch-files .qrow.status-cancelled,
+.qbatch-files .qrow.status-notstarted { opacity: 0.7; }
 
 /* HDR chip — lemon */
 .hdr-chip {

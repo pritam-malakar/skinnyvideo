@@ -19,7 +19,7 @@ ipcMain.handle('scan-files', async () => ({
   videos: [{ file: '/fake/clipA.mov', basename: 'clipA.mov', size: 1234567 }]
 }));
 ipcMain.handle('choose-destination', async () => '/tmp/skinnyvideo-verify-out');
-ipcMain.handle('stat-path', async () => ({ isFile: false, isDirectory: true }));
+ipcMain.handle('stat-path', async () => ({ isFile: true, isDirectory: false }));   // the browse pick below is a file
 ipcMain.handle('save-last-src', async () => {});
 ipcMain.handle('get-lifetime-drives', async () => []);
 ipcMain.handle('add-reclaimed', async () => null);

@@ -6,7 +6,7 @@
    discarded — the count said 4 while 2 were encoded (folder + loose files), or
    none at all and Add stayed disabled (two folders).
    Run: ./node_modules/.bin/electron test/drop_multi_source_test.js */
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -37,6 +37,24 @@ const clips1 = [clip(path.join(A, 'A1.mov')), clip(path.join(A, 'A2.mov')),
 const clips2 = [clip(path.join(C, 'C1.mov')), clip(path.join(C, 'C2.mov')),
   clip(path.join(SB, 'Loose1.mov')), clip(path.join(SB, 'Loose2.mov'))];
 fs.writeFileSync(path.join(A, 'notes.txt'), 'not a video');   // must never be staged
+
+/* Browse (v3.2.2): the picker accepts folders too. D holds a nested clip and a
+   SYMLINKED folder whose clip must stay out (walkAll skips linked dirs). */
+const D = path.join(SB, 'CardD'), LINKED = path.join(SB, 'Elsewhere');
+const clipsD = [clip(path.join(D, 'D1.mov')), clip(path.join(D, 'Sub', 'D2.mov'))];
+clip(path.join(LINKED, 'X1.mov'));
+fs.symlinkSync(LINKED, path.join(D, 'LinkDir'));
+const loose3 = clip(path.join(SB, 'Loose3.mov'));
+/* A card whose output folder lives inside it: an earlier run's output and a
+   partial must be left out — and the staging line must say so. */
+const E = path.join(SB, 'CardE');
+clip(path.join(E, 'E1.mov'));
+clip(path.join(E, 'Compressed_2026-10-15_0612', 'E1.mp4'));
+fs.writeFileSync(path.join(E, 'Compressed_2026-10-15_0612', 'E2.tmp.mp4'), 'partial');
+/* Only the native dialog is stubbed; main.js's real 'browse-source-files'
+   handler builds the options and saves lastSrc. */
+let pickNext = null; const dialogCalls = [];
+dialog.showOpenDialog = async (_win, opts) => { dialogCalls.push(opts); return { canceled: false, filePaths: pickNext }; };
 
 require(path.join(ROOT, 'src/main/main.js'));
 
@@ -94,6 +112,43 @@ app.whenReady().then(async () => {
       `[${label}] ${expected.length} .mp4 files written (${outs.sort().join(', ')})`);
     await js(`(() => { const d = document.getElementById('dismiss-summary'); if (d) d.click(); return true; })()`);
     await wait(300);
+  }
+
+  /* ── Browse: one picker for folders and files, routed like a drop ──
+     FAIL-ON-OLD: properties were ['openFile','multiSelections'] and every pick
+     went through stageFiles, so a single picked folder became a file-list batch. */
+  const browse = async (paths) => {
+    await js(`(() => { clearDrop(); return true; })()`);
+    pickNext = paths;
+    await js(`document.getElementById('dz-browse').click(); true`);
+    for (let i = 0; i < 300 && !(await js('!!current.scanned')); i++) await wait(100);
+    return js(`({ kind: current.kind, src: current.src, sources: current.fileSources.slice().sort(), files: current.files.map((f) => f.path).sort() })`);
+  };
+  {
+    const one = await browse([D]);
+    const props = (dialogCalls[0] && dialogCalls[0].properties) || [];
+    check(['openFile', 'openDirectory', 'multiSelections'].every((p) => props.includes(p)),
+      `picker accepts files AND folders (properties ${JSON.stringify(props)})`);
+    check(!!(dialogCalls[0] && dialogCalls[0].filters && dialogCalls[0].filters[0].name === 'Video files'), 'video filters kept');
+    check(one.kind === 'folder' && one.src === D, `[folder pick] one folder goes through stageSource like a folder drop (kind ${one.kind})`);
+    check(JSON.stringify(one.files) === JSON.stringify(clipsD.slice().sort()),
+      `[folder pick] every clip in the folder, symlinked folder skipped (${one.files.map((p) => path.basename(p))})`);
+    await browse([loose3]);
+    check(dialogCalls[1] && dialogCalls[1].defaultPath === D, `lastSrc is the picked folder itself (next defaultPath ${dialogCalls[1] && dialogCalls[1].defaultPath})`);
+    const mixed = await browse([D, loose3]);
+    check(dialogCalls[2] && dialogCalls[2].defaultPath === SB, `lastSrc is dirname(first file) after a file pick (${dialogCalls[2] && dialogCalls[2].defaultPath})`);
+    const want = [...clipsD, loose3].sort();
+    check(mixed.kind === 'files' && JSON.stringify(mixed.sources) === JSON.stringify(want),
+      `[folder + file pick] stageFiles stages every video in the folder plus the file, symlinked folder skipped (${mixed.kind}: ${mixed.sources.map((p) => path.basename(p))})`);
+    const plainLine = await js('dropStatusCount.textContent');
+    check(plainLine === '3 videos', `nothing skipped → no skip text on the staging line ("${plainLine}")`);
+    /* Output folders inside the source: counted, never silent. Both routes. */
+    await browse([E]);
+    const folderLine = await js('dropStatusCount.textContent');
+    check(folderLine === '1 video · 2 skipped inside SkinnyVideo output folders', `[folder] staging line counts skipped outputs ("${folderLine}")`);
+    await browse([E, loose3]);
+    const filesLine = await js('dropStatusCount.textContent');
+    check(filesLine === '2 videos · 2 skipped inside SkinnyVideo output folders', `[files] staging line counts skipped outputs ("${filesLine}")`);
   }
   finish();
 });
