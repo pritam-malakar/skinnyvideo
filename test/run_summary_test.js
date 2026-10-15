@@ -136,6 +136,8 @@ else {
     console.log('  run 3 summary', JSON.stringify(s3));
     check(s3.segs.done === 1 && s3.segs.failed === 0 && s3.segs['not started'] === 1,
       `run 3 summary: 1 done, 0 failed, 1 not started (${JSON.stringify(s3.segs)})`);
+    // A Stopped batch ran in this run and finished a file: it is a batch of this run.
+    check(/across 1 file in 1 batch\./.test(s3.reclaimed), `run 3: "across 1 file in 1 batch" (got "${s3.reclaimed.trim()}")`);
 
     /* Cleanup prompt wording: a leftover .tmp.mp4 is "incomplete" — a SIGTERM'd
        encoder can leave a playable truncated file, so never "can't be played". */

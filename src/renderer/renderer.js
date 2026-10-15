@@ -2511,7 +2511,8 @@ window.api.onQueueFinished(({ totals, stopped }) => {
      folds operator-skips + already-present, cancelled shown only if any. */
   lines.push(summaryCountsHtml());
   if (stopped) lines.push(`<div class="muted">Stopped by user — one file at a time, never mid-file.</div>`);
-  const doneBatches = queue.filter((q) => runBatchIds.has(q.id) && q.status === 'done').length;
+  // A Stopped batch ran in this run and finished files: it counts, like Done.
+  const doneBatches = queue.filter((q) => runBatchIds.has(q.id) && (q.status === 'done' || q.status === 'stopped')).length;
   lines.push(
     `<div class="reclaimed-line">Reclaimed <strong>${humanBytes(totals.reclaimed)}</strong> across `
     + `<strong>${totals.processed}</strong> file${totals.processed === 1 ? '' : 's'} `
