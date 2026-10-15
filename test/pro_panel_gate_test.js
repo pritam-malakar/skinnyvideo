@@ -1,10 +1,10 @@
 /* Batch-settings gate regression — REAL renderer + REAL preload + REAL IPC.
-   The Pro/Nerd-mode "Batch settings" panel (#pro-panel) must not be interactive
+   The Nerd Mode "Batch settings" panel (#pro-panel) must not be interactive
    until the batch is ACTIONABLE (staged files AND an output location) — matching
    "Add batch". It's a DOM sibling after the tier cards, so the tier step's
    `inert` lock can't cover it; the gate condition has to carry the location term.
 
-   Drives the real staging flow (Pro toggle → file-list browse → choose location).
+   Drives the real staging flow (Nerd toggle → file-list browse → choose location).
    Asserts the three states + the conditional prompt copy.
 
    FAIL-ON-OLD: pre-fix the gate keyed on files-only, so with files staged and NO
@@ -66,7 +66,7 @@ app.whenReady().then(async () => {
     };
   })()`);
 
-  await setMode(true);   // Pro/Nerd mode → panel visible
+  await setMode(true);   // Nerd Mode → panel visible
 
   // State 1 — no files: disabled, "Drop files…" prompt.
   let g = await gate();

@@ -80,7 +80,7 @@ const TIER_CSS = { regular: 'regular', preserve: 'archival' };
 const TIER_LABEL = { regular: 'Make It Fast', preserve: 'Slow But Better' };
 /* Tier names render from this ONE constant everywhere — the cards' .name
    nodes are stamped here at boot (keyed by data-tier), so the queue chips,
-   the Pro settings panel, and the cards can never drift apart. */
+   the Nerd settings panel, and the cards can never drift apart. */
 document.querySelectorAll('.tier[data-tier]').forEach((card) => {
   const nameEl = card.querySelector('.name');
   if (nameEl && TIER_LABEL[card.dataset.tier]) nameEl.textContent = TIER_LABEL[card.dataset.tier];
@@ -429,7 +429,7 @@ function showModal({ title, body, tone = 'warn', actions = [] }) {
   });
 }
 
-/* ───── Pro Mode ─────
+/* ───── Nerd Mode ─────
    Session-only state: defaults to Simple on EVERY launch, never persisted.
    Flipping mid-run is safe by construction — every batch freezes its settings
    snapshot at enqueue time (addCurrentToQueue), so the toggle only affects
@@ -452,7 +452,7 @@ function setProMode(on) {
      class only ADDS rules — Simple appearance is the untouched base. */
   document.body.classList.toggle('pro-mode', proMode);
   /* Flip-on: silently arm the currently-checked tier (session memory or
-     defaults) so armed.tier always equals the checked tier in Pro Mode.
+     defaults) so armed.tier always equals the checked tier in Nerd Mode.
      No sheet — sheets open ONLY on explicit card clicks. */
   if (proMode) {
     const checked = document.querySelector('input[name="tier"]:checked');
@@ -465,7 +465,7 @@ function setProMode(on) {
        truth. STAGING ONLY — queued batches froze dryRun at enqueue
        (addCurrentToQueue) and keep it, marker and all. */
     setDryRun(false);
-    updateArmedChips();   // chips are a Pro-only signal
+    updateArmedChips();   // chips are a Nerd-only signal
   }
 }
 if (modeSimpleBtn) modeSimpleBtn.addEventListener('click', () => setProMode(false));
@@ -509,8 +509,8 @@ if (themeDarkBtn) themeDarkBtn.addEventListener('click', () => { themeOverridden
    never written to disk; relaunch returns to pure defaults). */
 const sessionSheetMemory = {};
 
-/* ARMED settings — the values the NEXT batch will freeze at enqueue (Pro
-   Mode). Session-only. INVARIANT: in Pro Mode armed.tier ALWAYS equals the
+/* ARMED settings — the values the NEXT batch will freeze at enqueue (Nerd
+   Mode). Session-only. INVARIANT: in Nerd Mode armed.tier ALWAYS equals the
    checked tier radio, however selection changed (card click + confirm,
    keyboard arrow on the radio group, post-enqueue reset, toggle flip-on).
    Sheet Confirm arms explicitly; every other selection path silently arms
@@ -578,7 +578,7 @@ function panelReady() {
   return hasSource && current.scanned && current.videoCount > 0 && !!current.dest;
 }
 
-/* "Modified" chip on the tier cards: visible on the armed tier's card, in Pro
+/* "Modified" chip on the tier cards: visible on the armed tier's card, in Nerd
    Mode only, when the armed settings differ from that tier's defaults — AND only
    once the batch is actionable (panelReady), so a persisted off-default value
    never shows Modified over an empty panel. Keyed by data-armed-chip. */
@@ -593,8 +593,8 @@ function updateArmedChips() {
   });
 }
 
-/* ───── Pro Mode: persistent settings PANEL ─────
-   Always visible in Pro Mode (body.pro-mode gates the CSS), directly below
+/* ───── Nerd Mode: persistent settings PANEL ─────
+   Always visible in Nerd Mode (body.pro-mode gates the CSS), directly below
    the tier cards. Shows the SELECTED tier's sliders; switching tier re-renders
    from that tier's session memory or defaults. Moving a slider arms the value
    LIVE (armed.settings + sessionSheetMemory) — no Confirm, no Cancel.
@@ -968,15 +968,15 @@ function updateAddState() {
   updateProPanelDisabled();
 }
 
-/* Pro panel gating: disabled (dimmed, sliders inert, Reset hidden, one quiet
+/* Nerd panel gating: disabled (dimmed, sliders inert, Reset hidden, one quiet
    prompt line) until the batch is ACTIONABLE — staged video files AND an output
    location. Matches the "Add batch" / tierReachable condition so settings are
    never live before the batch can exist (the panel is a DOM sibling after the
    tier cards, so the tier step's `inert` lock can't cover it). VISUAL +
    INTERACTION ONLY — armed values and session memory persist; tier switching
    still re-renders the displayed tier while disabled. Mode-agnostic: a batch
-   needs file+location in both Simple and Pro Mode, so this never wrongly locks
-   Pro Mode. */
+   needs file+location in both Simple and Nerd Mode, so this never wrongly locks
+   Nerd Mode. */
 function updateProPanelDisabled() {
   if (!proPanelEl) return;
   const hasSource = current.kind === 'files'
@@ -1074,7 +1074,7 @@ function resetStagingTier() {
   document.querySelectorAll('.tier').forEach((t) => t.classList.remove('selected'));
   const wrap = reg.closest('.tier');
   if (wrap) wrap.classList.add('selected');
-  /* Pro Mode: the reset re-arms the recommended tier's session-memory values
+  /* Nerd Mode: the reset re-arms the recommended tier's session-memory values
      (or defaults) SILENTLY — sheets open only on explicit card clicks. */
   if (proMode) armTier('regular');
 }
@@ -1455,16 +1455,16 @@ dryRunBtn.addEventListener('click', () => {
   setDryRun(dryRunBtn.getAttribute('aria-pressed') !== 'true');
 });
 
-/* Pro Mode foundation: per-tier encode defaults, fetched once from main at
+/* Nerd Mode foundation: per-tier encode defaults, fetched once from main at
    startup (single source of truth: pipeline.js tierDefaults). Today, with no
-   Pro Mode UI, a batch's settings are ALWAYS its tier's defaults. If the
+   Nerd Mode UI, a batch's settings are ALWAYS its tier's defaults. If the
    cache hasn't loaded yet (or the channel is absent in a test harness) the
    payload carries no settings and the engine resolves the same defaults
    itself — identical args either way. */
 let tierDefaultsCache = null;
 window.api.getTierDefaults?.().then((d) => {
   tierDefaultsCache = d;
-  /* If Pro Mode was flipped on before this resolved, the panel rendered
+  /* If Nerd Mode was flipped on before this resolved, the panel rendered
      against an empty defaults object — re-arm so it shows real values. */
   if (proMode) armTier(armed.tier);
 }).catch(() => {});
@@ -1478,7 +1478,7 @@ function batchToPayload(b) {
     id: b.id, src: b.src, dest: b.dest, tier: b.tier, dryRun: b.dryRun,
     kind: b.kind,
     /* Fully-resolved encode settings — FROZEN on the batch at enqueue time
-       (Pro sheet result, or tier defaults in Simple mode). The payload-time
+       (Nerd panel result, or tier defaults in Simple mode). The payload-time
        cache read is only the fallback for batches created before the boot
        fetch resolved. Queue and engine carry this field blindly; the arg
        builder reads ONLY this for encode parameters. */
@@ -1497,7 +1497,7 @@ function addCurrentToQueue() {
   const dry = dryRunBtn.getAttribute('aria-pressed') === 'true';
 
   /* Settings are FROZEN here, at enqueue time, for EVERY batch — Simple mode
-     freezes the tier defaults; Pro Mode freezes the ARMED settings (confirmed
+     freezes the tier defaults; Nerd Mode freezes the ARMED settings (confirmed
      on the tier card's sheet, or silently armed defaults/session memory).
      A later mode flip or sheet edit can never touch an already-queued batch.
      No sheet opens here — the sheet trigger is the tier card click. */

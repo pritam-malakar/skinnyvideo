@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <!-- Pro Mode atmosphere — additive violet-leaning bloom layer, opacity 0 in
+  <!-- Nerd Mode atmosphere — additive violet-leaning bloom layer, opacity 0 in
        Simple. Crossfades in under body.pro-mode; base body::before is never
        edited, so Simple mode renders byte-for-byte today's atmosphere. -->
   <div id="pro-atmosphere" aria-hidden="true"></div>
@@ -74,7 +74,7 @@
           </svg>
         </button>
       </div>
-      <!-- Pro Mode toggle — session-only (never persisted; every launch starts
+      <!-- Nerd Mode toggle — session-only (never persisted; every launch starts
            Simple). Flipping it mid-run cannot affect queued/running batches:
            each batch freezes its settings snapshot at enqueue time. -->
       <div class="mode-toggle" role="group" aria-label="Mode">
@@ -200,7 +200,7 @@
       </label>
     </div>
 
-    <!-- Pro Mode settings panel — persistent while body.pro-mode (Simple mode
+    <!-- Nerd Mode settings panel — persistent while body.pro-mode (Simple mode
          never shows it). Always displays the SELECTED tier's sliders; moving a
          slider arms the value live. No Confirm/Cancel: Add batch is the commit
          point (enqueue-time freeze). Controls are JS-rendered, keyed lookups. -->
@@ -339,7 +339,7 @@
     <!-- History: one row per completed REAL run (dry runs never appear).
          Same anatomy and same gating as Lifetime directly above — hidden
          until the first entry exists, renderer-built rows, ungated by
-         Simple/Pro mode. Newest first; the newest 5 show by default and an
+         Simple/Nerd Mode. Newest first; the newest 5 show by default and an
          in-card foot control expands to the full list (ephemeral — always
          compact again on launch). -->
     <section id="history-section" class="history-section hidden">

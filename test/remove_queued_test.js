@@ -151,9 +151,9 @@ app.whenReady().then(async () => {
 
     const outs = outFiles();
     console.log('  RESULT', JSON.stringify({ bId, outs, finishedCount, statuses: batchStatuses.map((s) => ({ id: s.id, st: s.status })) }));
-    /* Pro Mode foundation: the REAL renderer payload must carry resolved
+    /* Nerd Mode foundation: the REAL renderer payload must carry resolved
        settings = its tier's defaults (engine stays correct without them, but
-       the field is the contract the Pro Mode sheet will later override). */
+       the field is the contract the Nerd Mode sheet will later override). */
     check(Array.isArray(startPayloads) && startPayloads.length > 0 &&
       startPayloads.every((p) => JSON.stringify(p.settings) === JSON.stringify(tierDefaults(p.tier))),
       'start payload carried settings === tierDefaults(tier) for every batch');

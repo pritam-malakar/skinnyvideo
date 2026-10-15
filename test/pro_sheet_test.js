@@ -1,18 +1,18 @@
-/* Pro Mode UX guard — persistent inline settings panel, live arming,
+/* Nerd Mode UX guard — persistent inline settings panel, live arming,
    slider-only controls, mode visual identity.
    Real renderer + real preload + real IPC shape + real stage.js + real
    pipeline encodes + the REAL src/main/queue-runner.js loop. start-queue /
    enqueue-batch / get-tier-defaults handlers MIRROR main.js.
 
-   The panel REPLACED the modal sheet (UX revision): in Pro Mode a glass
+   The panel REPLACED the modal sheet (UX revision): in Nerd Mode a glass
    settings panel below the tier cards is ALWAYS visible, showing the selected
    tier's sliders. Sliding arms values LIVE (armed.settings + session memory);
    there is no Confirm/Cancel — Add batch is the commit point. NO modal sheet
    may ever appear; every mode asserts that.
 
-   MODE=untouched  (default) DECISIVE: Pro Mode with untouched sliders →
+   MODE=untouched  (default) DECISIVE: Nerd Mode with untouched sliders →
                    payload settings byte-identical to a Simple batch of the
-                   same tier. Panel visible in Pro, absent in Simple. Panel
+                   same tier. Panel visible in Nerd, absent in Simple. Panel
                    tier chip shows the REAL tier name — the same string the
                    tier card renders (single TIER_LABEL constant).
    MODE=override   select preserve, slide crf 14 + preset ultrafast (armed
@@ -193,9 +193,9 @@ app.whenReady().then(async () => {
     await browse();
     await run(`document.getElementById('choose-dest').click(); true;`); await wait(300);
     await clickAdd();
-    // Pro: panel appears, sliders untouched.
+    // Nerd: panel appears, sliders untouched.
     await setMode(true);
-    check(await panelVisible() === true, 'Pro mode: settings panel persistently visible');
+    check(await panelVisible() === true, 'Nerd Mode: settings panel persistently visible');
     check(await modalPresent() === false, 'no modal sheet exists in the new flow');
     /* Staging is empty (previous Add cleared it) → panel renders DISABLED. */
     const dis = await run(`(() => {
@@ -241,7 +241,7 @@ app.whenReady().then(async () => {
     const [pS, pP] = payloads;
     console.log('  RESULT', JSON.stringify({ settingsS: pS && pS.settings, settingsP: pP && pP.settings, outs: outFiles() }));
     check(!!pS && !!pP && !!pS.settings && same(pS.settings, pP.settings),
-      'DECISIVE: untouched-Pro payload settings byte-identical to Simple same-tier');
+      'DECISIVE: untouched-Nerd payload settings byte-identical to Simple same-tier');
     check(same(pS.settings, tierDefaults(pS.tier)), 'both equal the tier defaults');
     check(stampLogs().length === 0, 'no "# Settings overrides" stamp in any run log');
     check(outFiles().some((f) => /s1/.test(f)) && outFiles().some((f) => /p1/.test(f)), 'both batches encoded');
@@ -384,7 +384,7 @@ app.whenReady().then(async () => {
       'all files encoded normally after the mid-run flip');
     check(finishedCount === 1, `single uninterrupted run (got ${finishedCount})`);
   } else if (MODE === 'invariant') {
-    /* armed.tier ALWAYS equals the checked tier in Pro Mode — now by
+    /* armed.tier ALWAYS equals the checked tier in Nerd Mode — now by
        construction (every selection path fires the change handler, which
        arms). No encodes — state machine only. */
     BATCH_FILES = [[await mk('i1.mov')]];
@@ -411,7 +411,7 @@ app.whenReady().then(async () => {
     await clickAdd();                  // enqueue → resetStagingTier → regular
     const a4 = await agree('post-enqueue reset');
     check(a4.tier === 'regular', 'reset re-armed the recommended tier');
-    // Simple → Pro round trip with preserve checked.
+    // Simple → Nerd round trip with preserve checked.
     await kbTier('preserve');
     await setMode(false);
     await setMode(true);

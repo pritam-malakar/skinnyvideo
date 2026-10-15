@@ -129,6 +129,11 @@ if [ "$dmg_count" -gt 1 ]; then
 fi
 DMG=$(find "$DIST_DIR" -maxdepth 1 -name '*.dmg')
 
+# ── 3a. Published download size still honest? ────────────────────────────────
+# Before any signing or notarization is spent: abort if the dmg has outgrown
+# the "about NNN MB" stated in README.md and site/*.html by more than 10 MB.
+sh scripts/check-download-size.sh "$DMG"
+
 # ── 3b. Sign the dmg CONTAINER ───────────────────────────────────────────────
 # electron-builder signs the .app inside the image; the disk image itself is
 # left unsigned (build.dmg.sign is unset, and stays unset — this is the one

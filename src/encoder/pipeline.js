@@ -26,10 +26,10 @@ const TIER_CONSTANTS = {
    reach the encoder with qv > 85. */
 const QV_MAX = 85;
 
-/* ─── Pro Mode foundation: per-tier encode settings ──────────────────────
+/* ─── Nerd Mode foundation: per-tier encode settings ──────────────────────
    The resolved settings object is the ONLY thing the arg builder reads for
    encode parameters; tier id stays on the batch purely for UI/labeling.
-   Today (no Pro Mode UI yet) settings always equal these tier defaults —
+   Today (no Nerd Mode UI yet) settings always equal these tier defaults —
    derived from TIER_CONSTANTS, never duplicated, so the settings-driven args
    are byte-identical to the historical tier-switch (locked by
    test/settings_args_test.js against fixtures captured at d7feacb).
@@ -653,7 +653,7 @@ function buildColorArgs(videoStream, { withRange }) {
 }
 
 function buildArgs({ input, tmpOut, tier, settings, videoStream, audioStream, dropColorTags, colorStamp }) {
-  /* Encode params come ONLY from settings (Pro Mode foundation). Callers that
+  /* Encode params come ONLY from settings (Nerd Mode foundation). Callers that
      still pass just a tier (tests, legacy paths) get the tier's defaults —
      identical args either way, guarded by test/settings_args_test.js. */
   const s = settings || tierDefaults(tier);
@@ -828,7 +828,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
   const waitWhilePaused = ctl.waitWhilePaused || (() => Promise.resolve());
 
   const { src, dest, tier } = batch;
-  /* Pro Mode foundation: the batch carries fully-resolved encode settings
+  /* Nerd Mode foundation: the batch carries fully-resolved encode settings
      (today always the tier defaults, attached renderer-side at payload time).
      Resolve the fallback here so direct runBatch callers without a settings
      field (tests, older harnesses) encode exactly as before. */
@@ -874,7 +874,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
   log(`# Source: ${src}`);
   log(`# Destination: ${runDir}`);
   log(`# Tier: ${tier}`);
-  /* Pro Mode: when this batch ran with non-default settings, record exactly
+  /* Nerd Mode: when this batch ran with non-default settings, record exactly
      which values were overridden (e.g. "crf=18 preset=slow"). Default-settings
      batches stamp nothing — the line exists only when there is a difference. */
   {

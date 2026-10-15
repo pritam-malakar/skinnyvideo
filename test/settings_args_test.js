@@ -1,4 +1,4 @@
-/* Pro Mode foundation guard — settings-driven args are BYTE-IDENTICAL to the
+/* Nerd Mode foundation guard — settings-driven args are BYTE-IDENTICAL to the
    historical tier-switch args.
 
    Fixtures (test/fixtures/args_d7feacb.json) were captured from the PRISTINE
@@ -13,7 +13,7 @@
    through BOTH entry paths:
      1. legacy: buildArgs({tier}) — no settings field (old tests, direct calls)
      2. settings: buildArgs({settings: tierDefaults(tier)}) with NO tier — the
-        Pro Mode path the renderer payload now drives
+        Nerd Mode path the renderer payload now drives
    Plus: tierDefaults must stay derived from TIER_CONSTANTS (no value drift),
    and an unknown tier must keep the historical no-video-args fall-through.
 

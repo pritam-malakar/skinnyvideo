@@ -445,7 +445,7 @@ ipcMain.handle('set-update-pref', async (_evt, on) => {
   return on;
 });
 
-/* Pro Mode foundation: the per-tier encode defaults, resolved renderer-side
+/* Nerd Mode foundation: the per-tier encode defaults, resolved renderer-side
    into each batch payload's `settings` field at enqueue time. Single source
    of truth is pipeline.js tierDefaults (derived from TIER_CONSTANTS) — the
    renderer only caches this table at startup, it never defines values. */

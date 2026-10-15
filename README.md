@@ -4,7 +4,7 @@
 [![License: GPL-2.0-or-later](https://img.shields.io/badge/license-GPL--2.0--or--later-blue)](LICENSE)
 [![Platform: macOS 13+, Apple Silicon](https://img.shields.io/badge/platform-macOS%2013%2B%20%C2%B7%20Apple%20Silicon-lightgrey)](#install)
 
-SkinnyVideo is a free, open-source video compressor for Mac. It batch-compresses camera footage to HEVC (H.265) on Apple Silicon using a bundled FFmpeg. Drop a folder, pick one of two quality tiers, start. Compressed copies land in a new folder next to your originals. The originals are never opened for writing, moved, renamed, or deleted.
+SkinnyVideo is a free, open-source video compressor for Mac. It batch-compresses camera footage to HEVC (H.265) on Apple Silicon using a bundled FFmpeg. Drop a folder, pick one of two quality tiers, start. You choose an Output folder, and each run creates a new `Compressed_YYYY-MM-DD_HHMM` folder inside it. The originals are never opened for writing, moved, renamed, or deleted.
 
 No settings to learn. Your videos never leave your Mac. No account. No paid tier.
 
@@ -28,7 +28,7 @@ Savings depend on how much the footage moves and how hard the camera already com
 
 1. **Drop** a folder or a pile of files. Non-video files are ignored, not errors.
 2. **Pick a quality:** Make It Fast or Slow But Better. That is the only decision.
-3. **Start** and walk away. Results land in a new `Compressed_YYYY-MM-DD_HHMM` folder next to the source, flat. Each file keeps its name. If two would clash, the folder name is added in front. Every output is an `.mp4`.
+3. **Start** and walk away. Results land in a new `Compressed_YYYY-MM-DD_HHMM` folder inside the Output folder you chose, flat. Each file keeps its name. If two would clash, the folder name is added in front. Every output is an `.mp4`.
 
 ## Two ways to compress: hardware HEVC or x265
 
@@ -79,7 +79,7 @@ HandBrake is a full manual transcoder with hundreds of settings and a queue you 
 |---|---|
 | Mac | Apple Silicon Macs, including MacBook Neo |
 | macOS | 13 or later |
-| Download | [`SkinnyVideo-arm64.dmg`](https://github.com/pritam-malakar/skinnyvideo/releases/latest/download/SkinnyVideo-arm64.dmg), about 135 MB |
+| Download | [`SkinnyVideo-arm64.dmg`](https://github.com/pritam-malakar/skinnyvideo/releases/latest/download/SkinnyVideo-arm64.dmg), about 170 MB |
 | Security | Signed with a Developer ID certificate and notarized by Apple |
 | License | GPL-2.0-or-later |
 
@@ -120,7 +120,7 @@ No. Compression runs entirely on your Mac and your videos never leave it. The ap
 Yes. It's signed and notarized by Apple, open source under GPL-2.0-or-later, and every release publishes a SHA-256 checksum.
 
 **Where do the compressed files go?**
-Into a new `Compressed_YYYY-MM-DD_HHMM` folder next to your originals, as `.mp4`. The originals are never opened for writing, moved, or deleted.
+You pick an Output folder; it stays set for the rest of the session. Each run creates a new `Compressed_YYYY-MM-DD_HHMM` folder inside it and puts every result there as an `.mp4`, flat. The originals are never opened for writing, moved, or deleted.
 
 **Can it compress ProRes?**
 Yes. A 172 GB ProRes master came out at 6.4 GB with Slow But Better.
