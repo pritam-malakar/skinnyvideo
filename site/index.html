@@ -22,7 +22,7 @@
 <link rel="manifest" href="site.webmanifest" />
 <link rel="preload" href="fonts/Geist-latin.woff2" as="font" type="font/woff2" crossorigin />
 <script src="compare.js" defer></script>
-<script type="application/ld+json">[{"@context":"https://schema.org","@type":"SoftwareApplication","name":"SkinnyVideo","applicationCategory":"MultimediaApplication","operatingSystem":"macOS 13 or later (Apple Silicon Macs, including MacBook Neo)","description":"Free, open-source video compressor for Mac. Batch-compress 4K, ProRes and H.264 footage to HEVC on Apple Silicon. Your videos never leave your Mac, originals never touched.","url":"https://skinnyvideo.app/","downloadUrl":"https://skinnyvideo.app/download","license":"https://www.gnu.org/licenses/old-licenses/gpl-2.0.html","isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"screenshot":"https://skinnyvideo.app/og.png","featureList":["Batch-compress whole folders of camera footage to HEVC at once","Two quality choices: Make It Fast (hardware HEVC via Apple VideoToolbox) and Slow But Better (software HEVC via x265)","Originals never touched; results land in a new folder","Compression runs entirely on your Mac, with no telemetry; the only internet use is an optional update check you can turn off","Nerd Mode with CRF, presets, quality scale, bit depth and dry runs"],"author":{"@type":"Person","name":"Pritam Malakar"}},{"@context":"https://schema.org","@type":"WebSite","name":"SkinnyVideo","url":"https://skinnyvideo.app/"},{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Does it work on Intel Macs?","acceptedAnswer":{"@type":"Answer","text":"No. SkinnyVideo runs only on Apple Silicon Macs, including MacBook Neo, on macOS 13 and up."}},{"@type":"Question","name":"Does it lose quality?","acceptedAnswer":{"@type":"Answer","text":"HEVC is lossy, so yes, technically. Both tiers are tuned to look visually identical; Slow But Better keeps the most detail at the smallest size."}},{"@type":"Question","name":"Does it upload my videos anywhere?","acceptedAnswer":{"@type":"Answer","text":"No. Compression runs entirely on your Mac and your videos never leave it. The app's only internet use is an optional check for new versions on GitHub, which you can turn off."}},{"@type":"Question","name":"Is it safe to install?","acceptedAnswer":{"@type":"Answer","text":"Yes. It's signed and notarized by Apple, open source under GPL-2.0-or-later, and every release publishes a SHA-256 checksum."}},{"@type":"Question","name":"Where do the compressed files go?","acceptedAnswer":{"@type":"Answer","text":"Into the Output folder you pick. Each run creates a new Compressed_YYYY-MM-DD_HHMM folder inside it, flat. The originals are never opened for writing, moved, or deleted."}},{"@type":"Question","name":"Can it compress ProRes?","acceptedAnswer":{"@type":"Answer","text":"Yes. A 172 GB ProRes master came out at 6.4 GB with Slow But Better."}},{"@type":"Question","name":"Can it compress iPhone video that's already HEVC?","acceptedAnswer":{"@type":"Answer","text":"Yes, with smaller gains: 266 MB to 62 MB in our test."}},{"@type":"Question","name":"How is it different from HandBrake?","acceptedAnswer":{"@type":"Answer","text":"HandBrake is a full manual transcoder with hundreds of settings. SkinnyVideo is folder-first with two choices, and Nerd Mode when you want the settings back."}}]}]</script>
+<script type="application/ld+json">[{"@context":"https://schema.org","@type":"SoftwareApplication","name":"SkinnyVideo","applicationCategory":"MultimediaApplication","operatingSystem":"macOS 13 or later (Apple Silicon Macs, including MacBook Neo)","description":"Free, open-source video compressor for Mac. Batch-compress 4K, ProRes and H.264 footage to HEVC on Apple Silicon. Your videos never leave your Mac, originals never touched.","url":"https://skinnyvideo.app/","downloadUrl":"https://skinnyvideo.app/download","license":"https://www.gnu.org/licenses/old-licenses/gpl-2.0.html","isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"screenshot":"https://skinnyvideo.app/og.png","featureList":["Batch-compress whole folders of camera footage to HEVC at once","Two quality choices: Make It Fast (hardware HEVC via Apple VideoToolbox) and Slow But Better (software HEVC via x265)","Originals never touched; results land in a new folder","Compression runs entirely on your Mac, with no telemetry; the only internet use is an optional update check you can turn off","Nerd Mode with CRF, presets, quality scale, bit depth and dry runs"],"author":{"@type":"Person","name":"Pritam Malakar"}},{"@context":"https://schema.org","@type":"WebSite","name":"SkinnyVideo","url":"https://skinnyvideo.app/"},{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Does it work on Intel Macs?","acceptedAnswer":{"@type":"Answer","text":"No. SkinnyVideo runs only on Apple Silicon Macs, including MacBook Neo, on macOS 13 and up."}},{"@type":"Question","name":"Does it lose quality?","acceptedAnswer":{"@type":"Answer","text":"HEVC is lossy, so yes, technically. Both tiers aim to look visually identical to the source. Slow But Better spends several times longer per frame to keep fine detail — grain, texture, gradients — that fast hardware encoding smooths away; its file is not necessarily smaller than Make It Fast's."}},{"@type":"Question","name":"Does it upload my videos anywhere?","acceptedAnswer":{"@type":"Answer","text":"No. Compression runs entirely on your Mac and your videos never leave it. The app's only internet use is an optional check for new versions on GitHub, which you can turn off."}},{"@type":"Question","name":"Is it safe to install?","acceptedAnswer":{"@type":"Answer","text":"Yes. It's signed and notarized by Apple, open source under GPL-2.0-or-later, and every release publishes a SHA-256 checksum."}},{"@type":"Question","name":"Where do the compressed files go?","acceptedAnswer":{"@type":"Answer","text":"Into the Output folder you pick. Each run creates a new Compressed_YYYY-MM-DD_HHMM folder inside it, flat. The originals are never opened for writing, moved, or deleted."}},{"@type":"Question","name":"Can it compress ProRes?","acceptedAnswer":{"@type":"Answer","text":"Yes. A 593 MB ProRes 422 HQ master came out at 13.3 MB (97.8% smaller) with Slow But Better."}},{"@type":"Question","name":"Can it compress iPhone video that's already HEVC?","acceptedAnswer":{"@type":"Answer","text":"Yes, but the gain varies a lot: anywhere from about 17% to 85% depending on the clip, so there is no single number for phone video. The big savings come from camera codecs — XAVC, Canon H.264, ProRes — not from phone HEVC."}},{"@type":"Question","name":"How is it different from HandBrake?","acceptedAnswer":{"@type":"Answer","text":"HandBrake is a full manual transcoder with hundreds of settings. SkinnyVideo is folder-first with two choices, and Nerd Mode when you want the settings back."}},{"@type":"Question","name":"What files can it read?","acceptedAnswer":{"@type":"Answer","text":"Files ending in .mp4, .mov, .m4v, .mkv, .avi, .mts, .m2ts, .mpg, .mpeg, .wmv, .flv, .webm, .mxf, .prores, .dnxhd, .avchd, .3gp, .3g2, .ts, .vob or .ogv (upper or lower case) that contain a video stream."}},{"@type":"Question","name":"What happens when a file fails?","acceptedAnswer":{"@type":"Answer","text":"If the encoder rejects a color tag, the file is encoded again on the same encoder without color tags. If it still fails, SkinnyVideo tries libx265 at CRF 22. Only then is it marked failed, and a copy of the original goes into _FAILED/ inside the run folder. The original in place is never touched."}},{"@type":"Question","name":"What does “Existing” mean?","acceptedAnswer":{"@type":"Answer","text":"You ran the same file into the same Output folder again within the same minute, without quitting in between, so the finished copy was kept. Any other rerun makes a new copy in a new run folder."}},{"@type":"Question","name":"Does it keep HDR?","acceptedAnswer":{"@type":"Answer","text":"PQ and HLG transfer tags, BT.2020 color tags, and HDR10 mastering display and content light level values are carried to the output. Dolby Vision is not kept: its configuration record is dropped in both tiers, so the output is not marked as Dolby Vision. Make It Fast leaves the per-frame Dolby Vision data in the video stream; Slow But Better removes it."}},{"@type":"Question","name":"Does it keep 10-bit, 12-bit and transparency?","acceptedAnswer":{"@type":"Answer","text":"10-bit sources stay 10-bit (HEVC Main 10) unless you turn on 10-bit to 8-bit in Nerd Mode. 12-bit sources, such as ProRes 4444, currently come out 8-bit. Alpha channels are not kept: Make It Fast drops the transparency, and ProRes 4444 with alpha fails in Slow But Better."}},{"@type":"Question","name":"When do Nerd Mode settings take effect?","acceptedAnswer":{"@type":"Answer","text":"They freeze when you click Add batch. Changing them afterwards affects only batches you add later."}},{"@type":"Question","name":"Does it remember my Output folder?","acceptedAnswer":{"@type":"Answer","text":"For the session only. It is not remembered after you quit."}},{"@type":"Question","name":"What warnings can it show?","acceptedAnswer":{"@type":"Answer","text":"On launch, if an earlier run was interrupted, it offers to delete the unfinished .tmp.mp4 files it left; nothing else is deleted. Before a run, it warns if the output drive has less free space than the videos add up to. If you quit while a finished file is still being written to disk, it asks you to wait."}},{"@type":"Question","name":"Are sizes in MB or MiB?","acceptedAnswer":{"@type":"Answer","text":"Decimal: 1 MB is 1,000,000 bytes, the same as Finder."}},{"@type":"Question","name":"Is Slow But Better always the smaller file?","acceptedAnswer":{"@type":"Answer","text":"No, and it doesn't always score higher either. Against Make It Fast it scored higher PSNR on 6 of the 11 clips we measured, within 0.1 dB on 3 (including both ProRes HQ masters), and lower on the two iPhone 4K60 4:2:2 clips. On already-compressed phone footage it can come out larger than Make It Fast: iPhone 12 SDR, 2.0 MB vs 4.6 MB (+3.0 dB). Sony 4K 4:2:0 is another case: 6.3 MB vs 24.4 MB (+2.3 dB)."}}]}]</script>
 <style>
 @font-face{font-family:'Geist';font-style:normal;font-weight:100 900;font-display:swap;src:url("fonts/Geist-latin.woff2") format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
 :root{
@@ -194,6 +194,7 @@ code{font-family:inherit;font-size:.92em;font-weight:500;color:var(--ink);backgr
 
 /* questions: hairline ledger, question left, answer right */
 .faqs{margin-top:40px}
+.faq-group{margin-top:72px}
 .faq .h2{font-size:clamp(26px,2.1vw,30px);letter-spacing:-.03em}
 .qa{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:12px 72px;padding:28px 0;border-top:1px solid var(--hair-2);align-items:start}
 .qa:last-child{border-bottom:1px solid var(--hair-2)}
@@ -379,7 +380,7 @@ code{font-family:inherit;font-size:.92em;font-weight:500;color:var(--ink);backgr
   <div class="wrap">
     <div>
       <p class="label rise">Free and open source. Runs entirely on your Mac.</p>
-      <h1 class="h1 rise d1" id="h1">A free video compressor for Mac. <em>Up to 96% smaller.<sup><a href="#fn" aria-label="See how we measured">*</a></sup></em></h1>
+      <h1 class="h1 rise d1" id="h1">A free video compressor for Mac. <em>Up to 97.8% smaller.<sup><a href="#fn" aria-label="See how we measured">*</a></sup></em></h1>
       <p class="lead rise d2">Batch-compress camera footage to HEVC (H.265) on your Mac. Whole folders at once. Two quality choices, no settings to learn, originals never touched.</p>
       <div class="cta rise d3">
         <a class="btn" href="/download">Download for Mac</a>
@@ -398,22 +399,22 @@ code{font-family:inherit;font-size:.92em;font-weight:500;color:var(--ink);backgr
   <p class="intro"><b>Measured on real footage</b>, not a benchmark clip. <a class="inline" href="#fn">How we measured</a></p>
   <div class="stats">
     <div class="stat">
-      <div class="t">Camera originals · H.264</div>
-      <div class="n"><small>up to</small>94%<sup><a href="#fn" aria-label="Footnote: camera originals" tabindex="-1">*</a></sup></div>
-      <div class="ba">2.3 GB → <b>147 MB</b></div>
+      <div class="t">Sony XAVC 4K · H.264</div>
+      <div class="n">92–97%<sup><a href="#fn" aria-label="Footnote: camera originals" tabindex="-1">*</a></sup></div>
+      <div class="ba">1.21 GB → <b>94.7 MB</b> · three clips</div>
       <div class="tl fast-t">Make It Fast</div>
     </div>
     <div class="stat">
-      <div class="t">ProRes masters</div>
-      <div class="n"><small>up to</small>96%<sup><a href="#fn" aria-label="Footnote: ProRes" tabindex="-1">*</a></sup></div>
-      <div class="ba">172 GB → <b>6.4 GB</b></div>
+      <div class="t">ProRes 422 HQ master</div>
+      <div class="n">97.8%<sup><a href="#fn" aria-label="Footnote: ProRes" tabindex="-1">*</a></sup></div>
+      <div class="ba">593 MB → <b>13.3 MB</b></div>
       <div class="tl slow-t">Slow But Better</div>
     </div>
     <div class="stat">
       <div class="t">iPhone, already HEVC</div>
-      <div class="n"><small>up to</small>77%<sup><a href="#fn" aria-label="Footnote: already HEVC" tabindex="-1">*</a></sup></div>
-      <div class="ba">266 MB → <b>62 MB</b></div>
-      <div class="tl slow-t">Slow But Better</div>
+      <div class="n"><small>about</small>17–85%<sup><a href="#fn" aria-label="Footnote: already HEVC" tabindex="-1">*</a></sup></div>
+      <div class="ba">No single number for phone video</div>
+      <div class="tl">Both tiers</div>
     </div>
   </div>
   <div class="compare" id="compare" role="region" aria-labelledby="cmp-h" data-compare>
@@ -423,7 +424,7 @@ code{font-family:inherit;font-size:.92em;font-weight:500;color:var(--ink);backgr
         <video class="cmp-v cmp-orig" muted playsinline preload="none" disablepictureinpicture data-src="https://files.skinnyvideo.app/demo/v1/original-preview-v2.mp4?v=3" aria-label="Original, left of the handle"></video>
         <video class="cmp-v cmp-comp" muted playsinline preload="none" disablepictureinpicture data-src="https://files.skinnyvideo.app/demo/v1/compressed.mp4?v=3" aria-label="SkinnyVideo output, right of the handle"></video>
         <span class="cmp-tag l" hidden>Original · ProRes 422 HQ · 593&nbsp;MB</span>
-        <span class="cmp-tag r" hidden>SkinnyVideo · HEVC · 13.3&nbsp;MB</span>
+        <span class="cmp-tag r" hidden>SkinnyVideo · Slow But Better · 13.3&nbsp;MB</span>
         <div class="cmp-line" hidden></div>
         <div class="cmp-handle" role="slider" tabindex="0" aria-label="Comparison split" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" aria-valuetext="50% original, 50% compressed" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 7-5 5 5 5M15 7l5 5-5 5"/></svg></div>
         <div class="cmp-poster">
@@ -446,7 +447,7 @@ code{font-family:inherit;font-size:.92em;font-weight:500;color:var(--ink);backgr
         <div class="cmp-sum"><code id="sha-orig">a8df15dd22d4c8fab40c804fe9b9ca9fe1341d3b3c46b6dd63a4f6892b920cbe</code><button class="cmp-btn cmp-copy" type="button" data-copy="sha-orig" aria-label="Copy SHA-256 of the original">Copy</button></div>
       </div>
       <div class="cmp-file">
-        <a class="btn" href="https://files.skinnyvideo.app/demo/v1/compressed-download.mp4" download rel="noopener">Download compressed · HEVC · 13.3&nbsp;MB</a>
+        <a class="btn" href="https://files.skinnyvideo.app/demo/v1/compressed-download.mp4" download rel="noopener">Download compressed · Slow But Better · HEVC · 13.3&nbsp;MB</a>
         <p class="cmp-sumh">SHA-256</p>
         <div class="cmp-sum"><code id="sha-comp">f50237e076369fc1dc5ae21d6c108c612855df384e1cfbb01e4a9bf7c2098062</code><button class="cmp-btn cmp-copy" type="button" data-copy="sha-comp" aria-label="Copy SHA-256 of the compressed file">Copy</button></div>
       </div>
@@ -463,9 +464,11 @@ code{font-family:inherit;font-size:.92em;font-weight:500;color:var(--ink);backgr
         <tr><th scope="row">PSNR</th><td>49.5 dB</td></tr>
         <tr><th scope="row">SSIM</th><td>0.990</td></tr>
         <tr><th scope="row">Tier</th><td>Slow But Better</td></tr>
+        <tr><th scope="row">Make It Fast, same clip</th><td>11.3 MB · PSNR 49.5 dB</td></tr>
         <tr><th scope="row">Encoder settings</th><td>SkinnyVideo defaults, zero config</td></tr>
       </tbody>
     </table>
+    <p class="cmp-disc">Measured on an Apple M2 Pro with the bundled FFmpeg; method and script in <a class="inline" href="https://github.com/pritam-malakar/skinnyvideo/blob/main/docs/BENCHMARKS.md">docs/BENCHMARKS.md</a>.</p>
   </div>
 </div></section>
 
@@ -487,14 +490,14 @@ code{font-family:inherit;font-size:.92em;font-weight:500;color:var(--ink);backgr
             <h4>Make It Fast</h4>
             <p class="sub">Hardware HEVC via Apple VideoToolbox.</p>
             <p>Encodes on the media engine in your Mac's chip, so a card dump finishes while you keep editing.</p>
-            <ul><li>Encodes faster than the footage plays<sup><a href="#fn" aria-label="Footnote: encode speed">*</a></sup></li><li>Mac stays usable</li></ul>
+            <ul><li>About 2× real time on 4K Sony footage<sup><a href="#fn" aria-label="Footnote: encode speed">*</a></sup></li><li>Often the smaller file</li><li>Mac stays usable</li></ul>
           </div>
           <div class="tier arch">
             <span class="tag">Archival</span>
             <h4>Slow But Better</h4>
-            <p class="sub">Software HEVC via x265. Smallest files.</p>
-            <p>A software encoder that spends more time on every frame for a smaller file. On fanless or lower-core Macs such as MacBook Neo it is noticeably slower, but it completes normally.</p>
-            <ul><li>Smaller at the same visible quality</li><li>Uses more of your Mac while it runs</li></ul>
+            <p class="sub">Software HEVC via x265. Keeps fine detail.</p>
+            <p>A software encoder that spends several times longer per frame to keep fine detail — grain, texture, gradients — that fast hardware encoding smooths away. File size lands either side of Make It Fast's, and is sometimes larger. On fanless or lower-core Macs such as MacBook Neo it is noticeably slower, but it completes normally.</p>
+            <ul><li>Keeps grain, texture and gradients</li><li>Uses more of your Mac while it runs</li></ul>
           </div>
         </div>
       </div>
@@ -587,13 +590,27 @@ code{font-family:inherit;font-size:.92em;font-weight:500;color:var(--ink);backgr
   <h2 class="h2" id="faq-h">Questions <em>people ask.</em></h2>
   <div class="faqs">
     <div class="qa"><h3>Does it work on Intel Macs?</h3><p>No. SkinnyVideo runs only on Apple Silicon Macs, including MacBook Neo, on macOS 13 and up.</p></div>
-    <div class="qa"><h3>Does it lose quality?</h3><p>HEVC is lossy, so yes, technically. Both tiers are tuned to look visually identical; Slow But Better keeps the most detail at the smallest size.</p></div>
+    <div class="qa"><h3>Does it lose quality?</h3><p>HEVC is lossy, so yes, technically. Both tiers aim to look visually identical to the source. Slow But Better spends several times longer per frame to keep fine detail — grain, texture, gradients — that fast hardware encoding smooths away; its file is not necessarily smaller than Make It Fast's.</p></div>
     <div class="qa"><h3>Does it upload my videos anywhere?</h3><p>No. Compression runs entirely on your Mac and your videos never leave it. The app's only internet use is an optional check for new versions on GitHub, which you can turn off.</p></div>
     <div class="qa"><h3>Is it safe to install?</h3><p>Yes. It's signed and notarized by Apple, open source under GPL-2.0-or-later, and every release publishes a SHA-256 checksum.</p></div>
     <div class="qa"><h3>Where do the compressed files go?</h3><p>Into the Output folder you pick. Each run creates a new <code>Compressed_&lt;date&gt;</code> folder inside it, flat. The originals are never opened for writing, moved, or deleted.</p></div>
-    <div class="qa"><h3>Can it compress ProRes?</h3><p>Yes. A 172 GB ProRes master came out at 6.4 GB with Slow But Better.</p></div>
-    <div class="qa"><h3>Can it compress iPhone video that's already HEVC?</h3><p>Yes, with smaller gains: 266 MB to 62 MB in our test.</p></div>
+    <div class="qa"><h3>Can it compress ProRes?</h3><p>Yes. A 593 MB ProRes 422 HQ master came out at 13.3 MB (97.8% smaller) with Slow But Better.</p></div>
+    <div class="qa"><h3>Can it compress iPhone video that's already HEVC?</h3><p>Yes, but the gain varies a lot: anywhere from about 17% to 85% depending on the clip, so there is no single number for phone video. The big savings come from camera codecs — XAVC, Canon H.264, ProRes — not from phone HEVC.</p></div>
     <div class="qa"><h3>How is it different from HandBrake?</h3><p>HandBrake is a full manual transcoder with hundreds of settings. SkinnyVideo is folder-first with two choices, and Nerd Mode when you want the settings back.</p></div>
+  </div>
+
+  <p class="label faq-group">How it behaves</p>
+  <div class="faqs">
+    <div class="qa"><h3>What files can it read?</h3><p>Files ending in .mp4, .mov, .m4v, .mkv, .avi, .mts, .m2ts, .mpg, .mpeg, .wmv, .flv, .webm, .mxf, .prores, .dnxhd, .avchd, .3gp, .3g2, .ts, .vob or .ogv (upper or lower case) that contain a video stream.</p></div>
+    <div class="qa"><h3>What happens when a file fails?</h3><p>If the encoder rejects a color tag, the file is encoded again on the same encoder without color tags. If it still fails, SkinnyVideo tries libx265 at CRF 22. Only then is it marked failed, and a copy of the original goes into <code>_FAILED/</code> inside the run folder. The original in place is never touched.</p></div>
+    <div class="qa"><h3>What does “Existing” mean?</h3><p>You ran the same file into the same Output folder again within the same minute, without quitting in between, so the finished copy was kept. Any other rerun makes a new copy in a new run folder.</p></div>
+    <div class="qa"><h3>Does it keep HDR?</h3><p>PQ and HLG transfer tags, BT.2020 color tags, and HDR10 mastering display and content light level values are carried to the output. Dolby Vision is not kept: its configuration record is dropped in both tiers, so the output is not marked as Dolby Vision. Make It Fast leaves the per-frame Dolby Vision data in the video stream; Slow But Better removes it.</p></div>
+    <div class="qa"><h3>Does it keep 10-bit, 12-bit and transparency?</h3><p>10-bit sources stay 10-bit (HEVC Main 10) unless you turn on 10-bit to 8-bit in Nerd Mode. 12-bit sources, such as ProRes 4444, currently come out 8-bit. Alpha channels are not kept: Make It Fast drops the transparency, and ProRes 4444 with alpha fails in Slow But Better.</p></div>
+    <div class="qa"><h3>When do Nerd Mode settings take effect?</h3><p>They freeze when you click Add batch. Changing them afterwards affects only batches you add later.</p></div>
+    <div class="qa"><h3>Does it remember my Output folder?</h3><p>For the session only. It is not remembered after you quit.</p></div>
+    <div class="qa"><h3>What warnings can it show?</h3><p>On launch, if an earlier run was interrupted, it offers to delete the unfinished <code>.tmp.mp4</code> files it left; nothing else is deleted. Before a run, it warns if the output drive has less free space than the videos add up to. If you quit while a finished file is still being written to disk, it asks you to wait.</p></div>
+    <div class="qa"><h3>Are sizes in MB or MiB?</h3><p>Decimal: 1 MB is 1,000,000 bytes, the same as Finder.</p></div>
+    <div class="qa"><h3>Is Slow But Better always the smaller file?</h3><p>No, and it doesn't always score higher either. Against Make It Fast it scored higher PSNR on 6 of the 11 clips we measured, within 0.1 dB on 3 (including both ProRes HQ masters), and lower on the two iPhone 4K60 4:2:2 clips. On already-compressed phone footage it can come out larger than Make It Fast: iPhone 12 SDR, 2.0 MB vs 4.6 MB (+3.0 dB). Sony 4K 4:2:0 is another case: 6.3 MB vs 24.4 MB (+2.3 dB).</p></div>
   </div>
 </div></section>
 
@@ -617,12 +634,12 @@ code{font-family:inherit;font-size:.92em;font-weight:500;color:var(--ink);backgr
     </div>
     <div class="footnotes" id="fn">
       <div class="fn-col">
-        <p><b>* Camera originals:</b> three Sony 4K 25p 10-bit H.264 clips, 2.3 GB → 147 MB (94%), Make It Fast defaults, Mac mini M4 Pro, 5 Sep 2026.</p>
-        <p><b>* ProRes:</b> one 172 GB ProRes .mov → 6.4 GB (96%) and one 81 GB → 5.2 GB (94%), Slow But Better defaults, 12 Jun 2026, earlier build of this app.</p>
+        <p><b>* Sony XAVC 4K:</b> 92–97% with Make It Fast defaults: 10-bit 4:2:2 clip 67 MB → 2.1 MB (96.8%), 4:2:0 clip 134 MB → 6.3 MB (95.3%), 62 s 10-bit 4:2:2 clip 1.21 GB → 94.7 MB (92.2%).</p>
+        <p><b>* ProRes:</b> the ProRes 422 HQ demo master below, 593 MB → 13.3 MB (97.8%), Slow But Better defaults.</p>
       </div>
       <div class="fn-col">
-        <p><b>* Already HEVC:</b> one iPhone HEVC .mov, 266 MB → 62 MB (77%) with Slow But Better; 266 MB → 100 MB (62%) with Make It Fast. Sep 2026.</p>
-        <p><b>* Faster than the footage plays:</b> the same three Sony 4K clips, 2 min of footage, encoded in about 29 s on a Mac mini M4 Pro. Speed scales with your chip.</p>
+        <p><b>* Already HEVC:</b> anywhere from about 17% to 85% depending on the clip; there is no single number for phone video. Make It Fast / Slow But Better: iPhone 12 SDR 68% / 24%, iPhone 12 HLG 26% / 44%, iPhone 4K60 4:2:2 clip 75% / 85%, a second iPhone 4K60 4:2:2 clip 17% / 47%. The big savings come from camera codecs — XAVC, Canon H.264, ProRes — not from phone HEVC.</p>
+        <p><b>* Speed:</b> on an Apple M2 Pro, 4K 25p Sony XAVC encodes at about 2× real time in Make It Fast; 4K60 4:2:2 phone footage runs just under real time. Slow But Better is several times slower than real time on 4K. Speed scales with your chip.</p>
       </div>
       <p class="fn-all">Savings depend on how much your footage moves and how hard the camera compressed it. The app reports the real figure after every batch.</p>
     </div>

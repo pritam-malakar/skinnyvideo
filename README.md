@@ -18,11 +18,13 @@ Measured on real footage, not a benchmark clip. The app reports the real figure 
 
 | Footage | Tier | Before → after | Saved |
 |---|---|---|---|
-| Camera originals, Sony 4K 25p 10-bit H.264 (3 clips) | Make It Fast | 2.3 GB → 147 MB | up to 94% |
-| ProRes master, one .mov | Slow But Better | 172 GB → 6.4 GB | up to 96% |
-| iPhone video, already HEVC | Slow But Better | 266 MB → 62 MB | up to 77% |
+| Sony XAVC 4K: 10-bit 4:2:2, 4:2:0, and a 62 s 10-bit 4:2:2 clip | Make It Fast | 67 MB → 2.1 MB (96.8%) · 134 MB → 6.3 MB (95.3%) · 1.21 GB → 94.7 MB (92.2%) | 92–97% on Sony XAVC 4K |
+| ProRes 422 HQ master (the website demo clip) | Slow But Better | 593 MB → 13.3 MB | 97.8% |
+| iPhone video, already HEVC | Make It Fast / Slow But Better | iPhone 12 SDR 68% / 24% · iPhone 12 HLG 26% / 44% · iPhone 4K60 4:2:2 clip 75% / 85% · second iPhone 4K60 4:2:2 clip 17% / 47% | about 17–85%, depending on the clip |
 
-Savings depend on how much the footage moves and how hard the camera already compressed it. Full methodology (machines, dates, defaults used) is on the [website](https://skinnyvideo.app/#results).
+The big savings come from camera codecs — XAVC, Canon H.264, ProRes — not from phone HEVC: phone footage is already HEVC, so there is less left to remove, and there is no single number for phone video. Savings depend on how much the footage moves and how hard the camera already compressed it.
+
+Measured on an Apple M2 Pro with the bundled FFmpeg; method and script in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 ## Compress whole folders at once
 
@@ -32,9 +34,9 @@ Savings depend on how much the footage moves and how hard the camera already com
 
 ## Two ways to compress: hardware HEVC or x265
 
-**Make It Fast** (Regular) — hardware HEVC via Apple VideoToolbox. Encodes on the media engine in your Mac's chip, faster than the footage plays, and the Mac stays usable while it runs.
+**Make It Fast** (Regular) — hardware HEVC via Apple VideoToolbox. Encodes on the media engine in your Mac's chip, and the Mac stays usable while it runs. On an M2 Pro, 4K 25p Sony XAVC encodes at about 2× real time; 4K60 4:2:2 phone footage runs just under real time. It often gives the smaller file: on 6 of the 11 clips we measured.
 
-**Slow But Better** (archival) — software HEVC via libx265. Spends more time on every frame for a smaller file at the same visible quality. Uses more of your Mac while it runs. On fanless or lower-core Macs such as MacBook Neo it is noticeably slower, but it completes normally.
+**Slow But Better** (archival) — software HEVC via libx265. Spends several times longer per frame to keep fine detail — grain, texture, gradients — that fast hardware encoding smooths away. File size lands either side of Make It Fast's, and is sometimes larger: from about a third to nearly four times its size on the clips we measured. Uses more of your Mac while it runs. On 4K it is several times slower than real time. On fanless or lower-core Macs such as MacBook Neo it is noticeably slower, but it completes normally.
 
 Both tiers write HEVC (H.265) as `.mp4`, tagged `hvc1` with faststart, so the files open directly in QuickTime, Premiere Pro, After Effects, and Final Cut Pro.
 
@@ -60,6 +62,20 @@ Full encoder control for people who know exactly what they want. Settings apply 
 | Dry run | Both | Scans the batch and reports totals without writing anything | — |
 
 Built on a self-compiled FFmpeg with x265 and VideoToolbox and nothing else bundled. The build recipe is in this repo: [`scripts/build-ffmpeg.sh`](scripts/build-ffmpeg.sh).
+
+## How it behaves
+
+- **Inputs.** Files ending in `.mp4`, `.mov`, `.m4v`, `.mkv`, `.avi`, `.mts`, `.m2ts`, `.mpg`, `.mpeg`, `.wmv`, `.flv`, `.webm`, `.mxf`, `.prores`, `.dnxhd`, `.avchd`, `.3gp`, `.3g2`, `.ts`, `.vob` or `.ogv` (upper or lower case) are checked, and compressed if they contain a video stream.
+- **Failed files.** If a file can't be compressed, a copy of its original goes into `_FAILED/` inside the run folder. The original in place is never touched.
+- **Retries before failing.** If the encoder rejects a color tag, the file is encoded again on the same encoder without color tags. If it still fails, SkinnyVideo tries libx265 at CRF 22 (preset medium). Only then is the file marked failed. A file that stops making progress is not retried.
+- **Existing.** If you run the same file into the same Output folder again within the same minute, without quitting in between, the finished copy is kept and the row says Existing. Any other rerun makes a new copy in a new run folder.
+- **HDR.** PQ and HLG transfer tags and BT.2020 color tags are carried to the output, and so are HDR10 mastering display and content light level values. Dolby Vision is not kept: its configuration record is dropped in both tiers, so the output is not marked as Dolby Vision. Make It Fast leaves the per-frame Dolby Vision data in the video stream; Slow But Better removes it.
+- **Bit depth and alpha.** 10-bit sources stay 10-bit (HEVC Main 10) unless you turn on 10-bit → 8-bit in Nerd Mode. 12-bit sources, such as ProRes 4444, currently come out 8-bit. Alpha channels are not kept: Make It Fast drops the transparency, and ProRes 4444 with alpha fails in Slow But Better.
+- **Nerd Mode settings freeze when you click Add batch.** Changing them afterwards affects only batches you add later.
+- **The Output folder lasts for the session.** It is not remembered after you quit.
+- **Warnings.** On launch, if an earlier run was interrupted, SkinnyVideo offers to delete the unfinished `.tmp.mp4` files it left; nothing else is deleted. Before a run, it warns if the output drive has less free space than the videos add up to. If you quit while a finished file is still being written to disk, it asks you to wait.
+- **Sizes are decimal** (1 MB = 1,000,000 bytes), matching Finder.
+- **Slow But Better is not always the smaller or the higher-scoring file.** Against Make It Fast it scored higher PSNR on 6 of the 11 clips we measured, within 0.1 dB on 3 (including both ProRes HQ masters), and lower on the two iPhone 4K60 4:2:2 clips. On already-compressed phone footage it can come out larger than Make It Fast: iPhone 12 SDR, 2.0 MB vs 4.6 MB (+3.0 dB). Sony 4K 4:2:0 is another case: 6.3 MB vs 24.4 MB (+2.3 dB). Details in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 ## What SkinnyVideo doesn't do
 
@@ -111,7 +127,7 @@ The bundled `ffmpeg`/`ffprobe` are produced by [`scripts/build-ffmpeg.sh`](scrip
 No. SkinnyVideo runs only on Apple Silicon Macs, including MacBook Neo, on macOS 13 and up.
 
 **Does it lose quality?**
-HEVC is lossy, so yes, technically. Both tiers are tuned to look visually identical; Slow But Better keeps the most detail at the smallest size.
+HEVC is lossy, so yes, technically. Both tiers aim to look visually identical to the source. Slow But Better spends several times longer per frame to keep fine detail — grain, texture, gradients — that fast hardware encoding smooths away; its file is not necessarily smaller than Make It Fast's.
 
 **Does it upload my videos anywhere?**
 No. Compression runs entirely on your Mac and your videos never leave it. The app's only internet use is an optional check for new versions on GitHub, which you can turn off.
@@ -123,10 +139,10 @@ Yes. It's signed and notarized by Apple, open source under GPL-2.0-or-later, and
 You pick an Output folder; it stays set for the rest of the session. Each run creates a new `Compressed_YYYY-MM-DD_HHMM` folder inside it and puts every result there as an `.mp4`, flat. The originals are never opened for writing, moved, or deleted.
 
 **Can it compress ProRes?**
-Yes. A 172 GB ProRes master came out at 6.4 GB with Slow But Better.
+Yes. A 593 MB ProRes 422 HQ master came out at 13.3 MB (97.8% smaller) with Slow But Better.
 
 **Can it compress iPhone video that's already HEVC?**
-Yes, with smaller gains: 266 MB to 62 MB in our test.
+Yes, but the gain varies a lot: anywhere from about 17% to 85% depending on the clip, so there is no single number for phone video. The big savings come from camera codecs — XAVC, Canon H.264, ProRes — not from phone HEVC.
 
 **Is HEVC the same as H.265?**
 Yes. HEVC (High Efficiency Video Coding) and H.265 are two names for the same codec.

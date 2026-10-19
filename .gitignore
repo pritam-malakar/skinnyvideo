@@ -21,6 +21,5 @@ test/fixtures/generated/
 test/fixtures/tiny_clip.mov
 test/fixtures/long_clip.mov
 
-docs/
 test/bg_bake_verify.js
 scratchpad/
