@@ -130,8 +130,9 @@ function header(t) { console.log('\n==== ' + t + ' ===='); }
   const o5 = await probeStream(path.join(r5.res.runDir, 'pq.mp4'));
   check(o5.color_transfer === 'smpte2084', `PQ transfer carried (got ${o5.color_transfer})`);
 
-  // ── 6. HDR mastering/CLL side data → detected + surfaced, not just logged.
-  header('6: HDR side data detected, logged, in events + result');
+  // ── 6. HDR10 mastering/CLL side data is CARRIED by both encoders (3.3.0,
+  //    DIAGNOSTIC 1.6), so it is never reported as dropped. Dolby Vision is.
+  header('6: HDR10 not reported as dropped; Dolby Vision reported per encoder');
   const d6 = await mk('src6');
   const gen6 = await runCmd(ffmpeg, ['-y', '-nostdin', '-v', 'error',
     '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=25:duration=1',
@@ -141,24 +142,26 @@ function header(t) { console.log('\n==== ' + t + ' ===='); }
     '-an', path.join(d6, 'hdr10.mov')], { stallTimeoutMs: 60000 });
   check(gen6.code === 0, 'synthesized HDR10 clip with mastering display + CLL SEI');
   const fc6 = await ffprobeFrameColor(path.join(d6, 'hdr10.mov'));
-  const det = detectDroppedHdrMeta(null, fc6);
-  check(det.includes('mastering display') && det.includes('content light level'),
-    `detector finds mastering + CLL (got: ${det.join(', ')})`);
+  check(/Mastering display/.test(JSON.stringify(fc6)), 'source frames carry mastering display side data');
+  const det = detectDroppedHdrMeta(null, fc6, 'libx265');
+  check(det.length === 0, `HDR10 mastering + CLL are not reported as dropped (got: ${det.join(', ') || 'nothing'})`);
   const ev6 = [];
   const r6 = await runOne(d6, ev6);
-  check(/HDR-METADATA .*mastering display/.test(r6.log), 'per-file HDR line in log');
-  // Footer lines flush asynchronously after runBatch returns (logStream.end）— poll briefly.
-  let log6 = r6.log;
-  for (let w = 0; w < 20 && !/# HDR: 1 file/.test(log6); w++) {
-    await new Promise((r) => setTimeout(r, 50));
-    log6 = fs.readFileSync(r6.res.logPath, 'utf8');
-  }
-  check(/# HDR: 1 file/.test(log6), 'footer HDR summary line in log');
-  check(r6.res.hdrMetaDropped === 1, `result.hdrMetaDropped === 1 (got ${r6.res.hdrMetaDropped})`);
+  check(!/HDR-METADATA/.test(r6.log), 'no HDR-METADATA line for an HDR10 source');
+  check(r6.res.hdrMetaDropped === 0, `result.hdrMetaDropped === 0 (got ${r6.res.hdrMetaDropped})`);
   const doneEv = ev6.find((e) => e.type === 'file-done' && e.outcome === 'ok');
-  check(doneEv && Array.isArray(doneEv.hdrMeta) && doneEv.hdrMeta.includes('mastering display'),
-    'file-done event carries hdrMeta for the UI chip');
-  check(r6.res.processed === 1, 'HDR file still encodes fine (deferral ≠ failure)');
+  check(doneEv && doneEv.hdrMeta === undefined, 'file-done carries no hdrMeta (no chip)');
+  const fo6 = await ffprobeFrameColor(path.join(r6.res.runDir, 'hdr10.mp4'));
+  check(/Mastering display/.test(JSON.stringify(fo6)) && /Content light/.test(JSON.stringify(fo6)),
+    'the output really carries mastering display + content light');
+  check(r6.res.processed === 1, 'HDR file encodes fine');
+  // Dolby Vision (probe shape of the iPhone 12 clip, DIAGNOSTIC 1.6).
+  const dvStreams = [{ codec_type: 'video', side_data_list: [{ side_data_type: 'DOVI configuration record' }] }];
+  const dvFrame = { side_data_list: [{ side_data_type: 'Dolby Vision RPU Data' }, { side_data_type: 'Dolby Vision Metadata' }] };
+  check(JSON.stringify(detectDroppedHdrMeta(dvStreams, dvFrame, 'hevc_videotoolbox')) === JSON.stringify(['Dolby Vision configuration record']),
+    'Dolby Vision, Make It Fast: configuration record only');
+  check(JSON.stringify(detectDroppedHdrMeta(dvStreams, dvFrame, 'libx265')) === JSON.stringify(['Dolby Vision configuration record', 'Dolby Vision per-frame data']),
+    'Dolby Vision, Slow But Better / fallback: configuration record + per-frame data');
 
   // ── invariants across all runs
   header('invariants');

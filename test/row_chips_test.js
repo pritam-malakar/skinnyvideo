@@ -4,6 +4,15 @@
    NOTE   a file-done carrying `notes` (an audio track that couldn't be kept)
           shows a visible NOTE chip on the file row, with the note as its
           tooltip. FAIL-ON-OLD: 3.2.2 ignored `notes`; no chip.
+   HDR    probe data of an HDR10 source and a Dolby Vision source (side data
+          as ffprobe reports it for the synthetic HDR10 clip and the iPhone 12
+          HLG + Dolby Vision clip, DIAGNOSTIC 1.6) goes through the REAL
+          pipeline.detectDroppedHdrMeta for each tier's encoder, then into the
+          row. HDR10: no chip (mastering display / content light are carried).
+          Dolby Vision: chip "Dolby Vision"; Make It Fast drops the
+          configuration record only, Slow But Better also the per-frame data.
+          FAIL-ON-OLD: 3.2.2 showed an "HDR" chip claiming mastering display
+          and content light were dropped, and one undifferentiated "Dolby Vision".
 
    Run:  ./node_modules/.bin/electron test/row_chips_test.js */
 const { app, BrowserWindow, ipcMain } = require('electron');
@@ -14,7 +23,15 @@ const PASS = [], FAIL = [];
 const check = (c, l) => { (c ? PASS : FAIL).push(l); console.log((c ? 'PASS' : 'FAIL') + ': ' + l); };
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const FILES = ['/fake/a.mov', '/fake/b.mov', '/fake/c.mov'];
+const FILES = ['/fake/a.mov', '/fake/b.mov', '/fake/c.mov', '/fake/hdr10_fast.mov', '/fake/hdr10_better.mov', '/fake/dv_fast.mov', '/fake/dv_better.mov'];
+const { detectDroppedHdrMeta } = require(path.join(ROOT, 'src/encoder/pipeline'));
+const PROBES = {
+  hdr10: { streams: [{ codec_type: 'video', side_data_list: [] }],
+    frame: { side_data_list: [{ side_data_type: 'H.26[45] User Data Unregistered SEI message' }, { side_data_type: 'Mastering display metadata' }, { side_data_type: 'Content light level metadata' }] } },
+  dv: { streams: [{ codec_type: 'video', side_data_list: [{ side_data_type: 'DOVI configuration record' }, { side_data_type: 'Ambient viewing environment' }] }],
+    frame: { side_data_list: [{ side_data_type: 'Ambient viewing environment' }, { side_data_type: 'Dolby Vision RPU Data' }, { side_data_type: 'Dolby Vision Metadata' }] } }
+};
+const ENC = { fast: 'hevc_videotoolbox', better: 'libx265' };
 const DEST = '/tmp/skinnyvideo-row-chips';
 
 let win;
@@ -57,8 +74,8 @@ app.whenReady().then(async () => {
   await wait(50);
 
   const done = (i, extra) => {
-    send('progress', { batchId: id, type: 'file-start', index: i + 1, total: 3, file: FILES[i], basename: path.basename(FILES[i]) });
-    send('progress', { batchId: id, type: 'file-done', index: i + 1, total: 3, file: FILES[i], basename: path.basename(FILES[i]),
+    send('progress', { batchId: id, type: 'file-start', index: i + 1, total: FILES.length, file: FILES[i], basename: path.basename(FILES[i]) });
+    send('progress', { batchId: id, type: 'file-done', index: i + 1, total: FILES.length, file: FILES[i], basename: path.basename(FILES[i]),
       outcome: 'ok', outBytes: 500_000, inBytes: 1_000_000, processed: i + 1, failed: 0, alreadyDone: 0, reclaimed: 500_000 * (i + 1), ...extra });
   };
   const chips = (f) => run(`(() => {
@@ -78,6 +95,28 @@ app.whenReady().then(async () => {
   await wait(150);
   const b = await chips(FILES[1]);
   check(Array.isArray(b) && !b.some((c) => c.text === 'NOTE'), `NOTE: no chip when there is nothing to note (${JSON.stringify(b)})`);
+
+  // ── HDR ──
+  let i = 3;
+  const hdrRows = {};
+  for (const src of ['hdr10', 'dv']) for (const tier of ['fast', 'better']) {
+    const meta = detectDroppedHdrMeta(PROBES[src].streams, PROBES[src].frame, ENC[tier]);
+    done(i, { hdrMeta: meta.length ? meta : undefined });
+    hdrRows[src + '_' + tier] = FILES[i++];
+  }
+  await wait(200);
+  for (const tier of ['fast', 'better']) {
+    const c = await chips(hdrRows['hdr10_' + tier]);
+    check(Array.isArray(c) && c.length === 0, `HDR10 ${tier}: no chip — mastering display and content light are carried (chips ${JSON.stringify(c)})`);
+  }
+  const f = await chips(hdrRows.dv_fast);
+  check(f && f.length === 1 && f[0].text === 'Dolby Vision', `DV Make It Fast: one chip reading "Dolby Vision" (${JSON.stringify(f)})`);
+  check(f && f[0] && f[0].title === 'Dropped: Dolby Vision configuration record. Kept: HDR color tags and HDR10 brightness metadata.',
+    `DV Make It Fast: says only the configuration record is dropped (${f && f[0] && f[0].title})`);
+  const b2 = await chips(hdrRows.dv_better);
+  check(b2 && b2.length === 1 && b2[0].text === 'Dolby Vision', `DV Slow But Better: one chip reading "Dolby Vision" (${JSON.stringify(b2)})`);
+  check(b2 && b2[0] && b2[0].title === 'Dropped: Dolby Vision configuration record, Dolby Vision per-frame data. Kept: HDR color tags and HDR10 brightness metadata.',
+    `DV Slow But Better: says configuration record and per-frame data are dropped (${b2 && b2[0] && b2[0].title})`);
 
   console.log(`\n[row-chips] PASS: ${PASS.length} FAIL: ${FAIL.length}`);
   app.exit(FAIL.length ? 1 : 0);

@@ -738,26 +738,24 @@ function setparamsArg(stamp) {
   return 'setparams=' + Object.keys(stamp).map((k) => `${k}=${stamp[k]}`).join(':');
 }
 
-/* HDR metadata a re-encode does NOT carry (mastering display, content light,
-   Dolby Vision). Transfer/primaries TAGS carry fine; this is the brightness/
-   volume metadata layered on top. Detection only — preservation is a
-   deferred, separate task — but the operator must SEE the drop, so runBatch
-   logs it, the file-done event carries it, and the UI surfaces it. */
-function detectDroppedHdrMeta(probeStreams, frameColor) {
-  const labels = new Set();
-  const scan = (sdl) => {
-    for (const sd of sdl || []) {
-      const t = String(sd.side_data_type || '');
-      if (/Mastering display/i.test(t)) labels.add('mastering display');
-      if (/Content light/i.test(t)) labels.add('content light level');
-      if (/DOVI|Dolby Vision/i.test(t)) labels.add('Dolby Vision');
-    }
-  };
+/* HDR side data a re-encode does NOT carry, as measured on the bundled
+   encoders (docs/3.3.0-DIAGNOSTIC.md 1.6): HDR10 mastering display and
+   content light ARE carried by both, so they are never reported. Dolby
+   Vision's configuration record is dropped by both; its per-frame data (RPU)
+   survives VideoToolbox but not x265. `vcodec` is the encoder that actually
+   produced the output. runBatch logs the result, the file-done event carries
+   it, and the row chip shows it. */
+function detectDroppedHdrMeta(probeStreams, frameColor, vcodec) {
+  let dv = false;
+  const scan = (sdl) => { for (const sd of sdl || []) if (/DOVI|Dolby Vision/i.test(String(sd.side_data_type || ''))) dv = true; };
   for (const st of probeStreams || []) {
     if (st.codec_type === 'video') scan(st.side_data_list);
   }
   scan(frameColor ? frameColor.side_data_list : null);
-  return [...labels];
+  if (!dv) return [];
+  return vcodec === 'hevc_videotoolbox'
+    ? ['Dolby Vision configuration record']
+    : ['Dolby Vision configuration record', 'Dolby Vision per-frame data'];
 }
 function buildColorArgs(videoStream, { withRange }) {
   const colorArgs = [];
@@ -1248,11 +1246,6 @@ async function runBatch(batch, controlOrFn, onProgress) {
     if (colorStamp) {
       log(`COLOR-STAMP ${v.file} :: ${setparamsArg(colorStamp).slice('setparams='.length)} (declared by source but missing on frames — carried onto output)`);
     }
-    const hdrMeta = detectDroppedHdrMeta(probe?.streams, frameColor);
-    if (hdrMeta.length) {
-      hdrMetaDropped++;
-      log(`HDR-METADATA ${v.file} :: ${hdrMeta.join(', ')} — re-encoding does not carry this metadata (color tags are preserved; HDR brightness metadata is dropped)`);
-    }
 
     const args = buildArgs({ input: v.file, tmpOut: tmpPath, tier, settings, videoStream: vs, audioStreams, timecode, colorStamp });
 
@@ -1497,6 +1490,13 @@ async function runBatch(batch, controlOrFn, onProgress) {
         const outTc = (ovs && ovs.tags && ovs.tags.timecode) || (outProbe && outProbe.format && outProbe.format.tags && outProbe.format.tags.timecode);
         if (outTc === timecode) log(`TIMECODE ${v.file} ${timecode}`);
       }
+      /* Dolby Vision loss depends on the encoder that actually ran (the
+         fallback is always x265). */
+      const hdrMeta = detectDroppedHdrMeta(probe?.streams, frameColor, usedFallback ? 'libx265' : settings.vcodec);
+      if (hdrMeta.length) {
+        hdrMetaDropped++;
+        log(`HDR-METADATA ${v.file} :: dropped: ${hdrMeta.join(', ')} (HDR color tags and HDR10 mastering display / content light are kept)`);
+      }
       await fsp.rename(tmpPath, finalPath);
       madeFrom.set(finalPath, v.file);
       await setMtimeFromSource(v.file, finalPath);
@@ -1538,7 +1538,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
 
   log(`# Run finished ${new Date().toISOString()}`);
   log(`# Totals: processed=${processed} failed=${failed} (copied-to-_FAILED=${failedCopied}, source-unreadable=${failedNoCopy}, dest-lost=${failedDestLost}) already-done=${alreadyDone} ignored-non-video=${scan.ignored} reclaimed=${humanBytes(reclaimed)}`);
-  if (hdrMetaDropped > 0) log(`# HDR: ${hdrMetaDropped} file(s) carried HDR metadata (mastering display / content light / Dolby Vision) that re-encoding drops — color tags preserved, HDR brightness metadata not carried`);
+  if (hdrMetaDropped > 0) log(`# HDR: ${hdrMetaDropped} file(s) lost Dolby Vision metadata (see HDR-METADATA lines) — HDR color tags and HDR10 metadata kept`);
   if (destLost) log(`# Destination became unavailable during the run — remaining files were not attempted. Originals untouched.`);
   logStream.end();
 

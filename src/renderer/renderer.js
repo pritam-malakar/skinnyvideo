@@ -1862,14 +1862,15 @@ function buildFileRow(file, i, batchId, entering, batchStatus) {
   pill.innerHTML = `<span class="dot"></span>${PILL_LABEL[file.status] || file.status}`;
   if (file.status === 'failed' && file.failReason) pill.title = file.failReason;
   statusCol.appendChild(pill);
-  /* HDR deferral made visible: this source carried HDR metadata (mastering
-     display / content light / Dolby Vision) that a re-encode cannot carry.
-     Color tags ARE preserved; the brightness metadata is dropped. */
+  /* Dolby Vision loss made visible. hdrMeta lists exactly what the encoder
+     that ran dropped (pipeline.detectDroppedHdrMeta); HDR10 values are
+     carried and never listed. */
   if (file.status === 'done' && Array.isArray(file.hdrMeta) && file.hdrMeta.length) {
     const hdr = document.createElement('span');
     hdr.className = 'hdr-chip';
-    hdr.textContent = 'HDR';
-    hdr.title = `This file carried extra HDR metadata (${file.hdrMeta.join(', ')}) that re-encoding doesn’t keep. The output is still valid HDR — color and transfer tags are preserved; only this metadata was dropped. Keep the original if you need it for color grading or mastered delivery.`;
+    hdr.textContent = 'Dolby Vision';
+    hdr.title = `Dropped: ${file.hdrMeta.join(', ')}. Kept: HDR color tags and HDR10 brightness metadata.`;
+    hdr.setAttribute('aria-label', hdr.title);
     statusCol.appendChild(hdr);
   }
   if (file.status === 'done' && Array.isArray(file.notes) && file.notes.length) {
@@ -2535,16 +2536,12 @@ window.api.onQueueFinished(({ totals, stopped }) => {
   if (totals.alreadyDone > 0) sub.push(`${totals.alreadyDone} already done`);
   if (totals.skippedNonVideo > 0) sub.push(`${totals.skippedNonVideo} non-video ignored`);
   if (sub.length) lines.push(`<div class="muted">${sub.join(' · ')}</div>`);
-  /* HDR deferral, surfaced (not just logged): the operator must see when an
-     HDR source's mastering metadata didn't survive the re-encode. */
+  /* Dolby Vision loss, surfaced (not just logged). */
   if (totals.hdrMetaDropped > 0) {
     const n = totals.hdrMetaDropped;
-    const isAre = n === 1 ? 'output is' : 'outputs are';
-    const itThem = n === 1 ? 'it' : 'them';
     lines.push(
-      `<div class="hdr-note">${n} file${n === 1 ? '' : 's'} carried extra HDR metadata that re-encoding doesn’t keep. `
-      + `The ${isAre} still valid HDR — color and transfer tags are preserved; only this metadata was dropped. `
-      + `Keep the original${n === 1 ? '' : 's'} if you need ${itThem} for color grading or mastered delivery.</div>`
+      `<div class="hdr-note">${n} Dolby Vision file${n === 1 ? '' : 's'}: the output${n === 1 ? ' is' : 's are'} not marked as Dolby Vision `
+      + `(each row’s Dolby Vision chip says what was dropped). HDR color tags and HDR10 brightness metadata are kept.</div>`
     );
   }
   /* Item 3: failures stay plain — no exit codes or ffmpeg text here. The

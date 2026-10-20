@@ -26,6 +26,11 @@
 - **Video with transparency compresses in both tiers.** The alpha channel is
   dropped on purpose, with a `NOTE … alpha channel discarded` line in the run
   log and a NOTE on the file's row. Slow But Better used to fail these files.
+- **The HDR chip tells the truth.** It used to say HDR10 mastering display
+  and content light values were dropped; both tiers keep them, so HDR10 files
+  no longer get a chip. Dolby Vision files get a "Dolby Vision" chip that says
+  exactly what was dropped: the configuration record in both tiers, and the
+  per-frame data as well in Slow But Better.
 - Motion-JPEG video (older cameras and webcams) is now compressed. It used to
   be skipped as "not a video". Cover art is still ignored.
 

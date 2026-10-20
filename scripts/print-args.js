@@ -43,7 +43,7 @@ async function main(argv) {
       pix_fmt: vs.pix_fmt, color_range: vs.color_range || null,
       color_transfer: vs.color_transfer || null, color_primaries: vs.color_primaries || null,
       color_space: vs.color_space || null,
-      hdr_metadata_dropped: p.detectDroppedHdrMeta(probe.streams, frameColor)
+      hdr_metadata_dropped: p.detectDroppedHdrMeta(probe.streams, frameColor, settings.vcodec)
     }
   };
 }
