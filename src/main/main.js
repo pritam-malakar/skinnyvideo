@@ -7,7 +7,7 @@ const { runBatch, dryRunBatch, scanFolder, isVideoFile, getBinaries, ffmpegStatu
 const { flattenRunDir } = require('../encoder/flatten');
 const { findOrphanPartials, deletePartials, isUnderRoots, classifyPartials, recoverPartials } = require('../encoder/orphans');
 const { stageFileList } = require('../encoder/stage');
-const { runQueue, releasePauseGate, requestStop } = require('./queue-runner');
+const { runQueue, releasePauseGate, requestStop, reorderPending } = require('./queue-runner');
 const { revealInFinder, revealFolder } = require('./reveal');
 const { writeJsonAtomic, usableDir } = require('./prefs-store');
 const { appendHistoryEntry, readHistory } = require('./history-store');
@@ -707,6 +707,18 @@ ipcMain.handle('enqueue-batch', async (_evt, batch) => {
    reach the Start payload anyway — it's rebuilt from the renderer queue). */
 ipcMain.handle('remove-batch', async (_evt, batchId) => {
   rt(batchId).removed = true;
+  return { ok: true };
+});
+
+/* 3.3.1: a drag-reorder of queued batches while a run is live. runQueue reads
+   liveBatches[i] at each turn, so reordering the not-yet-started ones changes
+   what runs next — the displayed order is the executed order. With no run
+   live the Start payload already carries the renderer's order. */
+ipcMain.handle('reorder-batches', async (_evt, ids) => {
+  if (!Array.isArray(ids) || !ids.every((id) => Number.isInteger(id) && id > 0)) {
+    return { ok: false, error: 'reorder-batches refused: ids must be positive integers' };
+  }
+  if (queueRunning && liveBatches) reorderPending(liveBatches, ids, rt);
   return { ok: true };
 });
 

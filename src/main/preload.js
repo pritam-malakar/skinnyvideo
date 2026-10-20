@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('api', {
   startQueue: (batches) => ipcRenderer.invoke('start-queue', batches),
   enqueueBatch: (batch) => ipcRenderer.invoke('enqueue-batch', batch),
   removeBatch: (batchId) => ipcRenderer.invoke('remove-batch', batchId),
+  reorderBatches: (ids) => ipcRenderer.invoke('reorder-batches', ids),
   stopQueue: () => ipcRenderer.invoke('stop-queue'),
   setBatchSkips: (batchId, skipped) => ipcRenderer.invoke('set-batch-skips', { batchId, skipped }),
   pauseBatch: (id) => ipcRenderer.invoke('pause-batch', id),

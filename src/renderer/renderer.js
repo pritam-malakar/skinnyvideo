@@ -1814,6 +1814,11 @@ function buildBatchGroup(batch, idx) {
     if (queue[di].status !== 'queued' || queue[ti].status !== 'queued') return;
     const [moved] = queue.splice(di, 1);
     queue.splice(ti, 0, moved);
+    /* 3.3.1: mid-run, main reorders its not-yet-started batches to match, so
+       the next batch boundary runs what the queue shows. */
+    if (runActive) {
+      try { window.api.reorderBatches(queue.filter((x) => x.status === 'queued').map((x) => x.id)); } catch { /* display only */ }
+    }
     renderQueue();
   });
 

@@ -89,6 +89,7 @@ app.whenReady().then(async () => {
       await t('resumeBatch', () => a.resumeBatch(9999));
       await t('cancelBatch', () => a.cancelBatch(9999));
       await t('removeBatch', () => a.removeBatch(9999));
+      await t('reorderBatches', () => a.reorderBatches([9999]));
       await t('stopQueue', () => a.stopQueue());
       await t('deleteOrphans', () => a.deleteOrphans([]));
       await t('revealInFinder', () => a.revealInFinder(${JSON.stringify(path.join(SANDBOX, 'nope.mov'))}));

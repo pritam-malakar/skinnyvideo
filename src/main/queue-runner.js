@@ -67,6 +67,7 @@ async function runQueue(batches, { send, isStopRequested, rt, onPartial, recorde
   for (let i = 0; i < batches.length; i++) {
     if (isStopRequested()) break;
     const batch = batches[i];
+    rt(batch.id).started = true;   // from here on reorderPending leaves it in place
 
     /* PHANTOM FREEZE: a queued batch the operator removed mid-run is
        tombstoned via the 'remove-batch' IPC (rt(id).removed). Skip it BEFORE
@@ -315,4 +316,19 @@ async function runQueue(batches, { send, isStopRequested, rt, onPartial, recorde
   return totals;
 }
 
-module.exports = { runQueue, releasePauseGate, requestStop };
+/* 3.3.1 LIVE REORDER: the operator dragged queued batches mid-run. `ids` is
+   the renderer's new order of its queued batches. Only batches the loop has
+   not reached yet (rt(id).started unset) move, and only among the slots they
+   already hold, so the loop's index stays valid and its next turn reads the
+   new order. Ids not listed keep their relative order after the listed ones;
+   unknown ids are ignored. */
+function reorderPending(batches, ids, rt) {
+  const slots = [];
+  batches.forEach((b, i) => { if (b && !rt(b.id).started) slots.push(i); });
+  const rank = new Map(ids.map((id, k) => [id, k]));
+  const r = (b) => (rank.has(b.id) ? rank.get(b.id) : ids.length);
+  const moved = slots.map((i) => batches[i]).sort((a, b) => r(a) - r(b));   // stable
+  slots.forEach((i, k) => { batches[i] = moved[k]; });
+}
+
+module.exports = { runQueue, releasePauseGate, requestStop, reorderPending };
