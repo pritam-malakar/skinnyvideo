@@ -60,9 +60,11 @@
   source pixel format, the tier and the space actually saved. Nothing uses it
   yet (Preview's "Est. reclaim" is unchanged); History from earlier versions
   loads and displays as before.
-- `scripts/bench.sh` reports VMAF when an ffmpeg with libvmaf is available,
-  and `docs/BENCHMARKS.md` has a new x265 CRF sweep. Measurement only: the
-  app's quality settings are unchanged.
+- **Quality settings are unchanged.** Slow But Better still uses x265 at
+  CRF 18 (preset medium), and Make It Fast is unchanged too. A CRF 18–26
+  sweep with VMAF is recorded in `docs/BENCHMARKS.md` for a future decision.
+  `scripts/bench.sh` now reports VMAF when an ffmpeg with libvmaf is
+  available.
 
 ## 3.2.2 — 2026-10-15
 

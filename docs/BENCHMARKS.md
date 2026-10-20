@@ -314,5 +314,7 @@ than 1 VMAF point below CRF 18 on three clips: `canon77d_MVI_0528.MOV`
 `iphone_prores_hq_IMG_3069.MOV` (−1.75). CRF 22 and above lose more than a
 point on 8 to 10 of the 11 clips (up to −10.04 at CRF 26). So by the stated
 rule the answer is "none". If a worst case of about 1.75 VMAF points is
-acceptable for a 27% median size cut, CRF 20 is the one to consider. The app's
-default CRF and preset are unchanged by this measurement.
+acceptable for a 27% median size cut, CRF 20 is the one to consider.
+
+**3.3.0 ships unchanged at CRF 18** (preset medium). This sweep is recorded
+for a future decision; no setting was changed because of it.
