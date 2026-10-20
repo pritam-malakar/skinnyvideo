@@ -162,17 +162,19 @@ async function encodeOne(label, { dur, stderrErr, onStart } = {}) {
       const growing = path.join(run, 'b.tmp.mp4');
       fs.writeFileSync(growing, 'partial');
       fs.writeFileSync(path.join(run, 'compress.log'), 'log');      // not a video: never counted
-      fs.writeFileSync(path.join(src, 'Trip', 'c.tmp_2.mp4'), 'x');  // a stray partial outside a run folder
+      // 3.3.1 Item 5: a .tmp_<n>.mp4 outside a run folder is skipped only when it is a RECORDED partial
+      const stray = path.join(src, 'Trip', 'c.tmp_2.mp4');
+      fs.writeFileSync(stray, 'x');  // a stray partial outside a run folder
       const g = setInterval(() => fs.appendFileSync(growing, 'more'), 50);
-      const s = await scanFolder(src);
+      const s = await scanFolder(src, { partials: [stray] });
       clearInterval(g);
       const found = s.videos.map((v) => path.relative(src, v.file)).sort();
       check(!found.some((f) => f.startsWith('Compressed_')), `SCANNER: zero files from the Compressed_* folder (found [${found}])`);
       check(JSON.stringify(found) === JSON.stringify(['Trip/b.mov', 'a.mov']), `SCANNER: ordinary sources still found (found [${found}])`);
-      check(s.skippedOutputs === 3, `SCANNER: skipped output files are counted — 2 in the run folder + 1 stray .tmp_2.mp4 (got ${s.skippedOutputs})`);
+      check(s.skippedOutputs === 3, `SCANNER: skipped output files are counted — 2 in the run folder + 1 recorded stray .tmp_2.mp4 (got ${s.skippedOutputs})`);
       fake = { encodes: 0, dur: () => 20 };
       const sdest = path.join(SB, 'scan', 'SOut'); fs.mkdirSync(sdest);
-      await runBatch({ src, dest: sdest, tier: 'regular', kind: 'folder' }, {}, () => {});
+      await runBatch({ src, dest: sdest, tier: 'regular', kind: 'folder', recordedPartials: [stray] }, {}, () => {});
       const slog = fs.readFileSync(walk(sdest).find((f) => f.endsWith('compress.log')), 'utf8');
       check(/^SKIPPED_OUTPUTS 3 file\(s\) inside SkinnyVideo output folders$/m.test(slog),
         'SCANNER: compress.log has `SKIPPED_OUTPUTS 3 file(s) inside SkinnyVideo output folders`');

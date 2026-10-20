@@ -48,10 +48,11 @@ function requestStop(runtime, { setStopFlag, onResumed }) {
      send(channel, payload)  — emit an IPC message to the renderer
      isStopRequested()       — true once the user asked to stop after current file
      rt(batchId)             — per-batch runtime state (skips, child, cancelled, …)
+     recordedPartials()      — optional; main's recorded partial paths, left out of folder scans
      onPartial(path, info)   — optional; each partial's exact path before it is written,
                                with { final, source } (source = original path)
    Returns the accumulated totals. */
-async function runQueue(batches, { send, isStopRequested, rt, onPartial }) {
+async function runQueue(batches, { send, isStopRequested, rt, onPartial, recordedPartials }) {
   const totals = { processed: 0, failed: 0, failedCopied: 0, failedNoCopy: 0, failedDestLost: 0, failedChanging: 0, destLost: false, skippedNonVideo: 0, reclaimed: 0, alreadyDone: 0, hdrMetaDropped: 0 };
 
   /* OPTION A — DRAIN THE LIVE QUEUE: `batches` is a LIVE array. main appends
@@ -134,6 +135,7 @@ async function runQueue(batches, { send, isStopRequested, rt, onPartial }) {
     const effSources = (Array.isArray(batch.fileSources) ? batch.fileSources : [])
       .filter((p) => !skipSet.has(p));
     batch.skip = [...skipSet];
+    batch.recordedPartials = recordedPartials ? recordedPartials() : [];   // read at the turn, like skips
 
     // All files in a file-list batch skipped → nothing to do; clean Done, advance.
     if (batch.kind === 'files' && (batch.fileSources || []).length > 0 && effSources.length === 0) {

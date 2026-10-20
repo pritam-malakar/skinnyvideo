@@ -470,26 +470,27 @@ async function isVideoFile(file) {
 
 /* SkinnyVideo's own output never re-enters a scan of the operator's folders:
    a destination inside the source tree would otherwise re-compress earlier
-   runs' Compressed_<ts> folders and in-progress <stem>.tmp(_N).mp4 partials.
+   runs' Compressed_<ts> folders (naming.isRunFolderName — everything inside,
+   partials included) and the partials main has recorded (`partials`, a Set of
+   exact paths). A file is never excluded for its NAME alone: a user's own
+   "holiday.tmp.mp4" elsewhere is a video like any other (3.3.1).
    Not applied to a staged file-list dir (keepAll) — those are explicit picks,
    and a picked file may legitimately live in an old run folder. Every video
    left out this way is counted in skipped.n so the skip is never silent. */
-const TEMP_OUTPUT_RE = /\.tmp(_\d+)?\.mp4$/i;
-
-async function walkAll(dir, out, keepAll = false, skipped = { n: 0 }) {
+async function walkAll(dir, out, keepAll = false, skipped = { n: 0 }, partials = new Set()) {
   let entries;
   try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { return; }
   for (const e of entries) {
     if (e.name.startsWith('.')) continue;
     const full = path.join(dir, e.name);
     if (e.isDirectory()) {
-      if (keepAll || !isRunFolderName(e.name)) { await walkAll(full, out, keepAll, skipped); continue; }
+      if (keepAll || !isRunFolderName(e.name)) { await walkAll(full, out, keepAll, skipped, partials); continue; }
       const inside = [];
       await walkAll(full, inside, true);
       skipped.n += inside.filter((f) => VIDEO_EXTS.has(path.extname(f).toLowerCase())).length;
       continue;
     }
-    if (!keepAll && TEMP_OUTPUT_RE.test(e.name)) { skipped.n++; continue; }
+    if (!keepAll && partials.has(full)) { skipped.n++; continue; }
     if (e.isFile()) { out.push(full); continue; }
     /* A staged file-list entry can be a SYMLINK to the original source — that is
        how staging stays zero-copy when the source FS can't hardlink (e.g. an SMB
@@ -508,7 +509,7 @@ async function walkAll(dir, out, keepAll = false, skipped = { n: 0 }) {
   }
 }
 
-async function gatherInputs(srcPath, keepAll) {
+async function gatherInputs(srcPath, keepAll, partials) {
   const stat = await fsp.stat(srcPath);
   const out = [];
   if (stat.isFile()) {
@@ -516,12 +517,12 @@ async function gatherInputs(srcPath, keepAll) {
     return { rootKind: 'file', root: srcPath, files: out, skippedOutputs: 0 };
   }
   const skipped = { n: 0 };
-  await walkAll(srcPath, out, keepAll, skipped);
+  await walkAll(srcPath, out, keepAll, skipped, partials);
   return { rootKind: 'dir', root: srcPath, files: out, skippedOutputs: skipped.n };
 }
 
-async function scanFolder(srcPath, { keepAll = false } = {}) {
-  const { rootKind, root, files, skippedOutputs } = await gatherInputs(srcPath, keepAll);
+async function scanFolder(srcPath, { keepAll = false, partials = [] } = {}) {
+  const { rootKind, root, files, skippedOutputs } = await gatherInputs(srcPath, keepAll, new Set(partials));
   const videos = [];
   let ignored = 0;
   for (const f of files) {
@@ -1007,7 +1008,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
   log(`# ffmpeg: ${bins.ffmpeg}`);
   log(`# ffmpeg version: ${await ffmpegVersionLine(bins.ffmpeg)}`);
 
-  const scan = await scanFolder(src, { keepAll: batch.kind === 'files' });   // staged picks are never filtered
+  const scan = await scanFolder(src, { keepAll: batch.kind === 'files', partials: batch.recordedPartials });   // staged picks are never filtered
   /* Named over the FULL scan (before skips) so a skip never renames others. */
   const stems = assignStems(scan.videos.map((v) => v.file));
   /* Temp names are reserved against the FULL set of finished names (and each
@@ -1577,7 +1578,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
 
 async function dryRunBatch(batch, onProgress) {
   const { src, tier } = batch;
-  const scan = await scanFolder(src, { keepAll: batch.kind === 'files' });
+  const scan = await scanFolder(src, { keepAll: batch.kind === 'files', partials: batch.recordedPartials });
   let estReclaim = 0;
   const ratios = { regular: 0.45, preserve: 0.55 };
   const r = ratios[tier] ?? 0.45;

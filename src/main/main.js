@@ -483,7 +483,7 @@ ipcMain.handle('get-last-dest', async () => usableDir(prefs.lastDest));
 ipcMain.handle('scan-source', async (_evt, srcPath) => {
   // A rejected invoke: the renderer's catch shows e.message as the scan error.
   if (typeof srcPath !== 'string' || !srcPath) throw new Error('scan-source: path must be a non-empty string');
-  return await scanFolder(srcPath);
+  return await scanFolder(srcPath, { partials: recordedPartialPaths() });
 });
 
 /* Stat — lets the renderer distinguish a dropped folder from dropped files
@@ -547,7 +547,7 @@ ipcMain.handle('scan-files', async (_evt, srcPaths) => {
   for (const p of srcPaths) {
     if (!p || typeof p !== 'string') { ignored++; continue; }
     try {
-      const sub = await scanFolder(p);     // handles both file + dir cases
+      const sub = await scanFolder(p, { partials: recordedPartialPaths() });     // handles both file + dir cases
       videos.push(...sub.videos);
       ignored += sub.ignored || 0;
       skippedOutputs += sub.skippedOutputs || 0;
@@ -620,7 +620,7 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
     liveBatches = batches;
     /* Hold the promise so the close-guard's "Stop and quit" can await REAL
        encoder exit + this finally block, rather than a guessed timeout. */
-    runPromise = runQueue(batches, { send, isStopRequested: () => stopRequested, rt, onPartial });
+    runPromise = runQueue(batches, { send, isStopRequested: () => stopRequested, rt, onPartial, recordedPartials: recordedPartialPaths });
     totals = await runPromise;
   } finally {
     keepAwake.stop();
@@ -922,6 +922,9 @@ ipcMain.handle('recover-orphans', async (_evt, paths) => {
   savePrefs();
   return { recovered: recovered.length };
 });
+
+/* Recorded partials, left out of folder scans (pipeline.walkAll). */
+const recordedPartialPaths = () => (Array.isArray(prefs.pendingPartials) ? prefs.pendingPartials : []);
 
 /* partialInfo entries live exactly as long as their pendingPartials entry. */
 function prunePartialInfo() {
