@@ -70,4 +70,56 @@ async function deletePartials(paths, { recorded = [], roots = [] } = {}) {
   return deleted;
 }
 
-module.exports = { isUnderRoots, isDeletablePartial, findOrphanPartials, deletePartials };
+/* ─── Complete leftovers (3.3.0) ──────────────────────────────────────
+   A crash between "encode finished" and "rename to the final name" leaves a
+   whole file under its temp name. `info` maps each recorded partial to
+   { final, source } (recorded by main before ffmpeg writes it; source is the
+   ORIGINAL file, not a staged link). A leftover is complete when its video
+   stream is as long as its source's, within the duration guard's tolerance
+   (max(1 s, 2%)). Source gone, or either duration unknown → incomplete.
+   durationOf(file) → seconds | null (pipeline.videoDuration). */
+async function classifyPartials(orphans, info, durationOf) {
+  const out = [];
+  for (const o of orphans || []) {
+    const meta = (info && info[o.path]) || {};
+    let complete = false;
+    if (typeof meta.source === 'string' && typeof meta.final === 'string') {
+      const srcDur = await Promise.resolve(durationOf(meta.source)).catch(() => null);
+      const outDur = srcDur ? await Promise.resolve(durationOf(o.path)).catch(() => null) : null;
+      complete = !!(srcDur && outDur != null && srcDur - outDur <= Math.max(1.0, srcDur * 0.02));
+    }
+    out.push({ ...o, complete, final: meta.final || null, source: meta.source || null });
+  }
+  return out;
+}
+
+/* Renames each COMPLETE recorded leftover onto its final name (next free
+   _N if taken — never overwrites), copies the source's mtime like a normal
+   finish, and appends `RECOVERED <src> -> <final>` to its run folder's
+   compress.log. Same safety contract as deletion, and completeness is
+   re-checked here — the renderer's word is never trusted. The final name
+   must sit in the partial's own folder. Returns the new paths. */
+async function recoverPartials(paths, { recorded = [], roots = [], info = {}, durationOf } = {}) {
+  const set = new Set(recorded);
+  const recovered = [];
+  for (const p of (Array.isArray(paths) ? paths : [])) {
+    if (!(await isDeletablePartial(p, set, roots))) continue;
+    const [c] = await classifyPartials([{ path: p }], info, durationOf);
+    if (!c.complete || path.dirname(c.final) !== path.dirname(p)) continue;
+    const { dir, name, ext } = path.parse(c.final);
+    let dest = c.final;
+    for (let n = 2; fs.existsSync(dest); n++) dest = path.join(dir, `${name}_${n}${ext}`);
+    try { await fsp.rename(p, dest); } catch { continue; }
+    try { const st = await fsp.stat(c.source); await fsp.utimes(dest, st.atime, st.mtime); } catch {}
+    const parts = p.split(path.sep);
+    const runIdx = parts.findIndex((seg) => seg.startsWith('Compressed_'));
+    if (runIdx > 0) {
+      const logPath = path.join(parts.slice(0, runIdx + 1).join(path.sep), 'compress.log');
+      try { await fsp.appendFile(logPath, `RECOVERED ${c.source} -> ${dest} (finished encode kept after an interrupted run)\n`); } catch {}
+    }
+    recovered.push(dest);
+  }
+  return recovered;
+}
+
+module.exports = { isUnderRoots, isDeletablePartial, findOrphanPartials, deletePartials, classifyPartials, recoverPartials };

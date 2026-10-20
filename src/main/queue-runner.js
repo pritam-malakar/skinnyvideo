@@ -45,7 +45,8 @@ function requestStop(runtime, { setStopFlag, onResumed }) {
      send(channel, payload)  — emit an IPC message to the renderer
      isStopRequested()       — true once the user asked to stop after current file
      rt(batchId)             — per-batch runtime state (skips, child, cancelled, …)
-     onPartial(path)         — optional; each partial's exact path before it is written
+     onPartial(path, info)   — optional; each partial's exact path before it is written,
+                               with { final, source } (source = original path)
    Returns the accumulated totals. */
 async function runQueue(batches, { send, isStopRequested, rt, onPartial }) {
   const totals = { processed: 0, failed: 0, failedCopied: 0, failedNoCopy: 0, failedDestLost: 0, failedChanging: 0, destLost: false, skippedNonVideo: 0, reclaimed: 0, alreadyDone: 0, hdrMetaDropped: 0 };
@@ -177,6 +178,9 @@ async function runQueue(batches, { send, isStopRequested, rt, onPartial }) {
     }
 
     const wrappedBatch = (runSrc === batch.src) ? batch : { ...batch, src: runSrc };
+    /* A partial's source is recorded as the ORIGINAL path (staged links are
+       deleted after the run), so a launch check can compare against it. */
+    control.onPartial = (p, info) => onPartial && onPartial(p, info && { ...info, source: stageMap.get(info.source) || info.source });
 
     /* v2.8.0 LIVE SKIP — consulted by the pipeline at every file boundary,
        before it spawns that file's encoder. Re-reads rt().skips on EVERY call

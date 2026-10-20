@@ -1219,7 +1219,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
       ({ tmpPath } = destForInput(runDir, scan.rootKind, scan.root, v.file, stems.get(v.file), tmpStems.get(v.file)));
     }
     partials.push(tmpPath);
-    try { onPartial(tmpPath); } catch {}
+    try { onPartial(tmpPath, { final: finalPath, source: v.file }); } catch {}
     try { await fsp.unlink(tmpPath); } catch {}
 
     const probe = await ffprobeJson(v.file);
@@ -1614,6 +1614,7 @@ module.exports = {
   STALL_TIMEOUT_MS,
   tierDefaults,
   ffprobeJson,
+  videoDuration,
   pickVideoStream,
   pickAudioStream,
   planAudio,

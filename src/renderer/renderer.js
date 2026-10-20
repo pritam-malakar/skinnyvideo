@@ -3033,8 +3033,34 @@ refreshHistory();
    encoder stopped by SIGTERM/SIGINT finalises a playable but truncated file. Offer to
    delete them. Only those temp files are ever removed; originals and
    finished outputs are untouched. Dismissing keeps everything. */
-window.api.onOrphansFound(async ({ orphans } = {}) => {
-  if (!orphans || !orphans.length) return;
+window.api.onOrphansFound(async ({ orphans: all } = {}) => {
+  if (!all || !all.length) return;
+  /* 3.3.0: a leftover main proved complete (its picture is as long as its
+     original's) is a finished file that never got its final name — offer to
+     keep it. The rest are incomplete: delete only, as before. */
+  const done = all.filter((o) => o.complete);
+  if (done.length) {
+    const k = done.length;
+    const choice = await showModal({
+      title: k === 1 ? 'Keep a finished file?' : 'Keep finished files?',
+      tone: 'info',
+      body: `<div>SkinnyVideo found <strong>${k}</strong> file${k === 1 ? '' : 's'} from an interrupted run that `
+        + `finished compressing but never got ${k === 1 ? 'its' : 'their'} final name. `
+        + `${k === 1 ? 'It is' : 'They are'} as long as the original${k === 1 ? '' : 's'}.</div>`
+        + `<div class="fine">Keep renames ${k === 1 ? 'it' : 'them'} to the normal name in the run folder. Your original videos are not affected.</div>`,
+      actions: [
+        { label: k === 1 ? 'Delete file' : 'Delete files', kind: 'ghost', value: 'delete' },
+        { label: 'Keep', kind: 'primary', value: 'keep' }
+      ]
+    });
+    if (choice === 'keep') {
+      try { await window.api.recoverOrphans(done.map((o) => o.path)); } catch { /* non-fatal */ }
+    } else if (choice === 'delete') {
+      try { await window.api.deleteOrphans(done.map((o) => o.path)); } catch { /* non-fatal */ }
+    }
+  }
+  const orphans = all.filter((o) => !o.complete);
+  if (!orphans.length) return;
   const n = orphans.length;
   const totalBytes = orphans.reduce((a, o) => a + (Number.isFinite(o.size) ? o.size : 0), 0);
   const body =

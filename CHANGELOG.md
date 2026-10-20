@@ -31,6 +31,12 @@
   no longer get a chip. Dolby Vision files get a "Dolby Vision" chip that says
   exactly what was dropped: the configuration record in both tiers, and the
   per-frame data as well in Slow But Better.
+- **A finished file is no longer thrown away after a crash.** If the app quit
+  between finishing a file and giving it its final name, the leftover
+  `.tmp.mp4` is complete. On the next launch SkinnyVideo now checks each
+  leftover against its original's length and offers **Keep** (rename it to its
+  normal name, `RECOVERED` in the run log) or Delete. Incomplete leftovers are
+  offered for deletion only, as before.
 - Motion-JPEG video (older cameras and webcams) is now compressed. It used to
   be skipped as "not a video". Cover art is still ignored.
 

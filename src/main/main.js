@@ -3,9 +3,9 @@ const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
 const os = require('os');
-const { runBatch, dryRunBatch, scanFolder, isVideoFile, getBinaries, ffmpegStatus, ENGINE_MISSING_MESSAGE, VIDEO_EXTS, tierDefaults, TIER_CONSTANTS } = require('../encoder/pipeline');
+const { runBatch, dryRunBatch, scanFolder, isVideoFile, getBinaries, ffmpegStatus, ENGINE_MISSING_MESSAGE, VIDEO_EXTS, tierDefaults, TIER_CONSTANTS, videoDuration } = require('../encoder/pipeline');
 const { flattenRunDir } = require('../encoder/flatten');
-const { findOrphanPartials, deletePartials, isUnderRoots } = require('../encoder/orphans');
+const { findOrphanPartials, deletePartials, isUnderRoots, classifyPartials, recoverPartials } = require('../encoder/orphans');
 const { stageFileList } = require('../encoder/stage');
 const { runQueue, releasePauseGate, requestStop } = require('./queue-runner');
 const { revealInFinder, revealFolder } = require('./reveal');
@@ -358,9 +358,11 @@ app.whenReady().then(() => {
   const recordedPartials = Array.isArray(prefs.pendingPartials) ? prefs.pendingPartials : [];
   if (sweepRoots.length && recordedPartials.length) {
     findOrphanPartials(recordedPartials, sweepRoots)
+      .then((found) => classifyPartials(found, prefs.partialInfo, videoDuration))
       .then((orphans) => {
         prefs.pendingDests = [];
         prefs.pendingPartials = orphans.map((o) => o.path);
+        prunePartialInfo();
         savePrefs();
         if (orphans.length && mainWindow && !mainWindow.isDestroyed()) {
           const send = () => {
@@ -588,10 +590,14 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
      list for the next launch's cleanup. This run's entries are dropped in the
      finally: by then each was renamed, unlinked, or swept by flatten. */
   const runPartials = new Set();
-  const onPartial = (p) => {
+  const onPartial = (p, info) => {
     runPartials.add(p);
     const rec = new Set(Array.isArray(prefs.pendingPartials) ? prefs.pendingPartials : []);
-    if (rec.has(p)) return;
+    /* { final, source } lets the next launch tell a finished-but-unrenamed
+       leftover from a truncated one (orphans.classifyPartials). */
+    if (info && typeof info.final === 'string' && typeof info.source === 'string') {
+      prefs.partialInfo = { ...(prefs.partialInfo || {}), [p]: { final: info.final, source: info.source } };
+    }
     rec.add(p); prefs.pendingPartials = [...rec];
     savePrefs();
   };
@@ -627,6 +633,7 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
       prefs.pendingDests = [];
       prefs.pendingPartials = (Array.isArray(prefs.pendingPartials) ? prefs.pendingPartials : [])
         .filter((p) => !runPartials.has(p) || fs.existsSync(p));
+      prunePartialInfo();
       savePrefs();
     } catch { /* non-fatal */ }
     send('queue-finished', {
@@ -895,9 +902,28 @@ ipcMain.handle('delete-orphans', async (_evt, paths) => {
   const recorded = Array.isArray(prefs.pendingPartials) ? prefs.pendingPartials : [];
   const deleted = await deletePartials(paths, { recorded, roots: knownOutputRoots() });
   prefs.pendingPartials = recorded.filter((p) => fs.existsSync(p));
+  prunePartialInfo();
   savePrefs();
   return { deleted };
 });
+
+/* Keep a COMPLETE leftover: rename it to its final name. recoverPartials
+   re-validates every path and re-checks completeness itself. */
+ipcMain.handle('recover-orphans', async (_evt, paths) => {
+  const recorded = Array.isArray(prefs.pendingPartials) ? prefs.pendingPartials : [];
+  const recovered = await recoverPartials(paths, { recorded, roots: knownOutputRoots(), info: prefs.partialInfo || {}, durationOf: videoDuration });
+  prefs.pendingPartials = recorded.filter((p) => fs.existsSync(p));
+  prunePartialInfo();
+  savePrefs();
+  return { recovered: recovered.length };
+});
+
+/* partialInfo entries live exactly as long as their pendingPartials entry. */
+function prunePartialInfo() {
+  const keep = new Set(Array.isArray(prefs.pendingPartials) ? prefs.pendingPartials : []);
+  const info = prefs.partialInfo || {};
+  prefs.partialInfo = Object.fromEntries(Object.entries(info).filter(([p]) => keep.has(p)));
+}
 
 /* Open the last run's log / reveal its folder — only inside a known output root. */
 ipcMain.handle('open-path', async (_evt, p) => {
