@@ -48,13 +48,16 @@
 - The skip label **"Existing" is now "Duplicate"**, with the tooltip "Same
   file already added in this session". The run log keeps its `SKIP-EXISTS`
   tag and adds the same wording.
-- Motion-JPEG video (older cameras and webcams) is now compressed.
+- Motion-JPEG video (older cameras and webcams) is now compressed. It used to
+  be skipped as "not a video". Cover art is still ignored.
 - **Hardened app binary.** Release builds now close Electron's fuses: the app
   can no longer be started as a plain Node.js runtime (`ELECTRON_RUN_AS_NODE`),
   ignores `NODE_OPTIONS` and `--inspect`, loads its code only from its own
   archive and checks that archive's integrity at launch, and encrypts its
-  cookie store. It used to
-  be skipped as "not a video". Cover art is still ignored.
+  cookie store.
+- `scripts/bench.sh` reports VMAF when an ffmpeg with libvmaf is available,
+  and `docs/BENCHMARKS.md` has a new x265 CRF sweep. Measurement only: the
+  app's quality settings are unchanged.
 
 ## 3.2.2 — 2026-10-15
 

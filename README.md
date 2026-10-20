@@ -28,7 +28,7 @@ Measured on an Apple M2 Pro with the bundled FFmpeg; method and script in [docs/
 
 ## Compress whole folders at once
 
-1. **Drop** a folder or a pile of files. Non-video files are ignored, not errors.
+1. **Drop** a folder or a pile of files, anywhere on the window. Non-video files are ignored, not errors.
 2. **Pick a quality:** Make It Fast or Slow But Better. That is the only decision.
 3. **Start** and walk away. Results land in a new `Compressed_YYYY-MM-DD_HHMM` folder inside the Output folder you chose, flat. Each file keeps its name. If two would clash, the folder name is added in front. Every output is an `.mp4`.
 
