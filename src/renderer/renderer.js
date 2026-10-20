@@ -1148,8 +1148,8 @@ function updateIdleCopy() {
   });
 });
 
-dropzone.addEventListener('drop', async (ev) => {
-  const items = Array.from(ev.dataTransfer.files || []);
+async function onDropFiles(ev) {
+  const items = Array.from((ev.dataTransfer && ev.dataTransfer.files) || []);
   if (!items.length) return;
   const paths = items.map((it) => window.api.pathForFile(it)).filter(Boolean);
   if (!paths.length) {
@@ -1160,6 +1160,26 @@ dropzone.addEventListener('drop', async (ev) => {
   }
   await stagePicked(paths);
   /* Two-step staging: do NOT auto-add. Operator confirms tier + clicks Add. */
+}
+dropzone.addEventListener('drop', onDropFiles);
+
+/* "Drop anywhere": the rest of the window takes the same drop through the
+   same handler (same staging path, same scanner, same behaviour mid-run).
+   The dropzone's own listeners stopPropagation, so a drop on it runs once;
+   drags with no files (queue reordering) are ignored here. preventDefault
+   also stops the window navigating to a file dropped outside the dropzone. */
+const dragHasFiles = (ev) => !!(ev.dataTransfer && Array.from(ev.dataTransfer.types || []).includes('Files'));
+window.addEventListener('dragover', (ev) => {
+  if (!dragHasFiles(ev)) return;
+  ev.preventDefault();
+  dropzone.classList.add('dragover');
+});
+window.addEventListener('dragleave', (ev) => { if (!ev.relatedTarget) dropzone.classList.remove('dragover'); });
+window.addEventListener('drop', (ev) => {
+  if (!dragHasFiles(ev)) return;
+  ev.preventDefault();
+  dropzone.classList.remove('dragover');
+  onDropFiles(ev);
 });
 
 /* Routing rule, shared by drop and Browse so the two behave the same:

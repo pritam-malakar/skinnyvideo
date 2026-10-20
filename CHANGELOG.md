@@ -37,6 +37,9 @@
   leftover against its original's length and offers **Keep** (rename it to its
   normal name, `RECOVERED` in the run log) or Delete. Incomplete leftovers are
   offered for deletion only, as before.
+- **"Drop anywhere" now means anywhere.** Files dropped anywhere on the
+  window are staged exactly as if they were dropped on the drop area,
+  including while a run is going. Before, only the drop area accepted them.
 - Motion-JPEG video (older cameras and webcams) is now compressed. It used to
   be skipped as "not a video". Cover art is still ignored.
 
