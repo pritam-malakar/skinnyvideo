@@ -1,5 +1,38 @@
 # Changelog
 
+## 3.3.1 — unreleased
+
+Fixes for six findings from an external audit of 3.3.0.
+
+- **Keeping a leftover after a crash only touches its own run folder.** If the
+  Output folder sat inside a folder whose name starts with "Compressed_" (a
+  project folder called `Compressed_archives`, say), Keep tidied that outer
+  folder instead of the run folder and moved files that had nothing to do with
+  SkinnyVideo. Each unfinished file's run folder is now recorded when the file
+  starts, and Keep only ever tidies that folder. If it can't be found, the
+  leftover is offered for deletion only and the app logs `RECOVER-SKIP`.
+  Leftovers recorded by 3.3.0 have no run folder on record, so they are
+  offered for deletion only.
+- **Pause holds every encode attempt.** If you paused just as a file's first
+  attempt failed, the retry without color tags or the libx265 fallback started
+  anyway and ran while the batch said Paused. Both now wait for Resume. Cancel
+  while paused ends the file without starting them, and Stop after current file
+  still lets the file finish, retries included.
+- **Picking a new source while the last one is still scanning stages the new
+  one.** If the earlier scan finished last, its files replaced the new pick's
+  while the batch kept the new pick's name.
+- **Your own `.tmp.mp4` files are compressed like any other video.** A scan
+  used to skip every file named `….tmp.mp4`, so a video called
+  `holiday.tmp.mp4` was silently left out. Now only SkinnyVideo's own output
+  is skipped: anything inside a `Compressed_YYYY-MM-DD_HHMM` run folder, and
+  unfinished files it has recorded. The staging line and run log still say how
+  many.
+- **Preview leaves out skipped files.** A folder Preview counted every video,
+  including ones you had skipped, in its video count and Est. reclaim.
+- **Reordering queued batches during a run changes what runs next.** Dragging a
+  queued batch used to reorder the list on screen only, and the run kept its
+  original order. Now the next batch to start is the one shown next.
+
 ## 3.3.0 — unreleased
 
 - **Every audio track is kept.** A file with more than one audio track (two
