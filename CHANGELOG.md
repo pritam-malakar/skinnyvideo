@@ -46,8 +46,8 @@
 - **The Output folder is remembered across launches.** At launch it is used
   only if it still exists and is writable; otherwise Output starts unset, as
   before.
-- The skip label **"Existing" is now "Duplicate"**, with the tooltip "Same
-  file already added in this session". The run log keeps its `SKIP-EXISTS`
+- The skip label **"Existing" is now "Duplicate"**, with the tooltip "Already in
+  a batch going to this same run folder". The run log keeps its `SKIP-EXISTS`
   tag and adds the same wording.
 - Motion-JPEG video (older cameras and webcams) is now compressed. It used to
   be skipped as "not a video". Cover art is still ignored.

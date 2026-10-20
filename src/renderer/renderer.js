@@ -1884,7 +1884,7 @@ function buildFileRow(file, i, batchId, entering, batchStatus) {
   pill.className = 'pill';
   pill.innerHTML = `<span class="dot"></span>${PILL_LABEL[shownStatus] || shownStatus}`;
   if (file.status === 'failed' && file.failReason) pill.title = file.failReason;
-  if (file.status === 'existed') pill.title = 'Same file already added in this session';
+  if (file.status === 'existed') pill.title = 'Already in a batch going to this same run folder';
   statusCol.appendChild(pill);
   /* Dolby Vision loss made visible. hdrMeta lists exactly what the encoder
      that ran dropped (pipeline.detectDroppedHdrMeta); HDR10 values are

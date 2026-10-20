@@ -6,7 +6,7 @@
         user-facing "Existing" remains in the renderer.
    LOG  (REAL runBatch, REAL bundled ffmpeg, same tiny clip run twice into the
         same Output in the same minute): the second run logs
-        `SKIP-EXISTS  <src> (Duplicate: same file already added in this session; …)`
+        `SKIP-EXISTS  <src> (Duplicate: already in a batch going to this same run folder; …)`
         — the SKIP-EXISTS tag is kept for grep stability.
 
    FAIL-ON-OLD (3.2.2): the row said "Existing" (no tooltip) and the log line
@@ -60,7 +60,7 @@ app.whenReady().then(async () => {
       const pill = row.querySelector('.status .pill'); const cols = row.children;
       return { text: pill.textContent, title: pill.title, out: ([...cols].find((c) => c.classList.contains('mono') && c.style.textAlign === 'right') || {}).textContent || null, all: [...cols].map((c) => c.className + '=' + c.textContent) }; })()`);
     check(r && r.text === 'Duplicate', `row pill reads "Duplicate" (${JSON.stringify(r)})`);
-    check(r && r.title === 'Same file already added in this session', `tooltip "Same file already added in this session" (${r && r.title})`);
+    check(r && r.title === 'Already in a batch going to this same run folder', `tooltip "Already in a batch going to this same run folder" (${r && r.title})`);
     check(r && r.out === 'duplicate', `output column says "duplicate" (${r && r.out})`);
     const src = fs.readFileSync(path.join(ROOT, 'src/renderer/renderer.js'), 'utf8');
     check(!/'Existing'|'existing'/.test(src), 'no user-facing "Existing" string left in the renderer');
@@ -76,7 +76,7 @@ app.whenReady().then(async () => {
     await wait(300);
     const log = fs.readFileSync(r2.logPath, 'utf8');
     if (r1.runDir === r2.runDir) {
-      check(/^SKIP-EXISTS  .*dup\.mov \(Duplicate: same file already added in this session; already present in destination\)$/m.test(log),
+      check(/^SKIP-EXISTS  .*dup\.mov \(Duplicate: already in a batch going to this same run folder; already present in destination\)$/m.test(log),
         'log keeps SKIP-EXISTS and adds the Duplicate wording');
     } else {
       console.log('SKIP LOG: the two runs straddled a minute boundary (different run folders)');

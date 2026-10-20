@@ -1158,7 +1158,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
       done++;
       let existedSize = 0;
       try { existedSize = (await fsp.stat(finalPath)).size; } catch {}
-      log(`SKIP-EXISTS  ${v.file} (Duplicate: same file already added in this session; already present in destination)`);
+      log(`SKIP-EXISTS  ${v.file} (Duplicate: already in a batch going to this same run folder; already present in destination)`);
       onProgress && onProgress({
         type: 'file-done',
         index: i + 1,
