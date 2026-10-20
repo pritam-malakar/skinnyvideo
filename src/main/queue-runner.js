@@ -26,8 +26,11 @@ function releasePauseGate(state) {
    raises the flag runQueue/runBatch read at file boundaries. */
 function requestStop(runtime, { setStopFlag, onResumed }) {
   for (const [id, state] of runtime) {
-    if (state.paused && state.child) {
-      try { state.child.kill('SIGCONT'); } catch {}
+    /* 3.3.1: un-pause even with no live child (paused between two attempts of
+       one file) — the stop lets that file's retry/fallback run, and it must not
+       run while the batch still reads "Paused". */
+    if (state.paused) {
+      if (state.child) { try { state.child.kill('SIGCONT'); } catch {} }
       state.paused = false;
       if (onResumed) onResumed(id);
     }

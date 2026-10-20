@@ -932,6 +932,17 @@ async function runBatch(batch, controlOrFn, onProgress) {
   const isPaused    = ctl.isPaused    || (() => false);
   const isSkipped   = ctl.isSkipped   || (() => false);
   const waitWhilePaused = ctl.waitWhilePaused || (() => Promise.resolve());
+  /* 3.3.1: EVERY encode attempt (primary, colour-tag-free retry, libx265
+     fallback) passes this right before it spawns — a pause between two
+     attempts has no live child to SIGSTOP. Cancel aborts; stop counts only at
+     the file boundary (the primary), so a stop still lets the current file
+     finish, fallback included. → 'cancel' | 'stop' | null (go). */
+  const attemptGate = async (fileBoundary) => {
+    await waitWhilePaused();
+    if (isCancelled()) return 'cancel';
+    return fileBoundary && shouldStop() ? 'stop' : null;
+  };
+  const NOT_STARTED = { code: null, notStarted: true };
 
   const { src, dest, tier } = batch;
   /* Nerd Mode foundation: the batch carries fully-resolved encode settings
@@ -1273,9 +1284,9 @@ async function runBatch(batch, controlOrFn, onProgress) {
        between-files / ffprobe window (no live child to SIGSTOP) prevents its
        encoder from starting. Releases on resume/cancel/stop. A mid-encode pause
        (past this point) is still handled by SIGSTOP parking the live child. */
-    await waitWhilePaused();
-    if (shouldStop() || isCancelled()) {
-      stopped = !isCancelled();
+    const gate = await attemptGate(true);
+    if (gate) {
+      stopped = gate === 'stop';
       if (stopped) log(`# Stopped by user after ${done} of ${totalFiles}`);
       break;
     }
@@ -1367,7 +1378,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
         const bareArgs = buildArgs({ input: v.file, tmpOut: tmpPath, tier, settings, videoStream: vs, audioStreams, timecode, dropColorTags: true });
         const sink3 = stderrSink(onTime);
         lastProgress = 0;   // fresh encode → debounce finalization from zero
-        const r3 = await runCmd(ffmpeg, bareArgs, {
+        const r3 = (await attemptGate(false)) ? NOT_STARTED : await runCmd(ffmpeg, bareArgs, {
           onSpawn,
           stallTimeoutMs: STALL_TIMEOUT_MS,
           outPath: tmpPath,
@@ -1379,7 +1390,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
         });
         if (isCancelled()) {
           try { await fsp.unlink(tmpPath); } catch {}
-          log(`CANCELLED ${v.file} (operator cancel — no-color retry terminated)`);
+          log(`CANCELLED ${v.file} (operator cancel — no-color retry ${r3.notStarted ? 'not started' : 'terminated'})`);
           onProgress && onProgress({
             type: 'file-done',
             index: i + 1, total: totalFiles,
@@ -1416,7 +1427,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
       const fallbackArgs = buildFallbackArgs({ input: v.file, tmpOut: tmpPath, tier, settings, videoStream: vs, audioStreams, timecode, dropColorTags: optRejected, colorStamp });
       const sink2 = stderrSink(onTime);
       lastProgress = 0;   // fresh encode → debounce finalization from zero
-      const r2 = await runCmd(ffmpeg, fallbackArgs, {
+      const r2 = (await attemptGate(false)) ? NOT_STARTED : await runCmd(ffmpeg, fallbackArgs, {
         onSpawn,
         stallTimeoutMs: STALL_TIMEOUT_MS,
         outPath: tmpPath,
@@ -1430,7 +1441,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
       /* Cancel wins (runCmd resolved immediately on the flag). */
       if (isCancelled()) {
         try { await fsp.unlink(tmpPath); } catch {}
-        log(`CANCELLED ${v.file} (operator cancel — fallback encoder terminated)`);
+        log(`CANCELLED ${v.file} (operator cancel — fallback encoder ${r2.notStarted ? 'not started' : 'terminated'})`);
         onProgress && onProgress({
           type: 'file-done',
           index: i + 1, total: totalFiles,
