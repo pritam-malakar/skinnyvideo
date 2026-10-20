@@ -35,7 +35,8 @@
   between finishing a file and giving it its final name, the leftover
   `.tmp.mp4` is complete. On the next launch SkinnyVideo now checks each
   leftover against its original's length and offers **Keep** (rename it to its
-  normal name, `RECOVERED` in the run log) or Delete. Incomplete leftovers are
+  normal name at the top of its run folder, which stays flat, `RECOVERED` in
+  the run log) or Delete. Incomplete leftovers are
   offered for deletion only, as before.
 - **"Drop anywhere" now means anywhere.** Files dropped anywhere on the
   window are staged exactly as if they were dropped on the drop area,

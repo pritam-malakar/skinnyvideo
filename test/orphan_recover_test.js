@@ -64,22 +64,33 @@ const V = (d) => ['-f', 'lavfi', '-i', `testsrc2=s=320x240:r=25:d=${d}`];
     check(!by['stray.tmp.mp4'], 'CLASSIFY: an unrecorded .tmp.mp4 is never offered');
 
     // a finished file already holds "whole.mp4" in this folder? → _2. First: free name.
+    const runTop = path.dirname(run);   // F2: kept files are lifted to the run folder, as flattenRunDir does
     const rec = await O.recoverPartials([tmp.whole, tmp.cut, tmp.gone, tmp.stray], { recorded, roots, info, durationOf: P.videoDuration });
-    check(rec.length === 1 && rec[0] === path.join(run, 'whole.mp4'), `RECOVER: only the complete leftover is renamed, to whole.mp4 (${rec.map((r) => path.basename(r))})`);
-    check(!fs.existsSync(tmp.whole) && fs.existsSync(path.join(run, 'whole.mp4')), 'RECOVER: temp name gone, final name present');
-    check(fs.existsSync(tmp.cut) && fs.existsSync(tmp.gone) && fs.existsSync(tmp.stray), 'RECOVER: incomplete and unrecorded leftovers untouched');
-    check(Math.abs(fs.statSync(path.join(run, 'whole.mp4')).mtimeMs - old.getTime()) < 2000, 'RECOVER: output takes the source\'s mtime');
+    check(rec.length === 1 && rec[0] === path.join(runTop, 'whole.mp4'), `RECOVER: only the complete leftover is kept, as <run>/whole.mp4 (${rec.map((r) => path.relative(out, r))})`);
+    check(!fs.existsSync(tmp.whole) && fs.existsSync(path.join(runTop, 'whole.mp4')) && !fs.existsSync(path.join(run, 'whole.mp4')), 'RECOVER: temp name gone, final name at the top of the run folder');
+    check(fs.existsSync(tmp.cut) && fs.existsSync(tmp.gone) && fs.existsSync(tmp.stray), 'RECOVER: incomplete and unrecorded leftovers untouched, still in their subfolder');
+    check(Math.abs(fs.statSync(path.join(runTop, 'whole.mp4')).mtimeMs - old.getTime()) < 2000, 'RECOVER: output takes the source\'s mtime');
     const log = fs.readFileSync(logPath, 'utf8');
-    check(log.includes(`RECOVERED ${src.whole} -> ${path.join(run, 'whole.mp4')}`), 'RECOVER: `RECOVERED <src> -> <final>` in the run folder\'s compress.log');
+    check(log.includes(`RECOVERED ${src.whole} -> ${path.join(runTop, 'whole.mp4')}`), 'RECOVER: `RECOVERED <src> -> <final>` in the run folder\'s compress.log');
 
     // name already taken → _2, never overwrite
     const tmp2 = path.join(run, 'whole.tmp_2.mp4');
     ff(['-i', src.whole, '-c', 'copy', tmp2]);
     const info2 = { [tmp2]: { final: path.join(run, 'whole.mp4'), source: src.whole } };
-    const before = fs.statSync(path.join(run, 'whole.mp4')).size;
+    const before = fs.statSync(path.join(runTop, 'whole.mp4')).size;
     const rec2 = await O.recoverPartials([tmp2], { recorded: [tmp2], roots, info: info2, durationOf: P.videoDuration });
-    check(rec2.length === 1 && path.basename(rec2[0]) === 'whole_2.mp4' && fs.statSync(path.join(run, 'whole.mp4')).size === before,
-      `RECOVER: a taken final name gets _2 and the existing file is not overwritten (${rec2.map((r) => path.basename(r))})`);
+    check(rec2.length === 1 && path.dirname(rec2[0]) === runTop && path.basename(rec2[0]) !== 'whole.mp4' && fs.statSync(path.join(runTop, 'whole.mp4')).size === before,
+      `RECOVER: taken names get flattenRunDir's clash name and nothing is overwritten (${rec2.map((r) => path.relative(out, r))})`);
+
+    // F2 fixture: a run whose only leftover is complete, inside a stage subfolder.
+    {
+      const run2 = path.join(out, 'Compressed_2026-10-20_0600'); const sub = path.join(run2, 'Selected files (1)', 'Card');
+      fs.mkdirSync(sub, { recursive: true }); fs.writeFileSync(path.join(run2, 'compress.log'), '# run\n');
+      const t = path.join(sub, 'whole.tmp.mp4'); ff(['-i', src.whole, '-c', 'copy', t]);
+      const r = await O.recoverPartials([t], { recorded: [t], roots, info: { [t]: { final: path.join(sub, 'whole.mp4'), source: src.whole } }, durationOf: P.videoDuration });
+      check(r[0] === path.join(run2, 'whole.mp4') && fs.existsSync(r[0]), `FLAT: kept file sits directly in the run folder under its final name (${r.map((x) => path.relative(out, x))})`);
+      check(fs.readdirSync(run2).sort().join(',') === 'compress.log,whole.mp4', `FLAT: stage subfolders are gone (${fs.readdirSync(run2).join(', ')})`);
+    }
 
     const del = await O.deletePartials([tmp.cut], { recorded, roots });
     check(del === 1 && !fs.existsSync(tmp.cut), 'DELETE: an incomplete leftover can still be deleted');

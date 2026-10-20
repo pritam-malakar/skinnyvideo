@@ -16,9 +16,12 @@ const { assignStems } = require('./naming');
    promoted, so a partial never poses as a final. ONLY the exact paths the
    pipeline recorded (result.partials) count as partials: matching the
    ".tmp.mp4" suffix deleted real outputs of sources like "holiday.tmp.mov".
-   Pure fs/path only (no electron) so it is unit-testable in plain node. */
-async function flattenRunDir(runDir, partials = []) {
+   Pure fs/path only (no electron) so it is unit-testable in plain node.
+   opts.keep: paths left exactly where they are (launch recovery passes the
+   leftovers still awaiting a decision). opts.onMove(from, to) per lift. */
+async function flattenRunDir(runDir, partials = [], { keep = [], onMove } = {}) {
   const recorded = new Set(partials);
+  const kept = new Set(keep);
   const taken = new Set();
   try {
     for (const e of await fsp.readdir(runDir, { withFileTypes: true })) {
@@ -35,6 +38,8 @@ async function flattenRunDir(runDir, partials = []) {
       if (e.isDirectory()) {
         if (depth === 0 && e.name === '_FAILED') continue;   // keep nested
         await collect(p, depth + 1);
+      } else if (kept.has(p)) {
+        continue;
       } else if (e.isFile() && recorded.has(p)) {
         try { await fsp.unlink(p); } catch {}
       } else if (e.isFile() && depth > 0) {
@@ -47,7 +52,8 @@ async function flattenRunDir(runDir, partials = []) {
   let lifted = 0;
   const stems = assignStems(outputs, taken);
   for (const p of outputs) {
-    try { await fsp.rename(p, path.join(runDir, stems.get(p) + path.extname(p))); lifted++; } catch {}
+    const to = path.join(runDir, stems.get(p) + path.extname(p));
+    try { await fsp.rename(p, to); lifted++; if (onMove) onMove(p, to); } catch {}
   }
 
   async function pruneEmpty(dir, depth) {

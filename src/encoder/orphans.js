@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const { flattenRunDir } = require('./flatten');
 const fsp = fs.promises;
 
 /* ─── Orphaned-partial detection ─────────────────────────────────────
@@ -98,7 +99,10 @@ async function classifyPartials(orphans, info, durationOf) {
    finish, and appends `RECOVERED <src> -> <final>` to its run folder's
    compress.log. Same safety contract as deletion, and completeness is
    re-checked here — the renderer's word is never trusted. The final name
-   must sit in the partial's own folder. Returns the new paths. */
+   must sit in the partial's own folder. The run folder is then flattened
+   exactly as after a normal batch (flattenRunDir), so the kept file lands
+   at the top of its run folder; leftovers still awaiting a decision (and
+   anything named like a partial) stay where they are. Returns the new paths. */
 async function recoverPartials(paths, { recorded = [], roots = [], info = {}, durationOf } = {}) {
   const set = new Set(recorded);
   const recovered = [];
@@ -114,8 +118,18 @@ async function recoverPartials(paths, { recorded = [], roots = [], info = {}, du
     const parts = p.split(path.sep);
     const runIdx = parts.findIndex((seg) => seg.startsWith('Compressed_'));
     if (runIdx > 0) {
-      const logPath = path.join(parts.slice(0, runIdx + 1).join(path.sep), 'compress.log');
-      try { await fsp.appendFile(logPath, `RECOVERED ${c.source} -> ${dest} (finished encode kept after an interrupted run)\n`); } catch {}
+      const runDir = parts.slice(0, runIdx + 1).join(path.sep);
+      const keep = [];
+      const walk = async (d) => {
+        for (const e of await fsp.readdir(d, { withFileTypes: true }).catch(() => [])) {
+          const q = path.join(d, e.name);
+          if (e.isDirectory()) await walk(q);
+          else if (set.has(q) || /\.tmp(_\d+)?\.mp4$/.test(e.name)) keep.push(q);
+        }
+      };
+      await walk(runDir);
+      await flattenRunDir(runDir, [], { keep, onMove: (from, to) => { if (from === dest) dest = to; } });
+      try { await fsp.appendFile(path.join(runDir, 'compress.log'), `RECOVERED ${c.source} -> ${dest} (finished encode kept after an interrupted run)\n`); } catch {}
     }
     recovered.push(dest);
   }
