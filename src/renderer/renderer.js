@@ -3118,14 +3118,30 @@ window.api.onOrphansFound(async ({ orphans: all } = {}) => {
   if (!orphans.length) return;
   const n = orphans.length;
   const totalBytes = orphans.reduce((a, o) => a + (Number.isFinite(o.size) ? o.size : 0), 0);
+  /* 3.3.1: say why each can only be deleted (main's `reason`). A leftover from
+     an older version or with no run folder may be whole, so the wording drops
+     "unfinished" / "partly-written" unless every one is known incomplete. */
+  const count = { incomplete: 0, 'older-version': 0, 'run-folder-missing': 0 };
+  for (const o of orphans) count[o.reason in count ? o.reason : 'incomplete']++;
+  const why = (r, k, numbered) => {
+    const pl = k !== 1;
+    if (r === 'incomplete') return numbered ? `${k} ${pl ? 'are' : 'is'} incomplete.` : `${pl ? 'They’re' : 'It’s'} incomplete.`;
+    const head = numbered ? `${k} can’t be kept` : `${pl ? 'They' : 'It'} can’t be kept`;
+    return r === 'older-version'
+      ? `${head}: ${pl ? 'they were' : 'it was'} recorded by an older version of SkinnyVideo.`
+      : `${head}: ${pl ? 'their run folders are' : 'its run folder is'} missing.`;
+  };
+  const groups = Object.entries(count).filter(([, k]) => k);
+  const reasons = groups.length === 1 ? why(groups[0][0], n, false) : groups.map(([r, k]) => why(r, k, true)).join(' ');
+  const allIncomplete = count.incomplete === n;
   const body =
-    `<div>SkinnyVideo found <strong>${n}</strong> unfinished file${n === 1 ? '' : 's'} left over from `
+    `<div>SkinnyVideo found <strong>${n}</strong> ${allIncomplete ? 'unfinished ' : ''}file${n === 1 ? '' : 's'} left over from `
     + `one or more interrupted runs (about <strong>${humanBytes(totalBytes)}</strong> in total). `
-    + `${n === 1 ? 'It’s' : 'They’re'} incomplete.</div>`
-    + `<div class="fine">Deleting ${n === 1 ? 'it' : 'them'} only removes the leftover, partly-written `
+    + `${reasons}</div>`
+    + `<div class="fine">Deleting ${n === 1 ? 'it' : 'them'} only removes the leftover${allIncomplete ? ', partly-written' : ''} `
     + `file${n === 1 ? '' : 's'}. Your original videos and any finished compressed files are not affected.</div>`;
   const choice = await showModal({
-    title: 'Clean up unfinished files?',
+    title: allIncomplete ? 'Clean up unfinished files?' : 'Clean up leftover files?',
     tone: 'info',
     body,
     actions: [

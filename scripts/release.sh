@@ -134,6 +134,11 @@ DMG=$(find "$DIST_DIR" -maxdepth 1 -name '*.dmg')
 # the "about NNN MB" stated in README.md and site/*.html by more than 10 MB.
 sh scripts/check-download-size.sh "$DMG"
 
+# ── 3a'. CHANGELOG dated for the version being built? ────────────────────────
+# Same moment, same reason: abort before any signing or notarization is spent
+# if CHANGELOG.md still heads this version "— unreleased" (or has no entry).
+sh scripts/check-changelog-date.sh "$(node -p "require('./package.json').version")"
+
 # ── 3b. Sign the dmg CONTAINER ───────────────────────────────────────────────
 # electron-builder signs the .app inside the image; the disk image itself is
 # left unsigned (build.dmg.sign is unset, and stays unset — this is the one

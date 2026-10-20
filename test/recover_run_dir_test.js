@@ -101,6 +101,9 @@ const diff = (a, b) => [...new Set([...Object.keys(a), ...Object.keys(b)])].filt
     const found = await O.findOrphanPartials([t2, t3], [out2]);
     const cls = await O.classifyPartials(found, info2, P.videoDuration, { log: (m) => logs2.push(m) });
     check(cls.length === 2 && cls.every((c) => c.complete === false), `NO-RUNDIR: leftover is Delete only (${JSON.stringify(cls.map((c) => [path.basename(c.path), c.complete]))})`);
+    const why = Object.fromEntries(cls.map((c) => [path.basename(c.path), c.reason]));
+    check(why['clip.tmp.mp4'] === 'run-folder-missing' && why['clip.tmp_2.mp4'] === 'older-version',
+      `G1: reason says why — recorded folder gone → run-folder-missing, no folder on record → older-version (${JSON.stringify(why)})`);
     check(logs2.includes(`RECOVER-SKIP ${t2} (run folder not found)`) && logs2.includes(`RECOVER-SKIP ${t3} (run folder not found)`), `NO-RUNDIR: RECOVER-SKIP logged (${JSON.stringify(logs2)})`);
     const pre2 = snapshot(SB);
     const rec2 = await O.recoverPartials([t2, t3], { recorded: [t2, t3], roots: [out2], info: info2, durationOf: P.videoDuration, log: () => {} });

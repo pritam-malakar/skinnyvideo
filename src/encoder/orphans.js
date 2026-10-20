@@ -82,7 +82,10 @@ async function deletePartials(paths, { recorded = [], roots = [] } = {}) {
    3.3.1: so is one whose recorded run folder (meta.runDir, recorded with the
    partial) is absent from the record, gone from disk, misnamed, or not the
    partial's own ancestor — logged as RECOVER-SKIP; Keep would have nowhere
-   safe to flatten. durationOf(file) → seconds | null (pipeline.videoDuration). */
+   safe to flatten. Each delete-only leftover carries `reason`, shown in the
+   cleanup prompt: 'older-version' (record has no run folder: 3.3.0 or older),
+   'run-folder-missing', or 'incomplete'.
+   durationOf(file) → seconds | null (pipeline.videoDuration). */
 const defaultLog = (m) => console.log(`[SkinnyVideo] ${m}`);
 
 async function recordedRunDir(p, meta) {
@@ -97,13 +100,17 @@ async function classifyPartials(orphans, info, durationOf, { log = defaultLog } 
     const meta = (info && info[o.path]) || {};
     let complete = false;
     const runDir = await recordedRunDir(o.path, meta);
-    if (!runDir) log(`RECOVER-SKIP ${o.path} (run folder not found)`);
+    let reason = 'incomplete';
+    if (!runDir) {
+      reason = typeof meta.runDir === 'string' ? 'run-folder-missing' : 'older-version';
+      log(`RECOVER-SKIP ${o.path} (run folder not found)`);
+    }
     else if (typeof meta.source === 'string' && typeof meta.final === 'string') {
       const srcDur = await Promise.resolve(durationOf(meta.source)).catch(() => null);
       const outDur = srcDur ? await Promise.resolve(durationOf(o.path)).catch(() => null) : null;
       complete = !!(srcDur && outDur != null && srcDur - outDur <= Math.max(1.0, srcDur * 0.02));
     }
-    out.push({ ...o, complete, final: meta.final || null, source: meta.source || null, runDir });
+    out.push({ ...o, complete, reason: complete ? null : reason, final: meta.final || null, source: meta.source || null, runDir });
   }
   return out;
 }

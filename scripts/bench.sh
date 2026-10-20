@@ -93,7 +93,11 @@ fi
 # VMAF, same frame pairing and comparison format as PSNR/SSIM above.
 VMAF_FF=""; VMAF_FFVER=""; VRC=""
 for c in "$FFMPEG" "${SV_VMAF_FFMPEG:-}" /opt/homebrew/bin/ffmpeg /usr/local/bin/ffmpeg "$(command -v ffmpeg || true)"; do
-  if [ -n "$c" ] && [ -x "$c" ] && "$c" -hide_banner -filters 2>/dev/null | grep -q ' libvmaf '; then VMAF_FF="$c"; break; fi
+  [ -n "$c" ] && [ -x "$c" ] || continue
+  # Whole list into a variable first: `| grep -q` exits at the first match, ffmpeg
+  # then dies of SIGPIPE, and under pipefail the check failed now and then.
+  filters="$("$c" -hide_banner -filters 2>/dev/null || true)"
+  case "$filters" in *" libvmaf "*) VMAF_FF="$c"; break ;; esac
 done
 if [ "$RC" = 0 ] && [ -n "$VMAF_FF" ]; then
   VMAF_FFVER="$("$VMAF_FF" -hide_banner -version | head -1)"

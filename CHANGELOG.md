@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.3.1 — unreleased
+## 3.3.1 — 2026-10-21
 
 Fixes for six findings from an external audit of 3.3.0.
 
@@ -33,7 +33,7 @@ Fixes for six findings from an external audit of 3.3.0.
   queued batch used to reorder the list on screen only, and the run kept its
   original order. Now the next batch to start is the one shown next.
 
-## 3.3.0 — unreleased
+## 3.3.0 — 2026-10-20
 
 - **Every audio track is kept.** A file with more than one audio track (two
   microphones, a camera's second channel pair, an iPhone ProRes clip's extra

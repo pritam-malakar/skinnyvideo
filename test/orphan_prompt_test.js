@@ -9,7 +9,11 @@
              Delete only — no Keep-as-finished) → delete-orphans([incomplete]).
    INCOMPLETE-ONLY → only the 3.2.2 prompt; no recover call is possible.
 
-   FAIL-ON-OLD (3.2.2): one prompt for everything, Delete only.
+   G1 (3.3.1) a delete-only leftover says why: "incomplete", "recorded by an older
+             version of SkinnyVideo", or "its run folder is missing" (and counts when mixed).
+
+   FAIL-ON-OLD (3.2.2): one prompt for everything, Delete only. G1 on 3.3.1's
+   first build: every delete-only leftover was called "incomplete".
    Run: ./node_modules/.bin/electron test/orphan_prompt_test.js */
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
@@ -66,6 +70,31 @@ app.whenReady().then(async () => {
   check(m && /incomplete/.test(m.body) && !m.buttons.includes('Keep'), `INCOMPLETE-ONLY: only the 3.2.2 prompt (${JSON.stringify(m)})`);
   await run(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); true`); await wait(200);
   check(calls.length === 0, 'INCOMPLETE-ONLY: dismissing deletes and recovers nothing');
+
+  // ── 3.3.1 G1: a delete-only prompt says WHY (main's classifyPartials `reason`) ──
+  const promptFor = async (orphans) => {
+    calls.length = 0;
+    win.webContents.send('orphans-found', { orphans });
+    await wait(300);
+    const mm = await modal();
+    await run(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); true`); await wait(200);
+    return mm;
+  };
+  const O = '/out/Compressed_2026-10-20_0500/Card/old.tmp.mp4', G = '/out/Compressed_2026-10-20_0600/Card/gone.tmp.mp4';
+  m = await promptFor([{ path: C, size: 1_000_000, complete: false, reason: 'incomplete' }]);
+  check(m && m.body.includes('It’s incomplete.') && !/older version|run folder/.test(m.body) && m.title === 'Clean up unfinished files?',
+    `G1 INCOMPLETE: "It’s incomplete." (${JSON.stringify(m)})`);
+  m = await promptFor([{ path: O, size: 1_000_000, complete: false, reason: 'older-version' }]);
+  check(m && m.body.includes('It can’t be kept: it was recorded by an older version of SkinnyVideo.') && !/incomplete/.test(m.body) && !m.buttons.includes('Keep'),
+    `G1 OLDER-VERSION: "It can’t be kept: it was recorded by an older version of SkinnyVideo." (${JSON.stringify(m)})`);
+  m = await promptFor([{ path: G, size: 1_000_000, complete: false, reason: 'run-folder-missing' }]);
+  check(m && m.body.includes('It can’t be kept: its run folder is missing.') && !/incomplete/.test(m.body) && !m.buttons.includes('Keep'),
+    `G1 RUN-FOLDER-MISSING: "It can’t be kept: its run folder is missing." (${JSON.stringify(m)})`);
+  m = await promptFor([{ path: C, size: 1, complete: false, reason: 'incomplete' }, { path: O, size: 1, complete: false, reason: 'older-version' },
+    { path: G, size: 1, complete: false, reason: 'run-folder-missing' }, { path: G + '2', size: 1, complete: false, reason: 'run-folder-missing' }]);
+  check(m && m.body.includes('1 is incomplete. 1 can’t be kept: it was recorded by an older version of SkinnyVideo. 2 can’t be kept: their run folders are missing.'),
+    `G1 MIXED: one sentence per reason, with counts (${JSON.stringify(m)})`);
+  check(calls.length === 0, 'G1: dismissing deletes nothing');
 
   console.log(`\n[orphan-prompt] PASS: ${PASS.length} FAIL: ${FAIL.length}`);
   app.exit(FAIL.length ? 1 : 0);
