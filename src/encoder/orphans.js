@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const { flattenRunDir } = require('./flatten');
+const { isRunFolderName } = require('./naming');
 const fsp = fs.promises;
 
 /* ─── Orphaned-partial detection ─────────────────────────────────────
@@ -17,7 +18,7 @@ const fsp = fs.promises;
    Safety contract (shared by detection and deletion): a path is a deletable
    partial only when it is in the recorded set, still has a temp name
    ("<stem>.tmp.mp4" or "<stem>.tmp_<n>.mp4", see naming.reserveTempStem), sits
-   under a "Compressed_" run folder, is a regular file (not a symlink), and its
+   under a run folder (naming.isRunFolderName), is a regular file (not a symlink), and its
    realpath is under the realpath of a known output root. Pure fs/path, no
    electron, so it is unit-testable in plain node. */
 
@@ -40,7 +41,7 @@ const TEMP_NAME = /\.tmp(_\d+)?\.mp4$/;
 
 async function isDeletablePartial(p, recorded, roots) {
   if (typeof p !== 'string' || !recorded || !recorded.has(p)) return false;
-  if (!TEMP_NAME.test(p) || !p.includes(`${path.sep}Compressed_`)) return false;
+  if (!TEMP_NAME.test(p) || !path.dirname(p).split(path.sep).some(isRunFolderName)) return false;
   try { if (!(await fsp.lstat(p)).isFile()) return false; } catch { return false; }
   return isUnderRoots(p, roots);
 }
@@ -78,18 +79,31 @@ async function deletePartials(paths, { recorded = [], roots = [] } = {}) {
    ORIGINAL file, not a staged link). A leftover is complete when its video
    stream is as long as its source's, within the duration guard's tolerance
    (max(1 s, 2%)). Source gone, or either duration unknown → incomplete.
-   durationOf(file) → seconds | null (pipeline.videoDuration). */
-async function classifyPartials(orphans, info, durationOf) {
+   3.3.1: so is one whose recorded run folder (meta.runDir, recorded with the
+   partial) is absent from the record, gone from disk, misnamed, or not the
+   partial's own ancestor — logged as RECOVER-SKIP; Keep would have nowhere
+   safe to flatten. durationOf(file) → seconds | null (pipeline.videoDuration). */
+const defaultLog = (m) => console.log(`[SkinnyVideo] ${m}`);
+
+async function recordedRunDir(p, meta) {
+  const d = meta && meta.runDir;
+  if (typeof d !== 'string' || !isRunFolderName(path.basename(d)) || !p.startsWith(d + path.sep)) return null;
+  try { return (await fsp.lstat(d)).isDirectory() ? d : null; } catch { return null; }
+}
+
+async function classifyPartials(orphans, info, durationOf, { log = defaultLog } = {}) {
   const out = [];
   for (const o of orphans || []) {
     const meta = (info && info[o.path]) || {};
     let complete = false;
-    if (typeof meta.source === 'string' && typeof meta.final === 'string') {
+    const runDir = await recordedRunDir(o.path, meta);
+    if (!runDir) log(`RECOVER-SKIP ${o.path} (run folder not found)`);
+    else if (typeof meta.source === 'string' && typeof meta.final === 'string') {
       const srcDur = await Promise.resolve(durationOf(meta.source)).catch(() => null);
       const outDur = srcDur ? await Promise.resolve(durationOf(o.path)).catch(() => null) : null;
       complete = !!(srcDur && outDur != null && srcDur - outDur <= Math.max(1.0, srcDur * 0.02));
     }
-    out.push({ ...o, complete, final: meta.final || null, source: meta.source || null });
+    out.push({ ...o, complete, final: meta.final || null, source: meta.source || null, runDir });
   }
   return out;
 }
@@ -99,38 +113,33 @@ async function classifyPartials(orphans, info, durationOf) {
    finish, and appends `RECOVERED <src> -> <final>` to its run folder's
    compress.log. Same safety contract as deletion, and completeness is
    re-checked here — the renderer's word is never trusted. The final name
-   must sit in the partial's own folder. The run folder is then flattened
-   exactly as after a normal batch (flattenRunDir), so the kept file lands
-   at the top of its run folder; leftovers still awaiting a decision (and
-   anything named like a partial) stay where they are. Returns the new paths. */
-async function recoverPartials(paths, { recorded = [], roots = [], info = {}, durationOf } = {}) {
+   must sit in the partial's own folder. The partial's RECORDED run folder
+   (never an ancestor found by name) is then flattened exactly as after a
+   normal batch (flattenRunDir), so the kept file lands at its top; leftovers
+   still awaiting a decision (and anything named like a partial) stay put. Returns the new paths. */
+async function recoverPartials(paths, { recorded = [], roots = [], info = {}, durationOf, log = defaultLog } = {}) {
   const set = new Set(recorded);
   const recovered = [];
   for (const p of (Array.isArray(paths) ? paths : [])) {
     if (!(await isDeletablePartial(p, set, roots))) continue;
-    const [c] = await classifyPartials([{ path: p }], info, durationOf);
+    const [c] = await classifyPartials([{ path: p }], info, durationOf, { log });
     if (!c.complete || path.dirname(c.final) !== path.dirname(p)) continue;
     const { dir, name, ext } = path.parse(c.final);
     let dest = c.final;
     for (let n = 2; fs.existsSync(dest); n++) dest = path.join(dir, `${name}_${n}${ext}`);
     try { await fsp.rename(p, dest); } catch { continue; }
     try { const st = await fsp.stat(c.source); await fsp.utimes(dest, st.atime, st.mtime); } catch {}
-    const parts = p.split(path.sep);
-    const runIdx = parts.findIndex((seg) => seg.startsWith('Compressed_'));
-    if (runIdx > 0) {
-      const runDir = parts.slice(0, runIdx + 1).join(path.sep);
-      const keep = [];
-      const walk = async (d) => {
-        for (const e of await fsp.readdir(d, { withFileTypes: true }).catch(() => [])) {
-          const q = path.join(d, e.name);
-          if (e.isDirectory()) await walk(q);
-          else if (set.has(q) || /\.tmp(_\d+)?\.mp4$/.test(e.name)) keep.push(q);
-        }
-      };
-      await walk(runDir);
-      await flattenRunDir(runDir, [], { keep, onMove: (from, to) => { if (from === dest) dest = to; } });
-      try { await fsp.appendFile(path.join(runDir, 'compress.log'), `RECOVERED ${c.source} -> ${dest} (finished encode kept after an interrupted run)\n`); } catch {}
-    }
+    const keep = [];
+    const walk = async (d) => {
+      for (const e of await fsp.readdir(d, { withFileTypes: true }).catch(() => [])) {
+        const q = path.join(d, e.name);
+        if (e.isDirectory()) await walk(q);
+        else if (set.has(q) || TEMP_NAME.test(e.name)) keep.push(q);
+      }
+    };
+    await walk(c.runDir);
+    await flattenRunDir(c.runDir, [], { keep, onMove: (from, to) => { if (from === dest) dest = to; } });
+    try { await fsp.appendFile(path.join(c.runDir, 'compress.log'), `RECOVERED ${c.source} -> ${dest} (finished encode kept after an interrupted run)\n`); } catch {}
     recovered.push(dest);
   }
   return recovered;

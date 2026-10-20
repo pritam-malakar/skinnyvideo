@@ -2,7 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
 const { spawn } = require('child_process');
-const { assignStems, reserveTempStem } = require('./naming');
+const { assignStems, reserveTempStem, isRunFolderName } = require('./naming');
 let _electronApp = null;
 try { _electronApp = require('electron').app; } catch {}
 
@@ -474,7 +474,6 @@ async function isVideoFile(file) {
    Not applied to a staged file-list dir (keepAll) — those are explicit picks,
    and a picked file may legitimately live in an old run folder. Every video
    left out this way is counted in skipped.n so the skip is never silent. */
-const RUN_FOLDER_RE = /^Compressed_\d{4}-\d{2}-\d{2}_\d{4}$/;
 const TEMP_OUTPUT_RE = /\.tmp(_\d+)?\.mp4$/i;
 
 async function walkAll(dir, out, keepAll = false, skipped = { n: 0 }) {
@@ -484,7 +483,7 @@ async function walkAll(dir, out, keepAll = false, skipped = { n: 0 }) {
     if (e.name.startsWith('.')) continue;
     const full = path.join(dir, e.name);
     if (e.isDirectory()) {
-      if (keepAll || !RUN_FOLDER_RE.test(e.name)) { await walkAll(full, out, keepAll, skipped); continue; }
+      if (keepAll || !isRunFolderName(e.name)) { await walkAll(full, out, keepAll, skipped); continue; }
       const inside = [];
       await walkAll(full, inside, true);
       skipped.n += inside.filter((f) => VIDEO_EXTS.has(path.extname(f).toLowerCase())).length;
@@ -1219,7 +1218,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
       ({ tmpPath } = destForInput(runDir, scan.rootKind, scan.root, v.file, stems.get(v.file), tmpStems.get(v.file)));
     }
     partials.push(tmpPath);
-    try { onPartial(tmpPath, { final: finalPath, source: v.file }); } catch {}
+    try { onPartial(tmpPath, { final: finalPath, source: v.file, runDir }); } catch {}
     try { await fsp.unlink(tmpPath); } catch {}
 
     const probe = await ffprobeJson(v.file);

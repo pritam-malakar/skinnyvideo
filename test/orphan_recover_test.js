@@ -12,7 +12,7 @@
              source), logs `RECOVERED <src> -> <final>` in compress.log, leaves
              cut/gone untouched; a taken final name gets _2, never overwritten.
    DELETE    delete(cut) still works as in 3.2.2.
-   RECORD    the real queue-runner hands main { final, source } for each partial,
+   RECORD    the real queue-runner hands main { final, source, runDir } for each partial,
              with the ORIGINAL source path even for a staged file-list batch.
 
    FAIL-ON-OLD (3.2.2): orphans.js had no completeness check and no recovery —
@@ -52,7 +52,9 @@ const V = (d) => ['-f', 'lavfi', '-i', `testsrc2=s=320x240:r=25:d=${d}`];
     ff(['-i', src.whole, '-c', 'copy', tmp.stray]);
     fs.unlinkSync(src.gone);
     const recorded = [tmp.whole, tmp.cut, tmp.gone];
-    const info = Object.fromEntries(['whole', 'cut', 'gone'].map((k) => [tmp[k], { final: path.join(run, k + '.mp4'), source: src[k] }]));
+    const runTop0 = path.dirname(run);
+    // 3.3.1 Item 1: records carry the run folder too (a record without one is Delete only)
+    const info = Object.fromEntries(['whole', 'cut', 'gone'].map((k) => [tmp[k], { final: path.join(run, k + '.mp4'), source: src[k], runDir: runTop0 }]));
     const roots = [out];
 
     const found = await O.findOrphanPartials(recorded, roots);
@@ -76,7 +78,7 @@ const V = (d) => ['-f', 'lavfi', '-i', `testsrc2=s=320x240:r=25:d=${d}`];
     // name already taken → _2, never overwrite
     const tmp2 = path.join(run, 'whole.tmp_2.mp4');
     ff(['-i', src.whole, '-c', 'copy', tmp2]);
-    const info2 = { [tmp2]: { final: path.join(run, 'whole.mp4'), source: src.whole } };
+    const info2 = { [tmp2]: { final: path.join(run, 'whole.mp4'), source: src.whole, runDir: runTop0 } };
     const before = fs.statSync(path.join(runTop, 'whole.mp4')).size;
     const rec2 = await O.recoverPartials([tmp2], { recorded: [tmp2], roots, info: info2, durationOf: P.videoDuration });
     check(rec2.length === 1 && path.dirname(rec2[0]) === runTop && path.basename(rec2[0]) !== 'whole.mp4' && fs.statSync(path.join(runTop, 'whole.mp4')).size === before,
@@ -87,7 +89,7 @@ const V = (d) => ['-f', 'lavfi', '-i', `testsrc2=s=320x240:r=25:d=${d}`];
       const run2 = path.join(out, 'Compressed_2026-10-20_0600'); const sub = path.join(run2, 'Selected files (1)', 'Card');
       fs.mkdirSync(sub, { recursive: true }); fs.writeFileSync(path.join(run2, 'compress.log'), '# run\n');
       const t = path.join(sub, 'whole.tmp.mp4'); ff(['-i', src.whole, '-c', 'copy', t]);
-      const r = await O.recoverPartials([t], { recorded: [t], roots, info: { [t]: { final: path.join(sub, 'whole.mp4'), source: src.whole } }, durationOf: P.videoDuration });
+      const r = await O.recoverPartials([t], { recorded: [t], roots, info: { [t]: { final: path.join(sub, 'whole.mp4'), source: src.whole, runDir: run2 } }, durationOf: P.videoDuration });
       check(r[0] === path.join(run2, 'whole.mp4') && fs.existsSync(r[0]), `FLAT: kept file sits directly in the run folder under its final name (${r.map((x) => path.relative(out, x))})`);
       check(fs.readdirSync(run2).sort().join(',') === 'compress.log,whole.mp4', `FLAT: stage subfolders are gone (${fs.readdirSync(run2).join(', ')})`);
     }
@@ -107,6 +109,8 @@ const V = (d) => ['-f', 'lavfi', '-i', `testsrc2=s=320x240:r=25:d=${d}`];
     check(seen.length === 1 && ri && ri.source === src.whole, `RECORD: onPartial gets the ORIGINAL source, not the staged link (${JSON.stringify(ri)})`);
     check(ri && path.dirname(ri.final) === path.dirname(rp) && /\.tmp(_\d+)?\.mp4$/.test(rp) && ri.final === rp.replace(/\.tmp(_\d+)?\.mp4$/, '.mp4'),
       `RECORD: final is the partial's own name without .tmp (${rp} → ${ri && ri.final})`);
+    check(ri && /^Compressed_\d{4}-\d{2}-\d{2}_\d{4}$/.test(path.basename(ri.runDir || '')) && path.dirname(ri.runDir) === out3 && rp.startsWith(ri.runDir + path.sep),
+      `RECORD: 3.3.1 — runDir is the partial's own run folder (${ri && ri.runDir})`);
   } catch (e) {
     console.error(e);
     FAIL.push('unexpected throw: ' + (e && e.message));

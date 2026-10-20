@@ -1,7 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
-const { assignStems } = require('./naming');
+const { assignStems, isRunFolderName } = require('./naming');
 
 /* ─── Output flattening ─────────────────────────────────────────────
    Pipeline writes outputs mirroring the source folder structure. After
@@ -20,6 +20,7 @@ const { assignStems } = require('./naming');
    opts.keep: paths left exactly where they are (launch recovery passes the
    leftovers still awaiting a decision). opts.onMove(from, to) per lift. */
 async function flattenRunDir(runDir, partials = [], { keep = [], onMove } = {}) {
+  if (!isRunFolderName(path.basename(runDir))) return 0;   // never flatten anything but a run folder
   const recorded = new Set(partials);
   const kept = new Set(keep);
   const taken = new Set();

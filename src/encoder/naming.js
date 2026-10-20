@@ -69,4 +69,9 @@ function reserveTempStem(stem, taken) {
   return name;
 }
 
-module.exports = { assignStems, safeFolderName, reserveTempStem };
+/* THE run-folder test, shared by every place that identifies one (scanner,
+   flatten, launch recovery): exactly the name tsRunFolder makes. A prefix match
+   took a user's "Compressed_archives" project folder for a run folder. */
+const isRunFolderName = (name) => /^Compressed_\d{4}-\d{2}-\d{2}_\d{4}$/.test(name);
+
+module.exports = { assignStems, safeFolderName, reserveTempStem, isRunFolderName };

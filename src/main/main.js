@@ -346,7 +346,7 @@ app.whenReady().then(() => {
      On every launch we scan EVERY output folder SkinnyVideo has written to —
      prefs.outputRoots accumulates each destination ever used — plus any
      in-flight pendingDests, for leftover .tmp.mp4 partials under their
-     "Compressed_" run folders. This catches partials from ANY interrupted
+     run folders (Compressed_YYYY-MM-DD_HHMM). This catches partials from ANY interrupted
      run, not just the most recent one. We deliberately do NOT walk the whole
      filesystem: scope is "known SkinnyVideo output locations". pendingDests is
      cleared after the scan; outputRoots persists so a partial the operator
@@ -598,10 +598,10 @@ ipcMain.handle('start-queue', async (_evt, batches) => {
   const onPartial = (p, info) => {
     runPartials.add(p);
     const rec = new Set(Array.isArray(prefs.pendingPartials) ? prefs.pendingPartials : []);
-    /* { final, source } lets the next launch tell a finished-but-unrenamed
+    /* { final, source, runDir } lets the next launch tell a finished-but-unrenamed
        leftover from a truncated one (orphans.classifyPartials). */
     if (info && typeof info.final === 'string' && typeof info.source === 'string') {
-      prefs.partialInfo = { ...(prefs.partialInfo || {}), [p]: { final: info.final, source: info.source } };
+      prefs.partialInfo = { ...(prefs.partialInfo || {}), [p]: { final: info.final, source: info.source, runDir: info.runDir } };
     }
     rec.add(p); prefs.pendingPartials = [...rec];
     savePrefs();
@@ -901,7 +901,7 @@ ipcMain.handle('free-space', async (_evt, p) => {
 /* ─── Orphaned-partial deletion ───────────────────────────────────────
    Renderer hands back the subset the operator approved. deletePartials
    re-validates every path defensively (only a RECORDED partial, still a
-   ".tmp.mp4" under a "Compressed_" run folder, realpath under a known output
+   ".tmp.mp4" under a Compressed_YYYY-MM-DD_HHMM run folder, realpath under a known output
    root, is ever unlinked) — see ../encoder/orphans. */
 ipcMain.handle('delete-orphans', async (_evt, paths) => {
   const recorded = Array.isArray(prefs.pendingPartials) ? prefs.pendingPartials : [];
