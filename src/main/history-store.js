@@ -10,6 +10,31 @@
    malformed payload can never put junk in prefs.json. */
 
 const HISTORY_CAP = 50;
+/* ponytail: per-run cap on per-file records keeps prefs.json bounded
+   (50 runs × 200 × ~90 B ≈ 0.9 MB worst case); raise if an estimate needs more. */
+const PER_FILE_CAP = 200;
+
+/* 3.3.0 — one record per finished file: source codec, source pix_fmt, tier,
+   and the actual reclaim ratio ((in − out) / in; negative when the output grew).
+   Entries written before 3.3.0 have no `perFile` and are left as they are. */
+function sanitizePerFile(list) {
+  if (!Array.isArray(list)) return [];
+  const str = (v) => (typeof v === 'string' && /^[\w.-]{1,32}$/.test(v)) ? v : null;
+  const out = [];
+  for (const r of list) {
+    if (!r || typeof r !== 'object') continue;
+    const ratio = Number(r.reclaimRatio);
+    if (!Number.isFinite(ratio) || ratio > 1) continue;
+    out.push({
+      codec: str(r.codec),
+      pixFmt: str(r.pixFmt),
+      tier: (r.tier === 'regular' || r.tier === 'preserve') ? r.tier : null,
+      reclaimRatio: Math.round(Math.max(-10, ratio) * 10000) / 10000
+    });
+    if (out.length === PER_FILE_CAP) break;
+  }
+  return out;
+}
 
 /* How a row's `name` is to be rendered:
      'files'  — a multi-file drop; the row appends "+ (files - 1) more"
@@ -73,7 +98,8 @@ function sanitizeHistoryEntry(h, at) {
     reclaimed: num(h.reclaimed),
     /* Degenerate runs (all-skipped, stage failure) carry no run folder. Store
        null rather than inventing a path; the UI drops the Reveal button. */
-    runDir: (typeof h.runDir === 'string' && h.runDir) ? h.runDir : null
+    runDir: (typeof h.runDir === 'string' && h.runDir) ? h.runDir : null,
+    perFile: sanitizePerFile(h.perFile)
   };
 }
 
@@ -101,5 +127,5 @@ function readHistory(store) {
 }
 
 module.exports = {
-  HISTORY_CAP, KINDS, sanitizeHistoryEntry, appendHistoryEntry, readHistory, migrateHistoryEntry
+  HISTORY_CAP, PER_FILE_CAP, KINDS, sanitizeHistoryEntry, appendHistoryEntry, readHistory, migrateHistoryEntry
 };

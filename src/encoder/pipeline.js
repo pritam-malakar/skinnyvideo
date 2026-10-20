@@ -1522,6 +1522,9 @@ async function runBatch(batch, controlOrFn, onProgress) {
         alreadyDone,
         elapsedMs: Date.now() - startTs,
         outcome: usedFallback ? 'ok-fallback' : 'ok',
+        // Source facts for the History ledger's per-file record.
+        srcCodec: (vs && vs.codec_name) || undefined,
+        srcPixFmt: (vs && vs.pix_fmt) || undefined,
         // HDR side data the re-encode could not carry — surfaced on the row.
         hdrMeta: hdrMeta.length ? hdrMeta : undefined,
         notes: notes.length ? notes : undefined

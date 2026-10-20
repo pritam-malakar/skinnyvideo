@@ -2508,6 +2508,8 @@ window.api.onProgress((d) => {
           /* Things the output does not keep (an audio track that couldn't be
              decoded, an alpha channel) — a NOTE chip on the row. */
           if (Array.isArray(d.notes) && d.notes.length) f.notes = d.notes;
+          if (typeof d.srcCodec === 'string') f.srcCodec = d.srcCodec;
+          if (typeof d.srcPixFmt === 'string') f.srcPixFmt = d.srcPixFmt;
           /* FIX 2: a completed encode is the most reliable throughput sample —
              refine this tier's model from in-bytes ÷ this file's encode time. */
           const inBytes = Number.isFinite(d.inBytes) && d.inBytes > 0 ? d.inBytes : f.size;
@@ -2699,6 +2701,7 @@ function maybeCreditBatch(batch) {
   let failedCount = 0;
   let skippedCount = 0;
   let firstDoneName = null;      // names the row; see the historyEntry below
+  const perFile = [];            // 3.3.0: one record per finished file
   for (const f of batch.files) {
     if (f.status === 'failed') { failedCount += 1; continue; }
     if (f.status === 'skipped' || f.status === 'existed') { skippedCount += 1; continue; }
@@ -2711,6 +2714,7 @@ function maybeCreditBatch(batch) {
       // negative delta (output bigger than source) contributes 0
       beforeBytes += f.size;
       afterBytes += f.outputSize;
+      if (f.size > 0) perFile.push({ codec: f.srcCodec || null, pixFmt: f.srcPixFmt || null, tier: batch.tier, reclaimRatio: delta / f.size });
     }
   }
   if (filesAdded === 0) return;
@@ -2744,7 +2748,8 @@ function maybeCreditBatch(batch) {
     reclaimed: addedBytes,
     // Degenerate paths (stage failure, all-skipped) leave runDir null — the
     // row then renders with no Reveal button rather than a dead one.
-    runDir: (batch.lastResult && batch.lastResult.runDir) || null
+    runDir: (batch.lastResult && batch.lastResult.runDir) || null,
+    perFile
   };
   window.api.addReclaimed({
     dest: batch.dest,

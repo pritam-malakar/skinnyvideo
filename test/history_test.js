@@ -188,7 +188,9 @@ app.whenReady().then(async () => {
   /* v3.0.2 added `kind` — the row's name is stored bare and the "+ N more"
      suffix is derived from `files` at render time (see history_counts_test). */
   check(e0.kind === 'custom', `kind is 'custom' after an inline rename (got ${JSON.stringify(e0.kind)})`);
-  check(Object.keys(e0).sort().join(',') === 'after,at,before,failed,files,kind,name,reclaimed,runDir,skipped,tier',
+  /* 3.3.0 F1 added `perFile` — per finished file codec/pix_fmt/tier/ratio
+     (see history_perfile_test). */
+  check(Object.keys(e0).sort().join(',') === 'after,at,before,failed,files,kind,name,perFile,reclaimed,runDir,skipped,tier',
     `entry holds exactly the documented keys (got ${Object.keys(e0).sort().join(',')})`);
 
   const shown = await sectionState();

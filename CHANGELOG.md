@@ -55,6 +55,10 @@
   ignores `NODE_OPTIONS` and `--inspect`, loads its code only from its own
   archive and checks that archive's integrity at launch, and encrypts its
   cookie store.
+- History now also records, for each finished file, the source codec, the
+  source pixel format, the tier and the space actually saved. Nothing uses it
+  yet (Preview's "Est. reclaim" is unchanged); History from earlier versions
+  loads and displays as before.
 - `scripts/bench.sh` reports VMAF when an ffmpeg with libvmaf is available,
   and `docs/BENCHMARKS.md` has a new x265 CRF sweep. Measurement only: the
   app's quality settings are unchanged.
