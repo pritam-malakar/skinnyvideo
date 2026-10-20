@@ -42,6 +42,9 @@
   including while a run is going. Before, only the drop area accepted them.
 - While a batch is paused, the file it was working on now says **Paused** (in
   the paused lemon) instead of Running, and goes back to Running on resume.
+- **The Output folder is remembered across launches.** At launch it is used
+  only if it still exists and is writable; otherwise Output starts unset, as
+  before.
 - Motion-JPEG video (older cameras and webcams) is now compressed.
 - **Hardened app binary.** Release builds now close Electron's fuses: the app
   can no longer be started as a plain Node.js runtime (`ELECTRON_RUN_AS_NODE`),

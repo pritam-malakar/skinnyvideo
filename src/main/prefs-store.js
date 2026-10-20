@@ -52,4 +52,16 @@ function writeJsonAtomic(target, obj, deps = {}) {
   }
 }
 
-module.exports = { writeJsonAtomic };
+/* The remembered Output folder, only if it can still take a run right now:
+   an existing directory we can write to. Anything else → null, and the
+   renderer leaves Output unset exactly as a first launch does. */
+function usableDir(p) {
+  if (typeof p !== 'string' || !path.isAbsolute(p)) return null;
+  try {
+    if (!fs.statSync(p).isDirectory()) return null;
+    fs.accessSync(p, fs.constants.W_OK);
+    return p;
+  } catch { return null; }
+}
+
+module.exports = { writeJsonAtomic, usableDir };

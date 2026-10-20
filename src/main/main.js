@@ -9,7 +9,7 @@ const { findOrphanPartials, deletePartials, isUnderRoots, classifyPartials, reco
 const { stageFileList } = require('../encoder/stage');
 const { runQueue, releasePauseGate, requestStop } = require('./queue-runner');
 const { revealInFinder, revealFolder } = require('./reveal');
-const { writeJsonAtomic } = require('./prefs-store');
+const { writeJsonAtomic, usableDir } = require('./prefs-store');
 const { appendHistoryEntry, readHistory } = require('./history-store');
 const { RUN_DIALOG, handleCloseAttempt, applyProgressToQuitState } = require('./close-guard');
 const { beginCancel, quitViaCancel } = require('./quit-teardown');
@@ -472,8 +472,13 @@ ipcMain.handle('choose-destination', async (_evt, defaultPath) => {
   else opts.defaultPath = app.getPath('home');
   const r = await dialog.showOpenDialog(mainWindow, opts);
   if (r.canceled || !r.filePaths.length) return null;
+  prefs.lastDest = r.filePaths[0];   // remembered for the next launch
+  savePrefs();
   return r.filePaths[0];
 });
+
+/* The last Output folder, if it still exists and is writable; else null. */
+ipcMain.handle('get-last-dest', async () => usableDir(prefs.lastDest));
 
 ipcMain.handle('scan-source', async (_evt, srcPath) => {
   // A rejected invoke: the renderer's catch shows e.message as the scan error.

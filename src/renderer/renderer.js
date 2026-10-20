@@ -3050,6 +3050,17 @@ renderQueue();
 refreshLifetime();
 refreshHistory();
 
+/* Output folder from the last launch — main returns it only if it still
+   exists and is writable; otherwise Output stays unset, as on first launch.
+   Never overrides a folder the operator already picked this session. */
+window.api.getLastDest().then((d) => {
+  if (!d || current.dest) return;
+  current.dest = d;
+  destPathEl.textContent = d;
+  destPathEl.classList.remove('placeholder');
+  updateAddState();
+}).catch(() => {});
+
 /* Item 6: orphaned-partial recovery. On launch the main process scans the
    last interrupted run's destination(s) for leftover ".tmp.mp4" partials —
    partly-written files from a crash/quit mid-encode. Not "unplayable": an

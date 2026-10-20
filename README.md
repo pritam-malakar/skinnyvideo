@@ -73,7 +73,7 @@ Built on a self-compiled FFmpeg with x265 and VideoToolbox and nothing else bund
 - **HDR.** PQ and HLG transfer tags and BT.2020 color tags are carried to the output, and so are HDR10 mastering display and content light level values. Dolby Vision is not kept: its configuration record is dropped in both tiers, so the output is not marked as Dolby Vision. Make It Fast leaves the per-frame Dolby Vision data in the video stream; Slow But Better removes it.
 - **Bit depth and alpha.** 10-bit sources stay 10-bit (HEVC Main 10) unless you turn on 10-bit → 8-bit in Nerd Mode. Sources deeper than 10 bits, such as 12-bit ProRes 4444, come out 10-bit. Alpha channels are not kept: both tiers drop the transparency on purpose and still compress the file, and the file's row shows a NOTE.
 - **Nerd Mode settings freeze when you click Add batch.** Changing them afterwards affects only batches you add later.
-- **The Output folder lasts for the session.** It is not remembered after you quit.
+- **The Output folder is remembered.** The next launch starts with the Output folder you last chose, as long as it still exists and you can write to it. Otherwise Output starts empty and you pick one, as on first launch.
 - **Warnings.** On launch, if an earlier run was interrupted, SkinnyVideo checks the `.tmp.mp4` files it left. One that is as long as its original finished compressing before the interruption: you can keep it (it gets its normal name) or delete it. The rest are incomplete, and it offers to delete them. Nothing else is touched. Before a run, it warns if the output drive has less free space than the videos add up to. If you quit while a finished file is still being written to disk, it asks you to wait.
 - **Sizes are decimal** (1 MB = 1,000,000 bytes), matching Finder.
 - **Slow But Better is not always the smaller or the higher-scoring file.** Against Make It Fast it scored higher PSNR on 6 of the 11 clips we measured, within 0.1 dB on 3 (including both ProRes HQ masters), and lower on the two iPhone 4K60 4:2:2 clips. On already-compressed phone footage it can come out larger than Make It Fast: iPhone 12 SDR, 2.0 MB vs 4.6 MB (+3.0 dB). Sony 4K 4:2:0 is another case: 6.3 MB vs 24.4 MB (+2.3 dB). Details in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
@@ -137,7 +137,7 @@ No. Compression runs entirely on your Mac and your videos never leave it. The ap
 Yes. It's signed and notarized by Apple, open source under GPL-2.0-or-later, and every release publishes a SHA-256 checksum.
 
 **Where do the compressed files go?**
-You pick an Output folder; it stays set for the rest of the session. Each run creates a new `Compressed_YYYY-MM-DD_HHMM` folder inside it and puts every result there as an `.mp4`, flat. The originals are never opened for writing, moved, or deleted.
+You pick an Output folder; it stays set, and the next launch starts with it if it still exists and is writable. Each run creates a new `Compressed_YYYY-MM-DD_HHMM` folder inside it and puts every result there as an `.mp4`, flat. The originals are never opened for writing, moved, or deleted.
 
 **Can it compress ProRes?**
 Yes. A 593 MB ProRes 422 HQ master came out at 13.3 MB (97.8% smaller) with Slow But Better.

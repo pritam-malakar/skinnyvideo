@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('api', {
   freeSpace: (p) => ipcRenderer.invoke('free-space', p),
   deleteOrphans: (paths) => ipcRenderer.invoke('delete-orphans', paths),
   recoverOrphans: (paths) => ipcRenderer.invoke('recover-orphans', paths),
+  getLastDest: () => ipcRenderer.invoke('get-last-dest'),
   onProgress: (cb) => ipcRenderer.on('progress', (_e, d) => cb(d)),
   onBatchStatus: (cb) => ipcRenderer.on('batch-status', (_e, d) => cb(d)),
   onQueueFinished: (cb) => ipcRenderer.on('queue-finished', (_e, d) => cb(d)),
