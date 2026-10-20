@@ -19,6 +19,13 @@
   timecode outside the picture track and used to lose it; it now survives,
   along with timecode from iPhone, ProRes and other sources. The run log notes
   it as `TIMECODE`.
+- **12-bit sources come out 10-bit.** ProRes 4444 and other 12-bit footage
+  used to come out 8-bit in Make It Fast. Every source deeper than 8 bits is
+  now encoded as 10-bit HEVC (Main 10) in both tiers, unless 10-bit → 8-bit is
+  on in Nerd Mode (which now also appears for 12-bit batches).
+- **Video with transparency compresses in both tiers.** The alpha channel is
+  dropped on purpose, with a `NOTE … alpha channel discarded` line in the run
+  log and a NOTE on the file's row. Slow But Better used to fail these files.
 - Motion-JPEG video (older cameras and webcams) is now compressed. It used to
   be skipped as "not a video". Cover art is still ignored.
 

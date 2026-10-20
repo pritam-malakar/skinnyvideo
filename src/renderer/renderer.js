@@ -608,11 +608,13 @@ const proPanelEmpty = document.getElementById('pro-panel-empty');
 const proDownconvert = document.getElementById('pro-downconvert');
 const proDownconvertInput = document.getElementById('pro-downconvert-input');
 
-/* Mirror of pipeline.is10Bit — the renderer can't require the main-process
-   module, so the regex is duplicated (kept in sync deliberately). Used ONLY to
-   decide whether to SHOW the downconvert checkbox; the encoder re-probes each
-   file and makes the real per-file decision. */
-function is10BitPix(pixFmt) { return /10le|10be|p010|p210|p410/.test(pixFmt || ''); }
+/* Mirror of pipeline.bitDepth(pix) > 8 — the renderer can't require the
+   main-process module, so the rule is duplicated (kept in sync deliberately).
+   Used ONLY to decide whether to SHOW the downconvert checkbox; the encoder
+   re-probes each file and makes the real per-file decision. */
+function is10BitPix(pixFmt) {   // any depth above 8 (pipeline.bitDepth): 10-, 12-, 16-bit
+  return /^(?:p[024]1|y21)[026](le|be)$|^nv20|(9|1[0-6]|30|36|48|64)(le|be)$/.test(pixFmt || '');
+}
 function batchHas10Bit() {
   return !!(current.files && current.files.some((f) => is10BitPix(f.pix_fmt)));
 }

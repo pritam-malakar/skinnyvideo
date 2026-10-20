@@ -42,9 +42,9 @@ weighted by plane size); Y alone is shown in brackets. SSIM is ffmpeg's "All".
   never reduced. Semi-planar formats map to the planar format of the same depth
   and subsampling (for example `p010le` → `yuv420p10le`).
 - **10-bit** sources are compared at 10 bits.
-- **12-bit** sources (ProRes 4444) are compared at 12 bits. The app currently
-  writes them as 8-bit 4:2:0, so the score includes that bit-depth and chroma
-  loss.
+- **12-bit** sources (ProRes 4444) are compared at 12 bits. 3.3.0 writes them
+  as 10-bit 4:2:0 (3.2.2, which produced the per-clip table below, wrote 8-bit
+  4:2:0), so the score includes that bit-depth and chroma loss.
 - **Alpha** is not compared. The output has no alpha plane, so the comparison
   uses the colour planes only.
 - **HDR** (PQ or HLG) is compared on the coded signal, with no tone mapping.
@@ -191,5 +191,7 @@ Notes:
   are a larger share of a 2–4 s encode.
 - 4K60 10-bit 4:2:2 HEVC from iPhone (`IMG_0122.mov`, `IMG_0311`) encodes
   slower than real time in Make It Fast on this chip (0.87× and 0.90×).
-- ProRes 4444 with alpha fails in Slow But Better: the bundled libx265 does
-  not encode alpha.
+- ProRes 4444 with alpha failed in Slow But Better in 3.2.2 (the table
+  above): the bundled libx265 does not encode alpha. 3.3.0 drops the alpha
+  plane on purpose in both tiers and encodes the file; see the x265 CRF sweep
+  below for 3.3.0 figures.

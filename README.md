@@ -58,7 +58,7 @@ Full encoder control for people who know exactly what they want. Settings apply 
 | CRF (constant quality) | Slow But Better | 0–51, lower is larger and cleaner | 18 |
 | x265 preset | Slow But Better | ultrafast → veryslow, nine positions | medium |
 | VideoToolbox quality | Make It Fast | 1–85; capped where the bitrate curve goes vertical | 62 |
-| 10-bit → 8-bit | Both | Appears only when the batch contains a 10-bit file | off |
+| 10-bit → 8-bit | Both | Appears only when the batch contains a file deeper than 8 bits (10- or 12-bit) | off |
 | Dry run | Both | Scans the batch and reports totals without writing anything | — |
 
 Built on a self-compiled FFmpeg with x265 and VideoToolbox and nothing else bundled. The build recipe is in this repo: [`scripts/build-ffmpeg.sh`](scripts/build-ffmpeg.sh).
@@ -71,7 +71,7 @@ Built on a self-compiled FFmpeg with x265 and VideoToolbox and nothing else bund
 - **Retries before failing.** If the encoder rejects a color tag, the file is encoded again on the same encoder without color tags. If it still fails, SkinnyVideo tries libx265 at CRF 22 (preset medium). Only then is the file marked failed. A file that stops making progress is not retried.
 - **Existing.** If you run the same file into the same Output folder again within the same minute, without quitting in between, the finished copy is kept and the row says Existing. Any other rerun makes a new copy in a new run folder.
 - **HDR.** PQ and HLG transfer tags and BT.2020 color tags are carried to the output, and so are HDR10 mastering display and content light level values. Dolby Vision is not kept: its configuration record is dropped in both tiers, so the output is not marked as Dolby Vision. Make It Fast leaves the per-frame Dolby Vision data in the video stream; Slow But Better removes it.
-- **Bit depth and alpha.** 10-bit sources stay 10-bit (HEVC Main 10) unless you turn on 10-bit → 8-bit in Nerd Mode. 12-bit sources, such as ProRes 4444, currently come out 8-bit. Alpha channels are not kept: Make It Fast drops the transparency, and ProRes 4444 with alpha fails in Slow But Better.
+- **Bit depth and alpha.** 10-bit sources stay 10-bit (HEVC Main 10) unless you turn on 10-bit → 8-bit in Nerd Mode. Sources deeper than 10 bits, such as 12-bit ProRes 4444, come out 10-bit. Alpha channels are not kept: both tiers drop the transparency on purpose and still compress the file, and the file's row shows a NOTE.
 - **Nerd Mode settings freeze when you click Add batch.** Changing them afterwards affects only batches you add later.
 - **The Output folder lasts for the session.** It is not remembered after you quit.
 - **Warnings.** On launch, if an earlier run was interrupted, SkinnyVideo offers to delete the unfinished `.tmp.mp4` files it left; nothing else is deleted. Before a run, it warns if the output drive has less free space than the videos add up to. If you quit while a finished file is still being written to disk, it asks you to wait.

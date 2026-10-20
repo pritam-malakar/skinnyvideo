@@ -593,9 +593,40 @@ function humanBytes(n) {
   return sign + n.toFixed(n >= 10 || i === 0 ? 0 : 1) + ' ' + units[i];
 }
 
-function is10Bit(pixFmt) {
-  if (!pixFmt) return false;
-  return /10le|10be|p010|p210|p410/.test(pixFmt);
+/* Bits per component from the pixel format name. Anything above 8 is
+   encoded as HEVC Main 10, so 12- and 16-bit sources come out 10-bit. */
+function bitDepth(pixFmt) {
+  const f = pixFmt || '';
+  let m;
+  if ((m = /^(?:p[024]1|y21)([026])(le|be)$/.exec(f))) return { 0: 10, 2: 12, 6: 16 }[m[1]];   // p010 p212 p416 y210 …
+  if (/^nv20/.test(f)) return 10;
+  if ((m = /(\d+)(le|be)$/.exec(f))) {
+    const n = Number(m[1]);
+    if (n >= 9 && n <= 16) return n;               // yuv420p10le, gbrp12le, gray16le …
+    if (n === 48 || n === 64) return 16;           // rgb48le, rgba64le
+    if (n === 30) return 10;                       // x2rgb10 / xv30
+    if (n === 36) return 12;                       // xv36
+  }
+  return 8;
+}
+
+/* The same format without its alpha plane (same subsampling and depth), or
+   null when the source has no alpha. Neither encoder keeps alpha: x265 exits
+   211 on it and VideoToolbox drops it silently, so we drop it on purpose. */
+const ALPHA_TWIN = [[/^yuva/, 'yuv'], [/^gbrap/, 'gbrp'], [/^ya16/, 'gray16'], [/^ya8$/, 'gray'],
+  [/^(rgba|bgra|argb|abgr)$/, 'rgb24'], [/^rgba64/, 'rgb48'], [/^bgra64/, 'bgr48'], [/^ayuv64/, 'yuv444p16'], [/^vuya$/, 'yuv444p']];
+function alphaTwin(pixFmt) {
+  for (const [re, base] of ALPHA_TWIN) if (re.test(pixFmt || '')) return pixFmt.replace(re, base);
+  return null;
+}
+
+/* -vf for the encode: colour stamp, then the alpha drop. null when neither. */
+function videoFilter(videoStream, colorStamp, dropColorTags) {
+  const f = [];
+  if (colorStamp && !dropColorTags) f.push(setparamsArg(colorStamp));
+  const twin = alphaTwin(videoStream && videoStream.pix_fmt);
+  if (twin) f.push(`format=${twin}`);
+  return f.length ? f.join(',') : null;
 }
 
 function shortEdge(w, h) {
@@ -749,12 +780,13 @@ function buildArgs({ input, tmpOut, tier, settings, videoStream, audioStream, au
      identical args either way, guarded by test/settings_args_test.js. */
   const s = settings || tierDefaults(tier);
   const args = ['-y', '-nostdin', '-hide_banner', '-loglevel', 'error', '-stats', '-i', input];
-  const tenBit = is10Bit(videoStream?.pix_fmt);
+  const tenBit = bitDepth(videoStream?.pix_fmt) > 8;
 
-  /* Color carry: stamp container-declared color onto untagged frames.
-     colorStamp is null for fully-tagged (and fully-untagged) sources — in
-     which case NO -vf is injected and the args are identical to before. */
-  if (colorStamp && !dropColorTags) args.push('-vf', setparamsArg(colorStamp));
+  /* Color carry: stamp container-declared color onto untagged frames, and
+     drop an alpha plane explicitly. Neither applies to an ordinary fully-
+     tagged source — then NO -vf is injected and the args are as before. */
+  const vf = videoFilter(videoStream, colorStamp, dropColorTags);
+  if (vf) args.push('-vf', vf);
 
   const colorArgs = dropColorTags ? [] : buildColorArgs(videoStream, { withRange: true });
 
@@ -788,8 +820,9 @@ function buildFallbackArgs({ input, tmpOut, tier, settings, videoStream, audioSt
      on a 10-bit source, matching buildArgs; nested under tenBit → no-op on 8-bit. */
   const s = settings || tierDefaults(tier);
   const args = ['-y', '-nostdin', '-hide_banner', '-loglevel', 'error', '-stats', '-i', input];
-  const tenBit = is10Bit(videoStream?.pix_fmt);
-  if (colorStamp && !dropColorTags) args.push('-vf', setparamsArg(colorStamp));
+  const tenBit = bitDepth(videoStream?.pix_fmt) > 8;
+  const vf = videoFilter(videoStream, colorStamp, dropColorTags);
+  if (vf) args.push('-vf', vf);
   args.push('-c:v', 'libx265', '-crf', '22', '-preset', 'medium', '-tag:v', 'hvc1');
   if (tenBit) args.push('-pix_fmt', s.downconvert8 ? 'yuv420p' : 'yuv420p10le');
 
@@ -1197,6 +1230,10 @@ async function runBatch(batch, controlOrFn, onProgress) {
        each is logged and shown as a NOTE on the file row. */
     const audioPlan = planAudio(audioStreams);
     const notes = [];
+    if (alphaTwin(vs && vs.pix_fmt)) {
+      log(`NOTE ${v.file} alpha channel discarded`);
+      notes.push('Alpha channel (transparency) discarded');
+    }
     for (const d of audioPlan.dropped) {
       log(`DROPPED-AUDIO ${v.file} track ${d.track} (${d.codec})`);
       notes.push(`Audio track ${d.track} (${d.codec}) could not be kept`);
@@ -1581,6 +1618,8 @@ module.exports = {
   pickAudioStream,
   planAudio,
   sourceTimecode,
+  bitDepth,
+  alphaTwin,
   streamPlan,
   streamArgs,
   buildArgs,
