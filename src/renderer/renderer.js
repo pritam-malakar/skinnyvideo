@@ -1188,12 +1188,22 @@ window.addEventListener('drop', (ev) => {
      - Anything else (1 file, multiple files, multiple folders, mix) →
        file-list branch (scan-files), which keeps folder behavior
        entirely off this path. */
+/* 3.3.1: every pick (drop or Browse, folder or files) gets a unique scan id,
+   stored on the staging slot; a response may write the slot only while its id
+   is still the slot's latest. Comparing the slot object alone let an earlier,
+   slower scan overwrite a later pick of the same slot. */
+let scanSeq = 0;
+const isLatestScan = (slot, id) => current === slot && slot.scanId === id;
+
 async function stagePicked(paths) {
+  const id = current.scanId = ++scanSeq;
+  const slot = current;
   if (paths.length === 1) {
     const stat = await window.api.statPath(paths[0]);
-    if (stat && stat.isDirectory) return stageSource(paths[0]);
+    if (!isLatestScan(slot, id)) return;   // a later pick (or Add/clear) won
+    if (stat && stat.isDirectory) return stageSource(paths[0], id);
   }
-  return stageFiles(paths);
+  return stageFiles(paths, id);
 }
 
 chooseDestBtn.addEventListener('click', async () => {
@@ -1320,7 +1330,7 @@ function scanCountText(scan) {
   return `${n} video${n === 1 ? '' : 's'}` + (m > 0 ? ` · ${m} skipped inside SkinnyVideo output folders` : '');
 }
 
-async function stageSource(p) {
+async function stageSource(p, id = (current.scanId = ++scanSeq)) {
   current.src = p;
   current.srcName = p.split('/').pop();
   current.kind = 'folder';
@@ -1344,7 +1354,7 @@ async function stageSource(p) {
   const token = current;
   try {
     const scan = await window.api.scanSource(p);
-    if (current !== token) return;   // reassigned mid-scan → drop this stale result
+    if (!isLatestScan(token, id)) return;   // reassigned or re-picked mid-scan → drop this stale result
     current.videoCount = scan.videos.length;
     current.ignoredCount = scan.ignored;
     current.totalSize = scan.totalSize || scan.videos.reduce((a, v) => a + (v.size || 0), 0);
@@ -1361,7 +1371,7 @@ async function stageSource(p) {
     dropStatusExtra.textContent = parts.join(' · ') || '—';
     window.api.saveLastSrc(p);
   } catch (e) {
-    if (current !== token) return;
+    if (!isLatestScan(token, id)) return;
     showScanError(e && e.message);
     current.scanned = false;
     flipDropzoneHeight(() => dropzone.classList.remove('has-source'));   // restore prompt
@@ -1373,7 +1383,7 @@ async function stageSource(p) {
 /* Separate scan/stage branch for FILES kind (multi-select picker, or a
    drag-drop carrying loose files). No folder rescan happens — pipeline.js
    sees these via a temp symlink dir at run time. */
-async function stageFiles(paths) {
+async function stageFiles(paths, id = (current.scanId = ++scanSeq)) {
   current.src = null;
   current.kind = 'files';
   current.fileSources = paths.slice();
@@ -1389,11 +1399,11 @@ async function stageFiles(paths) {
     dropzone.classList.add('has-source');
   });
   updateAddState();
-  /* See stageSource: bail if `current` was reassigned (Add reset) during the await. */
+  /* See stageSource: bail if `current` was reassigned (Add reset) or re-picked during the await. */
   const token = current;
   try {
     const scan = await window.api.scanFiles(paths);
-    if (current !== token) return;   // reassigned mid-scan → drop this stale result
+    if (!isLatestScan(token, id)) return;   // reassigned or re-picked mid-scan → drop this stale result
     current.videoCount = scan.videos.length;
     current.ignoredCount = scan.ignored;
     current.totalSize = scan.totalSize || scan.videos.reduce((a, v) => a + (v.size || 0), 0);
@@ -1416,7 +1426,7 @@ async function stageFiles(paths) {
     dropStatusExtra.textContent = parts.join(' · ') || '—';
     if (paths[0]) window.api.saveLastSrc(paths[0]);
   } catch (e) {
-    if (current !== token) return;
+    if (!isLatestScan(token, id)) return;
     showScanError(e && e.message);
     current.scanned = false;
     flipDropzoneHeight(() => dropzone.classList.remove('has-source'));   // restore prompt
