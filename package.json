@@ -8,6 +8,7 @@
     "start": "electron .",
     "test": "for t in test/*_test.js; do echo \"\\n### $t\"; if grep -q \"require('electron')\" \"$t\"; then ./node_modules/.bin/electron \"$t\"; else node \"$t\"; fi || exit 1; done",
     "dist": "sh scripts/release.sh",
+    "dist:test": "SV_FUSES_OPEN=1 electron-builder --mac --arm64 --publish never -c.mac.identity=null -c.mac.notarize=false -c.directories.output=\"${TMPDIR:-/tmp}/skinnyvideo-dist-test\"",
     "postinstall": "install-electron"
   },
   "author": "Pritam Malakar",
@@ -24,6 +25,7 @@
     "node": "22.x"
   },
   "devDependencies": {
+    "@electron/fuses": "^1.8.0",
     "electron": "^44.4.1",
     "electron-builder": "^26.16.1"
   },
@@ -31,6 +33,7 @@
     "appId": "com.pritammalakar.skinnyvideo",
     "productName": "SkinnyVideo",
     "asar": true,
+    "afterPack": "scripts/after-pack.js",
     "publish": [
       {
         "provider": "github",

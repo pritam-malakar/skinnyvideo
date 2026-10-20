@@ -42,7 +42,12 @@
   including while a run is going. Before, only the drop area accepted them.
 - While a batch is paused, the file it was working on now says **Paused** (in
   the paused lemon) instead of Running, and goes back to Running on resume.
-- Motion-JPEG video (older cameras and webcams) is now compressed. It used to
+- Motion-JPEG video (older cameras and webcams) is now compressed.
+- **Hardened app binary.** Release builds now close Electron's fuses: the app
+  can no longer be started as a plain Node.js runtime (`ELECTRON_RUN_AS_NODE`),
+  ignores `NODE_OPTIONS` and `--inspect`, loads its code only from its own
+  archive and checks that archive's integrity at launch, and encrypts its
+  cookie store. It used to
   be skipped as "not a video". Cover art is still ignored.
 
 ## 3.2.2 — 2026-10-15
