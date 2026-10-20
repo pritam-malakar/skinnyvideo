@@ -35,10 +35,10 @@ const benchDirs = () => fs.readdirSync(SB).filter((f) => f.startsWith('sv-bench.
   const probe = await p.ffprobeJson(CLIP);
   const vs = p.pickVideoStream(probe.streams);
   const direct = p.buildArgs({ input: CLIP, tmpOut: out, tier: 'preserve', settings: p.tierDefaults('preserve'),
-    videoStream: vs, audioStream: p.pickAudioStream(probe.streams), colorStamp: p.resolveColorStamp(await p.ffprobeFrameColor(CLIP), vs) });
+    videoStream: vs, audioStreams: p.streamPlan(probe).audioStreams, timecode: p.streamPlan(probe).timecode, colorStamp: p.resolveColorStamp(await p.ffprobeFrameColor(CLIP), vs) });
   check(JSON.stringify(plan.argv) === JSON.stringify(direct), 'print-args argv is exactly pipeline.buildArgs for the same input');
   const a = plan.argv.join(' ');
-  check(/-c:v libx265 -crf 18 -preset medium/.test(a) && /-pix_fmt yuv420p10le/.test(a) && /-c:a aac -b:a 320k/.test(a) && plan.argv[plan.argv.length - 1] === out,
+  check(/-c:v libx265 -crf 18 -preset medium/.test(a) && /-pix_fmt yuv420p10le/.test(a) && /-c:a:0 aac_at -b:a:0 320k/.test(a) && plan.argv[plan.argv.length - 1] === out,
     `better: x265 CRF 18 medium, 10-bit kept, PCM → AAC 320k, output last (${a})`);
   check(/-crf 22 /.test(JSON.parse(printArgs(CLIP, 'better', out, '--crf', '22').stdout).argv.join(' ')), '--crf 22 overrides the CRF');
   const reg = JSON.parse(printArgs(CLIP, 'regular', out, '--quality', '99').stdout).argv.join(' ');

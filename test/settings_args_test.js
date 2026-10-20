@@ -45,6 +45,19 @@ const STAMPS = {
 
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
+/* 3.3.0 changed the stream block for everyone (explicit -map, every audio
+   track, -timecode — see test/audio_tracks_test.js). That block always sits
+   right before -map_metadata; drop it on both sides so these fixtures keep
+   guarding everything else (video, colour, tail) byte for byte. */
+const STREAM_FLAGS = /^(-map|-c:a(:\d+)?|-b:a(:\d+)?|-an|-timecode)$/;
+function withoutStreamBlock(args) {
+  const end = args.indexOf('-map_metadata');
+  let start = end;
+  while (start >= 2 && STREAM_FLAGS.test(args[start - 2])) start -= 2;
+  if (start >= 1 && args[start - 1] === '-an') start -= 1;
+  return [...args.slice(0, start), ...args.slice(end)];
+}
+
 let legacyOk = 0, settingsOk = 0;
 for (const f of FIXTURES) {
   const [vk, sk, dropKey, tier, builder] = f.key.split('|');
@@ -55,17 +68,24 @@ for (const f of FIXTURES) {
 
   const legacy = fn({ input: '/in/clip.mov', tmpOut: '/out/clip.tmp.mp4', tier,
     videoStream: vs, audioStream: as, dropColorTags: drop, colorStamp: stamp });
-  if (same(legacy, f.args)) legacyOk++;
+  if (same(withoutStreamBlock(legacy), withoutStreamBlock(f.args))) legacyOk++;
   else check(false, `legacy path diverged: ${f.key}\n  want ${JSON.stringify(f.args)}\n  got  ${JSON.stringify(legacy)}`);
 
   const viaSettings = fn({ input: '/in/clip.mov', tmpOut: '/out/clip.tmp.mp4',
     settings: tierDefaults(tier),
     videoStream: vs, audioStream: as, dropColorTags: drop, colorStamp: stamp });
-  if (same(viaSettings, f.args)) settingsOk++;
+  if (same(withoutStreamBlock(viaSettings), withoutStreamBlock(f.args))) settingsOk++;
   else check(false, `settings path diverged: ${f.key}\n  want ${JSON.stringify(f.args)}\n  got  ${JSON.stringify(viaSettings)}`);
 }
-check(legacyOk === FIXTURES.length, `legacy tier path byte-identical for all ${FIXTURES.length} fixtures (got ${legacyOk})`);
-check(settingsOk === FIXTURES.length, `settings path byte-identical for all ${FIXTURES.length} fixtures (got ${settingsOk})`);
+check(legacyOk === FIXTURES.length, `legacy tier path byte-identical (outside the stream block) for all ${FIXTURES.length} fixtures (got ${legacyOk})`);
+check(settingsOk === FIXTURES.length, `settings path byte-identical (outside the stream block) for all ${FIXTURES.length} fixtures (got ${settingsOk})`);
+// The stream block itself must still be identical between the two entry paths.
+{
+  const vs = { index: 0, pix_fmt: 'yuv420p' }, auds = [{ index: 1, codec_name: 'aac', channels: 2 }, { index: 2, codec_name: 'pcm_s24le', channels: 1 }];
+  const a = buildArgs({ input: '/i.mov', tmpOut: '/o.mp4', tier: 'preserve', videoStream: vs, audioStreams: auds, timecode: '01:00:00:00' });
+  const b = buildArgs({ input: '/i.mov', tmpOut: '/o.mp4', settings: tierDefaults('preserve'), videoStream: vs, audioStreams: auds, timecode: '01:00:00:00' });
+  check(same(a, b), 'stream block identical through the legacy and settings paths');
+}
 
 // Defaults stay DERIVED from TIER_CONSTANTS — value drift breaks here.
 check(same(tierDefaults('regular'), { vcodec: 'hevc_videotoolbox', qv: TIER_CONSTANTS.regular.qv }),

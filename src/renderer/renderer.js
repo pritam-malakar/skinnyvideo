@@ -1870,6 +1870,14 @@ function buildFileRow(file, i, batchId, entering, batchStatus) {
     hdr.title = `This file carried extra HDR metadata (${file.hdrMeta.join(', ')}) that re-encoding doesn’t keep. The output is still valid HDR — color and transfer tags are preserved; only this metadata was dropped. Keep the original if you need it for color grading or mastered delivery.`;
     statusCol.appendChild(hdr);
   }
+  if (file.status === 'done' && Array.isArray(file.notes) && file.notes.length) {
+    const note = document.createElement('span');
+    note.className = 'hdr-chip note-chip';
+    note.textContent = 'NOTE';
+    note.title = file.notes.join('\n');
+    note.setAttribute('aria-label', 'Note: ' + file.notes.join('. '));
+    statusCol.appendChild(note);
+  }
   // Bar omitted for skipped — there's nothing to show.
   if (file.status !== 'skipped') {
     const fbar = document.createElement('div');
@@ -2470,6 +2478,9 @@ window.api.onProgress((d) => {
           /* HDR side data (mastering display / content light / Dolby Vision)
              that re-encoding can't carry — surfaced as a chip on the row. */
           if (Array.isArray(d.hdrMeta) && d.hdrMeta.length) f.hdrMeta = d.hdrMeta;
+          /* Things the output does not keep (an audio track that couldn't be
+             decoded, an alpha channel) — a NOTE chip on the row. */
+          if (Array.isArray(d.notes) && d.notes.length) f.notes = d.notes;
           /* FIX 2: a completed encode is the most reliable throughput sample —
              refine this tier's model from in-bytes ÷ this file's encode time. */
           const inBytes = Number.isFinite(d.inBytes) && d.inBytes > 0 ? d.inBytes : f.size;

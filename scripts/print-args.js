@@ -26,12 +26,11 @@ async function main(argv) {
   }
 
   const probe = await p.ffprobeJson(input);
-  const vs = p.pickVideoStream(probe && probe.streams);
+  const { videoStream: vs, audioStreams, timecode } = p.streamPlan(probe);
   if (!vs) throw new Error(`no video stream in ${input}`);
-  const as = p.pickAudioStream(probe.streams);
   const frameColor = await p.ffprobeFrameColor(input);
   const colorStamp = p.resolveColorStamp(frameColor, vs);
-  const argv2 = p.buildArgs({ input, tmpOut: output, tier, settings, videoStream: vs, audioStream: as, colorStamp });
+  const argv2 = p.buildArgs({ input, tmpOut: output, tier, settings, videoStream: vs, audioStreams, timecode, colorStamp });
 
   const { ffmpeg, ffprobe } = p.getBinaries();
   return {

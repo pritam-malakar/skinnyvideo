@@ -1,5 +1,27 @@
 # Changelog
 
+## 3.3.0 — unreleased
+
+- **Every audio track is kept.** A file with more than one audio track (two
+  microphones, a camera's second channel pair, an iPhone ProRes clip's extra
+  track) used to come out with only one of them, without any warning. Now
+  every track is kept, in its original order and with its own channel count:
+  a 5.1 track stays 5.1, and two mono tracks stay two mono tracks. AAC, ALAC,
+  AC-3 and E-AC-3 tracks are copied unchanged; any other audio (PCM, FLAC,
+  Opus, MP3, DTS, TrueHD, MP2, Vorbis) is converted to AAC at 320 kb/s per
+  track. A track SkinnyVideo can't read is left out with a `DROPPED-AUDIO`
+  line in the run log and a NOTE on the file's row; the file still
+  compresses.
+- After each encode the output's audio tracks are counted against the
+  source's. If one is missing, the file is marked failed (`TRACKS` in the run
+  log) instead of being accepted.
+- **Start timecode is carried to the output.** Sony XAVC clips keep their
+  timecode outside the picture track and used to lose it; it now survives,
+  along with timecode from iPhone, ProRes and other sources. The run log notes
+  it as `TIMECODE`.
+- Motion-JPEG video (older cameras and webcams) is now compressed. It used to
+  be skipped as "not a video". Cover art is still ignored.
+
 ## 3.2.2 — 2026-10-15
 
 - **Stop after current file now works while a batch is paused.** Before, Stop

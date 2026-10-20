@@ -352,13 +352,41 @@ async function ffprobeJson(file) {
   try { return JSON.parse(stdout); } catch { return null; }
 }
 
+/* Codec names the bundled ffmpeg can DECODE, from `ffmpeg -decoders` (a
+   decoder named differently from its codec says "(codec x)"). Read once.
+   null when the binary can't be run — callers then accept any named codec. */
+let _decoders;
+function bundledDecoders() {
+  if (_decoders !== undefined) return _decoders;
+  _decoders = null;
+  try {
+    const r = require('child_process').spawnSync(getBinaries().ffmpeg, ['-hide_banner', '-decoders'], { encoding: 'utf8', timeout: 5000 });
+    if (r.status === 0) {
+      const set = new Set();
+      for (const m of r.stdout.matchAll(/^ [VAS][.\w]{5} (\S+)[^\n]*?(?:\(codec (\S+)\))?$/gm)) {
+        set.add(m[1]); if (m[2]) set.add(m[2]);
+      }
+      if (set.size) _decoders = set;
+    }
+  } catch {}
+  return _decoders;
+}
+function hasDecoder(s) {
+  const c = s && s.codec_name;
+  if (!c || c === 'unknown' || c === 'none') return false;
+  const d = bundledDecoders();
+  return !d || d.has(c);
+}
+
+/* HandBrake's rule: the first video stream that is not cover art
+   (attached_pic) and that the bundled ffmpeg can decode. No codec-name
+   rejection — MJPEG/PNG-coded video is real video. */
 function pickVideoStream(streams) {
   if (!streams) return null;
   for (const s of streams) {
     if (s.codec_type !== 'video') continue;
     if (s.disposition && s.disposition.attached_pic === 1) continue;
-    const c = (s.codec_name || '').toLowerCase();
-    if (c === 'mjpeg' || c === 'png' || c === 'gif' || c === 'bmp') continue;
+    if (!hasDecoder(s)) continue;
     return s;
   }
   return null;
@@ -367,6 +395,69 @@ function pickVideoStream(streams) {
 function pickAudioStream(streams) {
   if (!streams) return null;
   return streams.find((s) => s.codec_type === 'audio') || null;
+}
+
+/* ─── Audio plan (3.3.0) ───────────────────────────────────────────────
+   Every audio track is kept, in source order, never merged, at its own
+   channel count. AAC/ALAC/AC-3/E-AC-3 are copied; anything else becomes AAC
+   320 kb/s per track. aac_at (AudioToolbox) is used only for layouts it was
+   measured to keep (docs/3.3.0-DIAGNOSTIC.md 1.2): it turns 2.1 into stereo,
+   4.1 into 5.1 and 7.1 into 7 channels, so those — and any other layout —
+   go to the built-in aac, which always keeps the channel count. A track the
+   bundled ffmpeg cannot decode is dropped (reported), never fatal. */
+const AUDIO_COPY = new Set(['aac', 'alac', 'ac3', 'eac3']);
+const AAC_AT_LAYOUTS = new Set(['mono', 'stereo', '3.0', '4.0', 'quad', '5.0', '5.0(side)', '5.1', '5.1(side)', '6.1(back)']);
+const AAC_AT_UNLABELLED = new Set([1, 2, 4, 6]);   // no layout: ffmpeg's default for these counts is in the set above
+function aacEncoderFor(s) {
+  const lay = s.channel_layout;
+  if (lay && lay !== 'unknown') return AAC_AT_LAYOUTS.has(lay) ? 'aac_at' : 'aac';
+  return AAC_AT_UNLABELLED.has(Number(s.channels)) ? 'aac_at' : 'aac';
+}
+function planAudio(audioStreams) {
+  const keep = [], dropped = [];
+  (audioStreams || []).forEach((s, n) => {
+    const codec = (s.codec_name || '').toLowerCase();
+    if (!hasDecoder(s) || !(Number(s.channels) > 0)) { dropped.push({ stream: s, track: n + 1, codec: codec || 'unknown' }); return; }
+    keep.push({ stream: s, pos: n, encoder: AUDIO_COPY.has(codec) ? 'copy' : aacEncoderFor(s) });
+  });
+  return { keep, dropped };
+}
+
+/* Source start timecode: video stream tag, else any stream's (Sony keeps it
+   on the rtmd data stream), else the container's. Shape-checked so a junk
+   tag can never reach -timecode and fail the encode. */
+const TIMECODE_RE = /^\d{2}:\d{2}:\d{2}[:;.]\d{2,3}$/;
+function sourceTimecode(probe, videoStream) {
+  const tc = (o) => o && o.tags && (o.tags.timecode || o.tags.TIMECODE);   // MKV stores tags upper-case
+  const cands = [tc(videoStream), ...((probe && probe.streams) || []).map(tc), tc(probe && probe.format)];
+  return cands.find((t) => typeof t === 'string' && TIMECODE_RE.test(t)) || null;
+}
+
+/* What buildArgs needs from a probe — shared by runBatch and
+   scripts/print-args.js so the benchmark can't drift from the app. */
+function streamPlan(probe) {
+  const streams = (probe && probe.streams) || [];
+  const videoStream = pickVideoStream(streams);
+  return {
+    videoStream,
+    audioStreams: streams.filter((s) => s.codec_type === 'audio'),
+    timecode: sourceTimecode(probe, videoStream)
+  };
+}
+
+/* -map / per-track codec / timecode args. Explicit maps mean no subtitle
+   or data stream is ever mapped (the -sn -dn equivalent); the MP4 muxer
+   writes its own tmcd track from -timecode (DIAGNOSTIC 1.3). */
+function streamArgs(videoStream, audioStreams, timecode) {
+  const args = ['-map', Number.isInteger(videoStream && videoStream.index) ? `0:${videoStream.index}` : '0:v:0'];
+  const { keep } = planAudio(audioStreams);
+  keep.forEach((t, k) => {
+    args.push('-map', Number.isInteger(t.stream.index) ? `0:${t.stream.index}` : `0:a:${t.pos}`);
+    if (t.encoder === 'copy') args.push(`-c:a:${k}`, 'copy');
+    else args.push(`-c:a:${k}`, t.encoder, `-b:a:${k}`, '320k');
+  });
+  if (timecode) args.push('-timecode', timecode);
+  return args;
 }
 
 async function isVideoFile(file) {
@@ -652,7 +743,7 @@ function buildColorArgs(videoStream, { withRange }) {
   return colorArgs;
 }
 
-function buildArgs({ input, tmpOut, tier, settings, videoStream, audioStream, dropColorTags, colorStamp }) {
+function buildArgs({ input, tmpOut, tier, settings, videoStream, audioStream, audioStreams, timecode, dropColorTags, colorStamp }) {
   /* Encode params come ONLY from settings (Nerd Mode foundation). Callers that
      still pass just a tier (tests, legacy paths) get the tier's defaults —
      identical args either way, guarded by test/settings_args_test.js. */
@@ -685,24 +776,13 @@ function buildArgs({ input, tmpOut, tier, settings, videoStream, audioStream, dr
   }
 
   args.push(...colorArgs);
-
-  if (audioStream) {
-    const aCodec = (audioStream.codec_name || '').toLowerCase();
-    if (aCodec.startsWith('pcm_')) {
-      args.push('-c:a', 'aac', '-b:a', '320k');
-    } else {
-      args.push('-c:a', 'copy');
-    }
-  } else {
-    args.push('-an');
-  }
-
+  args.push(...streamArgs(videoStream, audioStreams || (audioStream ? [audioStream] : []), timecode));
   args.push('-map_metadata', '0', '-movflags', 'use_metadata_tags+faststart');
   args.push(tmpOut);
   return args;
 }
 
-function buildFallbackArgs({ input, tmpOut, tier, settings, videoStream, audioStream, dropColorTags, colorStamp }) {
+function buildFallbackArgs({ input, tmpOut, tier, settings, videoStream, audioStream, audioStreams, timecode, dropColorTags, colorStamp }) {
   /* Settings only inform the bit-depth choice here; the fallback is otherwise a
      fixed libx265 crf22 backstop. downconvert8 (default-off → falsy) forces 8-bit
      on a 10-bit source, matching buildArgs; nested under tenBit → no-op on 8-bit. */
@@ -714,14 +794,7 @@ function buildFallbackArgs({ input, tmpOut, tier, settings, videoStream, audioSt
   if (tenBit) args.push('-pix_fmt', s.downconvert8 ? 'yuv420p' : 'yuv420p10le');
 
   args.push(...(dropColorTags ? [] : buildColorArgs(videoStream, { withRange: false })));
-
-  if (audioStream) {
-    const aCodec = (audioStream.codec_name || '').toLowerCase();
-    if (aCodec.startsWith('pcm_')) args.push('-c:a', 'aac', '-b:a', '320k');
-    else args.push('-c:a', 'copy');
-  } else {
-    args.push('-an');
-  }
+  args.push(...streamArgs(videoStream, audioStreams || (audioStream ? [audioStream] : []), timecode));
   args.push('-map_metadata', '0', '-movflags', 'use_metadata_tags+faststart');
   args.push(tmpOut);
   return args;
@@ -764,7 +837,10 @@ function stderrSink(onTime) {
    audio track can neither mask a short picture nor fake one. MKV/WebM carry it
    only as a DURATION tag. null when unknowable. */
 async function videoDuration(file) {
-  const vs = pickVideoStream((await ffprobeJson(file))?.streams);
+  return videoDurationOf(await ffprobeJson(file));
+}
+function videoDurationOf(probe) {
+  const vs = pickVideoStream(probe && probe.streams);
   if (!vs) return null;
   const d = Number(vs.duration);
   if (d > 0) return d;
@@ -1116,8 +1192,15 @@ async function runBatch(batch, controlOrFn, onProgress) {
     try { await fsp.unlink(tmpPath); } catch {}
 
     const probe = await ffprobeJson(v.file);
-    const vs = pickVideoStream(probe?.streams);
-    const as = pickAudioStream(probe?.streams);
+    const { videoStream: vs, audioStreams, timecode } = streamPlan(probe);
+    /* Audio tracks the bundled ffmpeg can't decode are dropped, never fatal;
+       each is logged and shown as a NOTE on the file row. */
+    const audioPlan = planAudio(audioStreams);
+    const notes = [];
+    for (const d of audioPlan.dropped) {
+      log(`DROPPED-AUDIO ${v.file} track ${d.track} (${d.codec})`);
+      notes.push(`Audio track ${d.track} (${d.codec}) could not be kept`);
+    }
     const durationSec = Number(probe?.format?.duration || 0) || v.duration || 0;
 
     /* Color carry: compare bitstream truth (first frame) against the
@@ -1134,7 +1217,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
       log(`HDR-METADATA ${v.file} :: ${hdrMeta.join(', ')} — re-encoding does not carry this metadata (color tags are preserved; HDR brightness metadata is dropped)`);
     }
 
-    const args = buildArgs({ input: v.file, tmpOut: tmpPath, tier, settings, videoStream: vs, audioStream: as, colorStamp });
+    const args = buildArgs({ input: v.file, tmpOut: tmpPath, tier, settings, videoStream: vs, audioStreams, timecode, colorStamp });
 
     /* Latest parsed progress fraction for THIS encode attempt (0..1), fed to
        runCmd's finalization detector via getProgress. Reset before each attempt
@@ -1252,7 +1335,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
          worth a dead job. */
       const optRejected = /Error applying encoder options|Error applying option .* to filter 'setparams'/.test(sink1.tail());
       if (optRejected) {
-        const bareArgs = buildArgs({ input: v.file, tmpOut: tmpPath, tier, settings, videoStream: vs, audioStream: as, dropColorTags: true });
+        const bareArgs = buildArgs({ input: v.file, tmpOut: tmpPath, tier, settings, videoStream: vs, audioStreams, timecode, dropColorTags: true });
         const sink3 = stderrSink(onTime);
         lastProgress = 0;   // fresh encode → debounce finalization from zero
         const r3 = await runCmd(ffmpeg, bareArgs, {
@@ -1301,7 +1384,7 @@ async function runBatch(batch, controlOrFn, onProgress) {
       /* The fallback inherits dropColorTags when the primary's options were
          rejected — its color args share the same vocabulary, so re-sending
          them would fail identically. */
-      const fallbackArgs = buildFallbackArgs({ input: v.file, tmpOut: tmpPath, tier, settings, videoStream: vs, audioStream: as, dropColorTags: optRejected, colorStamp });
+      const fallbackArgs = buildFallbackArgs({ input: v.file, tmpOut: tmpPath, tier, settings, videoStream: vs, audioStreams, timecode, dropColorTags: optRejected, colorStamp });
       const sink2 = stderrSink(onTime);
       lastProgress = 0;   // fresh encode → debounce finalization from zero
       const r2 = await runCmd(ffmpeg, fallbackArgs, {
@@ -1355,12 +1438,27 @@ async function runBatch(batch, controlOrFn, onProgress) {
       const decodeErr = okSink.decodeError();
       if (decodeErr) log(`WARN ${v.file} decoder reported errors: ${decodeErr}`);
       const srcDur = await videoDuration(v.file);   // re-probed now, not the scan value
-      const outDur = await videoDuration(tmpPath);
+      const outProbe = await ffprobeJson(tmpPath);
+      const outDur = videoDurationOf(outProbe);
       if (srcDur && outDur != null && srcDur - outDur > Math.max(1.0, srcDur * 0.02)) {
         try { await fsp.unlink(tmpPath); } catch {}
         log(`SHORT ${v.file} (source ${srcDur.toFixed(2)}s, output ${outDur.toFixed(2)}s)`);
         await recordPlainFailure(v, i, 'output shorter than source');
         continue;
+      }
+      /* Track guard: every kept audio track must be in the output. ffmpeg
+         exits 0 when a stream silently goes missing (the 3.2.2 audit bug). */
+      const outAudio = ((outProbe && outProbe.streams) || []).filter((s) => s.codec_type === 'audio').length;
+      if (outAudio !== audioPlan.keep.length) {
+        try { await fsp.unlink(tmpPath); } catch {}
+        log(`TRACKS ${v.file} (source ${audioStreams.length} audio, output ${outAudio})`);
+        await recordPlainFailure(v, i, 'audio tracks missing from output');
+        continue;
+      }
+      if (timecode) {
+        const ovs = pickVideoStream(outProbe && outProbe.streams);
+        const outTc = (ovs && ovs.tags && ovs.tags.timecode) || (outProbe && outProbe.format && outProbe.format.tags && outProbe.format.tags.timecode);
+        if (outTc === timecode) log(`TIMECODE ${v.file} ${timecode}`);
       }
       await fsp.rename(tmpPath, finalPath);
       madeFrom.set(finalPath, v.file);
@@ -1388,7 +1486,8 @@ async function runBatch(batch, controlOrFn, onProgress) {
         elapsedMs: Date.now() - startTs,
         outcome: usedFallback ? 'ok-fallback' : 'ok',
         // HDR side data the re-encode could not carry — surfaced on the row.
-        hdrMeta: hdrMeta.length ? hdrMeta : undefined
+        hdrMeta: hdrMeta.length ? hdrMeta : undefined,
+        notes: notes.length ? notes : undefined
       });
     } else {
       /* Preserve the original next to the run for forensics. Correct for a
@@ -1480,6 +1579,10 @@ module.exports = {
   ffprobeJson,
   pickVideoStream,
   pickAudioStream,
+  planAudio,
+  sourceTimecode,
+  streamPlan,
+  streamArgs,
   buildArgs,
   buildFallbackArgs,
   buildColorArgs,

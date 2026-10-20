@@ -21,8 +21,8 @@ primary encode rejects is reported as failed.
 | Make It Fast | `regular` | `hevc_videotoolbox` | `-q:v 62` (override with `--quality N`, capped at 85) |
 | Slow But Better | `better` | `libx265` | `-crf 18 -preset medium` (override with `--crf N`) |
 
-10-bit sources are encoded as HEVC Main 10. PCM audio becomes AAC 320 kb/s;
-other audio is copied.
+10-bit sources are encoded as HEVC Main 10. Every audio track is kept: AAC,
+ALAC, AC-3 and E-AC-3 are copied, any other audio becomes AAC 320 kb/s per track.
 
 **Size.** Source and output sizes are bytes on disk, shown in decimal units
 (1 MB = 1,000,000 bytes) like the app and Finder. Reclaim = 1 − output / source.
