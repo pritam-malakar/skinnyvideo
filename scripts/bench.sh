@@ -16,6 +16,11 @@
 # pixel format and range (alpha dropped, semi-planar mapped to planar of the
 # same depth), with the source put on the output's constant frame grid. The
 # output is converted up to that format; the source is never reduced to 8-bit. HDR is compared on the coded PQ/HLG signal, no tone mapping.
+#
+# VMAF (default model vmaf_v0.6.1, every frame, same pairing as PSNR) needs an
+# ffmpeg built with libvmaf. The bundled one is used if it has it; otherwise
+# $SV_VMAF_FFMPEG, then Homebrew's, then the first `ffmpeg` on PATH. The binary
+# used is printed and stored in the JSON. No libvmaf anywhere → VMAF is null.
 set -euo pipefail
 
 KEEP=0; QFLAG=(); POS=()
@@ -23,7 +28,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --keep) KEEP=1; shift ;;
     --quality|--crf) [ $# -ge 2 ] || { echo "bench: $1 needs a value" >&2; exit 2; }; QFLAG=("$1" "$2"); shift 2 ;;
-    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
     *) POS+=("$1"); shift ;;
   esac
 done
@@ -85,8 +90,24 @@ if [ "$RC" = 0 ]; then
   set -e
 fi
 
+# VMAF, same frame pairing and comparison format as PSNR/SSIM above.
+VMAF_FF=""; VMAF_FFVER=""; VRC=""
+for c in "$FFMPEG" "${SV_VMAF_FFMPEG:-}" /opt/homebrew/bin/ffmpeg /usr/local/bin/ffmpeg "$(command -v ffmpeg || true)"; do
+  if [ -n "$c" ] && [ -x "$c" ] && "$c" -hide_banner -filters 2>/dev/null | grep -q ' libvmaf '; then VMAF_FF="$c"; break; fi
+done
+if [ "$RC" = 0 ] && [ -n "$VMAF_FF" ]; then
+  VMAF_FFVER="$("$VMAF_FF" -hide_banner -version | head -1)"
+  VGRAPH="[0:v]setpts=PTS-STARTPTS,scale=in_range=${OUT_RANGE}:out_range=${SRC_RANGE}:flags=accurate_rnd+full_chroma_int,format=${CMP_FMT}[vd];"
+  VGRAPH+="[1:v]setpts=PTS-STARTPTS,fps=${OUT_RATE},scale=in_range=${SRC_RANGE}:out_range=${SRC_RANGE}:flags=accurate_rnd+full_chroma_int,format=${CMP_FMT}[vr];"
+  VGRAPH+="[vd][vr]libvmaf=log_fmt=json:log_path=${WORK}/vmaf.json:n_threads=$(sysctl -n hw.ncpu)"
+  set +e
+  "$VMAF_FF" -hide_banner -nostats -loglevel error -i "$OUT" -i "$SRC" -lavfi "$VGRAPH" -f null - 2> "$WORK/vmaf.log"; VRC=$?
+  set -e
+fi
+
 ENC_RC="$RC" QUAL_RC="$QRC" T0="$T0" T1="$T1" CHIP="$CHIP" MACOS="$MACOS" FFVER="$FFVER" X265VER="$X265VER" \
 CMP_FMT="${CMP_FMT:-}" SRC_RANGE="${SRC_RANGE:-}" OUT_PIX="${OUT_PIX:-}" OUT_CODEC="${OUT_CODEC:-}" OUT_DUR="${OUT_DUR:-}" \
+VMAF_FF="$VMAF_FF" VMAF_FFVER="$VMAF_FFVER" VMAF_RC="$VRC" \
 node -e '
   const fs = require("fs"), path = require("path");
   const [planFile, outFile, workDir, srcPath, root] = process.argv.slice(1);
@@ -112,8 +133,16 @@ node -e '
     reclaim_pct: outBytes == null ? null : Number(((1 - outBytes / plan.source.bytes) * 100).toFixed(1)),
     compare: outBytes == null ? null : { pix_fmt: E.CMP_FMT, range: E.SRC_RANGE, frames, exit: Number(E.QUAL_RC) },
     psnr_db: outBytes == null ? null : { y: psnrVal("y"), u: psnrVal("u"), v: psnrVal("v"), average: psnrVal("average"), min: psnrVal("min") },
-    ssim: outBytes == null ? null : { y: num(/SSIM Y:([0-9.]+)/), u: num(/ U:([0-9.]+)/), v: num(/ V:([0-9.]+)/), all: num(/All:([0-9.]+)/) }
+    ssim: outBytes == null ? null : { y: num(/SSIM Y:([0-9.]+)/), u: num(/ U:([0-9.]+)/), v: num(/ V:([0-9.]+)/), all: num(/All:([0-9.]+)/) },
+    vmaf: null
   };
+  if (outBytes != null && E.VMAF_FF) {
+    let pooled = null;
+    try { pooled = JSON.parse(read("vmaf.json")).pooled_metrics.vmaf; } catch {}
+    r.vmaf = { mean: pooled ? Number(pooled.mean.toFixed(3)) : null, min: pooled ? Number(pooled.min.toFixed(3)) : null,
+      harmonic_mean: pooled ? Number(pooled.harmonic_mean.toFixed(3)) : null, model: "vmaf_v0.6.1",
+      ffmpeg: E.VMAF_FF, ffmpeg_version: E.VMAF_FFVER, exit: Number(E.VMAF_RC) };
+  }
   const f2 = (x) => (x == null ? "n/a" : x.toFixed(2)), f4 = (x) => (x == null ? "n/a" : x.toFixed(4));
   const s = r.source, rows = [
     ["Clip", r.clip],
@@ -128,7 +157,8 @@ node -e '
     ["Output", `${r.output.codec} · ${r.output.pix_fmt}`],
     ["Compared", `${r.compare.frames} frames at ${r.compare.pix_fmt} (${r.compare.range} range)${r.compare.exit ? " — comparison FAILED, exit " + r.compare.exit : ""}`],
     ["PSNR", `average ${f2(r.psnr_db.average)} dB (Y ${f2(r.psnr_db.y)} · U ${f2(r.psnr_db.u)} · V ${f2(r.psnr_db.v)} · worst frame ${f2(r.psnr_db.min)})`],
-    ["SSIM", `All ${f4(r.ssim.all)} (Y ${f4(r.ssim.y)} · U ${f4(r.ssim.u)} · V ${f4(r.ssim.v)})`]
+    ["SSIM", `All ${f4(r.ssim.all)} (Y ${f4(r.ssim.y)} · U ${f4(r.ssim.u)} · V ${f4(r.ssim.v)})`],
+    ["VMAF", r.vmaf ? `mean ${f2(r.vmaf.mean)} (worst frame ${f2(r.vmaf.min)}) · ${r.vmaf.model} · ${r.vmaf.ffmpeg}${r.vmaf.exit ? " — VMAF FAILED, exit " + r.vmaf.exit : ""}` : "n/a (no ffmpeg with libvmaf found)"]
   );
   const w = Math.max(...rows.map((x) => x[0].length));
   console.log(rows.map(([k, v]) => k.padEnd(w) + "  " + v).join("\n"));

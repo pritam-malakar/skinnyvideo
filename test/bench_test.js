@@ -5,7 +5,7 @@
        a flag for the wrong tier is refused
      · bench.sh on a 10-bit 4:2:2 clip: encode succeeds, the comparison runs at
        yuv422p10le over every frame (never 8-bit), PSNR/SSIM/reclaim are
-       numbers, the JSON line parses, the temp folder is removed — and kept
+       numbers, VMAF is computed when a libvmaf ffmpeg exists (3.3.0), the JSON line parses, the temp folder is removed — and kept
        with --keep
    Run: node test/bench_test.js */
 const { spawnSync, execFileSync } = require('child_process');
@@ -58,6 +58,13 @@ const benchDirs = () => fs.readdirSync(SB).filter((f) => f.startsWith('sv-bench.
     check(Number.isFinite(j.reclaim_pct) && Number.isFinite(j.realtime_x) && j.wall_s > 0, `reclaim ${j.reclaim_pct}%, ${j.realtime_x}× realtime`);
     check(/Apple|Intel/.test(j.machine.chip) && /^ffmpeg version/.test(j.machine.ffmpeg) && /^\d/.test(j.machine.x265 || ''), `machine reported (${JSON.stringify(j.machine)})`);
     check(/PSNR\s+average/.test(b.stdout) && /SSIM\s+All/.test(b.stdout), 'human-readable table printed');
+    // 3.3.0: VMAF when any libvmaf-capable ffmpeg exists (bundled first, then Homebrew/PATH).
+    const vmafFF = [p.getBinaries().ffmpeg, process.env.SV_VMAF_FFMPEG, '/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg']
+      .find((f) => f && fs.existsSync(f) && / libvmaf /.test(spawnSync(f, ['-hide_banner', '-filters'], { encoding: 'utf8' }).stdout || ''));
+    check('vmaf' in j && /VMAF\s/.test(b.stdout), `VMAF field in the JSON and a VMAF row in the table (${JSON.stringify(j.vmaf)})`);
+    if (vmafFF) check(j.vmaf && j.vmaf.mean > 50 && j.vmaf.mean <= 100 && j.vmaf.ffmpeg === vmafFF && j.vmaf.model === 'vmaf_v0.6.1' && j.vmaf.exit === 0,
+      `VMAF computed by ${vmafFF}: mean ${j.vmaf && j.vmaf.mean}, default model`);
+    else check(j.vmaf === null, 'no libvmaf ffmpeg on this machine → VMAF is null, not invented');
   }
   check(benchDirs().length === 0, `work folder removed without --keep (${benchDirs()})`);
   const k = bench('--keep', CLIP, 'regular');
