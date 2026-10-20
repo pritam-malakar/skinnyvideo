@@ -45,6 +45,9 @@
 - **The Output folder is remembered across launches.** At launch it is used
   only if it still exists and is writable; otherwise Output starts unset, as
   before.
+- The skip label **"Existing" is now "Duplicate"**, with the tooltip "Same
+  file already added in this session". The run log keeps its `SKIP-EXISTS`
+  tag and adds the same wording.
 - Motion-JPEG video (older cameras and webcams) is now compressed.
 - **Hardened app binary.** Release builds now close Electron's fuses: the app
   can no longer be started as a plain Node.js runtime (`ELECTRON_RUN_AS_NODE`),

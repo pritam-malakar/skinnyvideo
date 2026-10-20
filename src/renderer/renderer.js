@@ -1587,7 +1587,7 @@ const PILL_LABEL = {
   done: 'Done', failed: 'Failed', cancelled: 'Cancelled', cancelling: 'Cancelling…',
   stopped: 'Stopped', notstarted: 'Not started',
   skipped: 'Skipped',    // operator-skipped via the ✕ on the row
-  existed: 'Existing'    // pipeline resumability: output already present
+  existed: 'Duplicate'   // pipeline resumability: this source's output already present
 };
 
 /* Inline batch rename. Replaces the name node with a text field; Enter or
@@ -1884,6 +1884,7 @@ function buildFileRow(file, i, batchId, entering, batchStatus) {
   pill.className = 'pill';
   pill.innerHTML = `<span class="dot"></span>${PILL_LABEL[shownStatus] || shownStatus}`;
   if (file.status === 'failed' && file.failReason) pill.title = file.failReason;
+  if (file.status === 'existed') pill.title = 'Same file already added in this session';
   statusCol.appendChild(pill);
   /* Dolby Vision loss made visible. hdrMeta lists exactly what the encoder
      that ran dropped (pipeline.detectDroppedHdrMeta); HDR10 values are
@@ -1927,7 +1928,7 @@ function buildFileRow(file, i, batchId, entering, batchStatus) {
     outCol.textContent = humanBytes(file.outputSize);
     outCol.classList.add('green');
   } else if (file.status === 'existed') {
-    outCol.textContent = 'existing';
+    outCol.textContent = 'duplicate';
     outCol.classList.add('muted');
   } else if (file.status === 'failed') {
     outCol.textContent = '—';
