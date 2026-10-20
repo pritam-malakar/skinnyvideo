@@ -1579,6 +1579,9 @@ async function runBatch(batch, controlOrFn, onProgress) {
 async function dryRunBatch(batch, onProgress) {
   const { src, tier } = batch;
   const scan = await scanFolder(src, { keepAll: batch.kind === 'files', partials: batch.recordedPartials });
+  /* Same skip rule as runBatch, so Preview counts what a real run would encode. */
+  const sk = new Set(Array.isArray(batch.skip) ? batch.skip : []);
+  scan.videos = scan.videos.filter((v) => !sk.has(v.file));
   let estReclaim = 0;
   const ratios = { regular: 0.45, preserve: 0.55 };
   const r = ratios[tier] ?? 0.45;
