@@ -1876,10 +1876,13 @@ function buildFileRow(file, i, batchId, entering, batchStatus) {
 
   // Status pill + per-file progress bar (D)
   const statusCol = document.createElement('div');
-  statusCol.className = `status ${file.status}`;
+  /* Pause freezes the batch's encoding file (SIGSTOP), so its row reads
+     Paused like the batch pill, and Running again on resume. */
+  const shownStatus = (file.status === 'running' && batchStatus === 'paused') ? 'paused' : file.status;
+  statusCol.className = `status ${shownStatus}`;
   const pill = document.createElement('span');
   pill.className = 'pill';
-  pill.innerHTML = `<span class="dot"></span>${PILL_LABEL[file.status] || file.status}`;
+  pill.innerHTML = `<span class="dot"></span>${PILL_LABEL[shownStatus] || shownStatus}`;
   if (file.status === 'failed' && file.failReason) pill.title = file.failReason;
   statusCol.appendChild(pill);
   /* Dolby Vision loss made visible. hdrMeta lists exactly what the encoder

@@ -40,6 +40,8 @@
 - **"Drop anywhere" now means anywhere.** Files dropped anywhere on the
   window are staged exactly as if they were dropped on the drop area,
   including while a run is going. Before, only the drop area accepted them.
+- While a batch is paused, the file it was working on now says **Paused** (in
+  the paused lemon) instead of Running, and goes back to Running on resume.
 - Motion-JPEG video (older cameras and webcams) is now compressed. It used to
   be skipped as "not a video". Cover art is still ignored.
 

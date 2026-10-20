@@ -801,6 +801,7 @@ body.pro-mode .safety-bar { display: flex; }
 .qbatch-status.cancelling .pill                                { background: var(--card-2); color: var(--fg-2); }
 .qbatch-status.stopped .pill                                   { background: var(--orange); color: var(--ink); }
 .qrow .status.notstarted .pill                                 { background: var(--card-2); color: var(--fg-2); }
+.qrow .status.paused .pill                                     { background: var(--lemon); color: var(--ink); }
 .qrow .status.existed .pill                                    { background: var(--card-2); color: var(--fg-2); }
 .qrow .status.skipped .pill                                    { background: var(--card-2); color: var(--fg-2); }
 
@@ -912,6 +913,7 @@ body.pro-mode .safety-bar { display: flex; }
 .qbatch-files .qrow .status.existed .progressbar > i   { background: var(--track); }
 .qbatch-files .qrow .status.cancelled .progressbar > i { background: var(--track); }
 .qbatch-files .qrow .status.notstarted .progressbar > i { background: var(--track); }
+.qbatch-files .qrow .status.paused .progressbar > i     { background: var(--lemon); }
 
 .qbatch-files .qrow.status-skipped { opacity: 0.5; }
 .qbatch-files .qrow.status-skipped .file .name {
